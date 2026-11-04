@@ -1453,3 +1453,5 @@ html.theming *::after {
 .dialog { animation: dialog-in .22s var(--ease); }
 .modal.closing { animation: fade-out .26s var(--ease) forwards; }
 .modal.closing .dialog { animation: dialog-out .26s var(--ease) forwards; }
+.button.quiet:hover { border-color: var(--muted); background: var(--card-2); color: var(--fg); }
+.top .search-shell:focus-within { border-color: var(--accent); box-shadow: none; }
