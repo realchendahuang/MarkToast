@@ -62,7 +62,8 @@
 - [x] TUI（Bubble Tea）作为无 GUI/远程场景的第二界面（2026-11-04，搜索/列表/详情/滚动）
 - [x] 手动备份（`marktoast backup` + 设置页按钮，tar.gz 到 ~/.marktoast/backups，2026-11-04）
 - [x] 自动备份（启动时每日一次，2026-11-04）/ 安装脚本（`scripts/install.sh` + `make install`）
-- [ ] 更新器
+- [x] 更新检查（`marktoast update`，GitHub Releases，2026-11-04）
+- [ ] 自动下载安装更新（需要已签名的 release）
 - [x] 安全审计：脱敏上线、doctor 诊断（2026-11-04）
 - [ ] 公开仓库前的数据清理
 - [x] MIT LICENSE（2026-11-04）

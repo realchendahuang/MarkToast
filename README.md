@@ -118,6 +118,7 @@ make build
 ./bin/marktoast import zcode                  # import existing harness memories
 ./bin/marktoast backup                       # tar.gz snapshot
 ./bin/marktoast doctor                       # diagnose the installation
+./bin/marktoast update                       # check GitHub Releases
 ./bin/marktoast inbox list                   # review session candidates
 ./bin/marktoast add --name release-rollback \
   --description "2026-09 发版回滚原因" --type project --body "发版后首页闪屏，决定回滚。"
@@ -164,6 +165,7 @@ MarkToast is built in public debt to these projects — see
 |---|---|
 | [Brand](docs/BRAND.md) | Logo, colours, type, asset list |
 | [Plugins](docs/PLUGINS.md) | JS plugin API and events |
+| [Release](docs/RELEASE.md) | Signing, notarization, publishing checklist |
 | [Product](docs/PRODUCT.md) | Positioning, users, non-goals, success metrics |
 | [Tech stack](docs/TECH-STACK.md) | Every decision, with alternatives and risks |
 | [Architecture](docs/ARCHITECTURE.md) | Components, storage layout, adapters, failure modes |

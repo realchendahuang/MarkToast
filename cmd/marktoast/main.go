@@ -46,6 +46,7 @@ It is local-first by design: no account, no cloud, no telemetry.`,
 	cmd.PersistentFlags().StringVar(&flagRoot, "root", "", "memory repository root (overrides config)")
 	cmd.AddCommand(
 		newVersionCmd(),
+		newUpdateCmd(),
 		newInitCmd(),
 		newStatusCmd(),
 		newDoctorCmd(),
