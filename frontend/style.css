@@ -41,8 +41,7 @@
   --ease: cubic-bezier(.22, 1, .36, 1);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
+:root[data-theme="dark"] {
     --bg: #1a1a1e;
     --card: #232327;
     --card-2: #1f1f23;
@@ -71,7 +70,6 @@
     --amber-soft: #3f3220;
     --pop-bg: rgba(38, 38, 43, .96);
     --shadow: 0 16px 44px rgba(0, 0, 0, .55), 0 2px 8px rgba(0, 0, 0, .3), 0 0 0 .5px rgba(255, 255, 255, .1);
-  }
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -861,3 +859,105 @@ a { color: inherit; text-decoration: none; }
   .brand { width: auto; }
   .top-actions { width: auto; }
 }
+
+/* ---- settings --------------------------------------------------------- */
+.settings-stack { display: flex; flex-direction: column; gap: 14px; max-width: 760px; }
+.settings-card {
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+}
+.settings-card h2 {
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.settings-row { display: flex; align-items: center; gap: 10px; min-height: 34px; }
+.settings-label { flex: none; width: 62px; color: var(--muted); font-size: 11.5px; }
+.settings-value {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--fg-2);
+  font: 11.5px var(--code);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-row .button { height: 27px; padding: 0 10px; font-size: 11.5px; }
+.theme-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--seg-track);
+}
+.theme-switch button {
+  height: 24px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: 500 11.5px var(--font);
+  cursor: pointer;
+}
+.theme-switch button.on { background: var(--card); color: var(--fg); box-shadow: var(--seg-edge); }
+.alias-list { display: flex; flex-direction: column; gap: 7px; }
+.alias-row { display: flex; align-items: center; gap: 10px; }
+.alias-key {
+  width: 44%;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font: 10.5px var(--code);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.alias-row input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  outline: 0;
+  background: var(--card-2);
+  color: var(--fg);
+  font: 12px var(--font);
+}
+.alias-row input:focus { border-color: var(--accent); }
+.settings-foot { display: flex; justify-content: flex-end; margin-top: 12px; }
+.icon.on { background: var(--pill); color: var(--fg); }
+
+/* ---- per-memory git history ------------------------------------------ */
+.memory-actions { display: flex; gap: 4px; margin-left: auto; }
+.memory-actions .copy-path { margin-left: 0; }
+.memory-history { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line-2); }
+.memory-history h3 { margin-bottom: 8px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.memory-commit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.memory-commit:hover { background: var(--pill); }
+.memory-commit.on { background: var(--sel); }
+.memory-commit code { flex: none; color: var(--muted); font: 10.5px var(--code); }
+.memory-commit span { min-width: 0; flex: 1; overflow: hidden; color: var(--fg-2); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.memory-commit time { flex: none; color: var(--muted); font: 10.5px var(--code); }
+.diff-box {
+  max-height: 280px;
+  margin-top: 8px;
+  overflow: auto;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--card-2);
+}
+.diff-box pre { padding: 12px 14px; color: var(--fg-2); font: 11px/1.55 var(--code); white-space: pre-wrap; word-break: break-word; }
+.diff-actions { display: flex; justify-content: flex-end; margin-top: 8px; }

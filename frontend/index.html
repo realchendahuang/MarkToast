@@ -4,10 +4,17 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="color-scheme" content="light dark" />
-  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f4f6" />
-  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1a1a1e" />
+  <meta name="theme-color" content="#f4f4f6" />
   <title>MarkToast</title>
   <link rel="icon" href="logo.svg" type="image/svg+xml">
+  <script>
+    try {
+      var pref = localStorage.getItem("marktoast-theme") || "auto";
+      var dark = pref === "dark" || (pref === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.dataset.theme = dark ? "dark" : "light";
+      document.documentElement.style.colorScheme = dark ? "dark" : "light";
+    } catch (error) {}
+  </script>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -32,6 +39,10 @@
     </symbol>
     <symbol id="icon-refresh" viewBox="0 0 20 20">
       <path d="M16.5 8.2A7 7 0 0 0 4.2 5.8L2.8 7.2M2.8 3.8v3.4h3.4M3.5 11.8a7 7 0 0 0 12.3 2.4l1.4-1.4M17.2 16.2v-3.4h-3.4"></path>
+    </symbol>
+    <symbol id="icon-settings" viewBox="0 0 20 20">
+      <circle cx="10" cy="10" r="2.5"></circle>
+      <path d="M10 2.9v2.1M10 15v2.1M2.9 10h2.1M15 10h2.1M5 5l1.5 1.5M13.5 13.5 15 15M15 5l-1.5 1.5M6.5 13.5 5 15"></path>
     </symbol>
     <symbol id="icon-stack" viewBox="0 0 20 20">
       <path d="m10 2.8 7 3.4-7 3.4-7-3.4 7-3.4Z"></path>
@@ -104,6 +115,10 @@
           <svg class="ic"><use href="#icon-branch"></use></svg>
           <span class="side-name">历史</span>
         </button>
+        <button class="side-row" type="button" data-view="settings">
+          <svg class="ic"><use href="#icon-settings"></use></svg>
+          <span class="side-name">设置</span>
+        </button>
       </section>
 
       <section class="side-group" aria-labelledby="projects-label">
@@ -157,6 +172,9 @@
       </button>
       <button class="icon" id="refresh-view" type="button" aria-label="刷新当前视图" title="刷新">
         <svg class="ic"><use href="#icon-refresh"></use></svg>
+      </button>
+      <button class="icon" id="open-settings" data-view="settings" type="button" aria-label="设置" title="设置">
+        <svg class="ic"><use href="#icon-settings"></use></svg>
       </button>
     </div>
   </header>
@@ -221,6 +239,61 @@
           <h1>历史</h1>
         </div>
         <div id="history-results" aria-live="polite"></div>
+      </section>
+
+      <section class="view-panel" id="view-settings" role="tabpanel" aria-label="设置" hidden>
+        <div class="view-head">
+          <h1>设置</h1>
+        </div>
+        <div class="settings-stack">
+          <section class="settings-card">
+            <h2>外观</h2>
+            <div class="theme-switch" id="theme-switch" role="group" aria-label="主题">
+              <button type="button" data-theme-choice="auto">跟随系统</button>
+              <button type="button" data-theme-choice="light">浅色</button>
+              <button type="button" data-theme-choice="dark">深色</button>
+            </div>
+          </section>
+
+          <section class="settings-card">
+            <h2>仓库</h2>
+            <div class="settings-row">
+              <span class="settings-label">根目录</span>
+              <code class="settings-value" id="settings-root">—</code>
+              <button class="icon" id="copy-root" type="button" aria-label="复制根目录" title="复制">
+                <svg class="ic"><use href="#icon-copy"></use></svg>
+              </button>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">记忆</span>
+              <span class="settings-value" id="settings-facts">—</span>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">索引</span>
+              <span class="settings-value" id="settings-index">—</span>
+              <button class="button quiet" id="reindex" type="button">重建索引</button>
+            </div>
+          </section>
+
+          <section class="settings-card">
+            <h2>MCP</h2>
+            <div class="settings-row">
+              <span class="settings-label">Token</span>
+              <code class="settings-value" id="settings-token">—</code>
+              <button class="icon" id="copy-token" type="button" aria-label="复制 MCP token" title="复制">
+                <svg class="ic"><use href="#icon-copy"></use></svg>
+              </button>
+            </div>
+          </section>
+
+          <section class="settings-card">
+            <h2>项目别名</h2>
+            <div class="alias-list" id="alias-list"></div>
+            <div class="settings-foot">
+              <button class="button primary" id="save-aliases" type="button">保存</button>
+            </div>
+          </section>
+        </div>
       </section>
 
     </div>

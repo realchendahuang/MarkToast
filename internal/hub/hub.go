@@ -49,6 +49,12 @@ func Serve(o Options) error {
 	mux.HandleFunc("/api/projects", func(w http.ResponseWriter, r *http.Request) { handleProjects(w, r, o) })
 	mux.HandleFunc("/api/adapters", func(w http.ResponseWriter, r *http.Request) { handleAdapters(w, r) })
 	mux.HandleFunc("/api/git/log", func(w http.ResponseWriter, r *http.Request) { handleGitLog(w, r, o) })
+	mux.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) { handleSettings(w, r, o) })
+	mux.HandleFunc("/api/reindex", func(w http.ResponseWriter, r *http.Request) { handleReindex(w, r, o) })
+	mux.HandleFunc("/api/aliases", func(w http.ResponseWriter, r *http.Request) { handleAliases(w, r, o) })
+	mux.HandleFunc("/api/memory/history", func(w http.ResponseWriter, r *http.Request) { handleMemoryHistory(w, r, o) })
+	mux.HandleFunc("/api/memory/diff", func(w http.ResponseWriter, r *http.Request) { handleMemoryDiff(w, r, o) })
+	mux.HandleFunc("/api/memory/restore", func(w http.ResponseWriter, r *http.Request) { handleMemoryRestore(w, r, o) })
 	mux.Handle("/mcp", MCPHTTPHandler(mcpServer, token))
 
 	if o.FrontendDir != "" {

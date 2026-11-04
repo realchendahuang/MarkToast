@@ -19,6 +19,20 @@ const state = {
   detailLoading: false,
   adapters: [],
   history: [],
+  aliases: {},
+  settings: null,
+  memoryHistory: {
+    path: "",
+    open: false,
+    loading: false,
+    commits: [],
+    error: null,
+    selectedHash: "",
+    patch: "",
+    patchError: null,
+    patchLoading: false,
+    restoring: false,
+  },
   searchController: null,
   searchTimer: 0,
   requestId: 0,
@@ -49,6 +63,41 @@ const els = {
 
 if (/Mac|iPhone|iPad/.test(navigator.platform)) document.body.classList.add("mac");
 if (!/Mac|iPhone|iPad/.test(navigator.platform)) $("search-shortcut").textContent = "Ctrl K";
+
+const THEME_KEY = "marktoast-theme";
+const themeMedia = matchMedia("(prefers-color-scheme: dark)");
+
+function themePreference() {
+  try {
+    return localStorage.getItem(THEME_KEY) || "auto";
+  } catch {
+    return "auto";
+  }
+}
+
+function applyTheme(preference = themePreference()) {
+  const dark = preference === "dark" || (preference === "auto" && themeMedia.matches);
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  document.documentElement.style.colorScheme = dark ? "dark" : "light";
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", dark ? "#1a1a1e" : "#f4f4f6");
+  document.querySelectorAll("[data-theme-choice]").forEach((button) => {
+    button.classList.toggle("on", button.dataset.themeChoice === preference);
+  });
+}
+
+themeMedia.addEventListener("change", () => {
+  if (themePreference() === "auto") applyTheme("auto");
+});
+
+function setTheme(preference) {
+  try {
+    localStorage.setItem(THEME_KEY, preference);
+  } catch {
+    // Private mode or a locked-down shell: apply for this session only.
+  }
+  applyTheme(preference);
+}
 
 function icon(name, className = "ic") {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -198,6 +247,7 @@ async function loadStatus({ announce = false } = {}) {
     state.root = data.root || "";
     hideHubAlert();
     setHubState("online", "在线");
+    await loadAliases();
     $("all-count").textContent = String(data.facts ?? 0);
     $("repo-count").textContent = `${Number(data.facts) || 0} 条`;
     $("repo-count").title = `${Number(data.facts) || 0} 条记忆`;
@@ -239,8 +289,19 @@ function commitLabel(subject) {
 
 function projectLabel(key) {
   const value = String(key || "");
+  if (state.aliases && state.aliases[value]) return state.aliases[value];
   const match = value.match(/^(.*)-[0-9a-f]{16}$/);
   return match ? match[1] : value;
+}
+
+async function loadAliases() {
+  try {
+    const data = await api("/api/aliases");
+    state.aliases = data.aliases || {};
+  } catch {
+    state.aliases = {};
+  }
+  return state.aliases;
 }
 
 function renderProjects(projects) {
@@ -495,19 +556,32 @@ function renderExpandedMemory(result) {
     meta.appendChild(project);
   }
   meta.appendChild(element("span", "expanded-time", relativeDate(detail.updated || result.updated)));
+  const path = detail.path || result.path;
+  const actions = element("div", "memory-actions");
+  const history = element("button", "icon copy-path", "");
+  history.type = "button";
+  history.title = "版本历史";
+  history.setAttribute("aria-label", "查看这条记忆的版本历史");
+  history.append(icon("branch"));
+  history.addEventListener("click", () => toggleMemoryHistory(path));
   const copy = element("button", "icon copy-path", "");
   copy.type = "button";
-  copy.title = detail.path || result.path;
+  copy.title = path;
   copy.setAttribute("aria-label", "复制记忆路径");
   copy.append(icon("copy"));
-  copy.addEventListener("click", () => copyPath(detail.path || result.path));
-  meta.appendChild(copy);
+  copy.addEventListener("click", () => copyPath(path));
+  actions.append(history, copy);
+  meta.appendChild(actions);
   box.appendChild(meta);
 
   const body = element("div", "markdown-body");
   renderMarkdown(body, detail.body || "");
   if (!body.textContent.trim()) body.appendChild(element("p", "muted", "没有正文。"));
   box.appendChild(body);
+  const currentPath = detail.path || result.path;
+  if (state.memoryHistory.open && state.memoryHistory.path === currentPath) {
+    box.appendChild(renderMemoryHistory(currentPath));
+  }
   return box;
 }
 
@@ -784,7 +858,7 @@ function renderHistory() {
   els.historyRegion.appendChild(list);
 }
 
-const VIEW_LABELS = { memories: "全部记忆", adapters: "适配器", history: "历史" };
+const VIEW_LABELS = { memories: "全部记忆", adapters: "适配器", history: "历史", settings: "设置" };
 
 function switchView(view) {
   state.view = view;
@@ -801,6 +875,7 @@ function switchView(view) {
   positionSegThumb();
   if (view === "adapters" && !state.adapters.length) loadAdapters();
   if (view === "history") loadHistory();
+  if (view === "settings") loadSettings();
   if (view === "memories" && !state.results.length) loadMemories();
 }
 
@@ -933,6 +1008,10 @@ async function refreshCurrent() {
   } else if (state.view === "history") {
     await loadStatus();
     refreshed = await loadHistory();
+  } else if (state.view === "settings") {
+    await loadStatus();
+    await loadSettings();
+    refreshed = true;
   } else {
     refreshed = Boolean(await loadStatus());
   }
@@ -1010,6 +1089,13 @@ function bindEvents() {
 
   $("new-memory-top").addEventListener("click", openDialog);
   $("refresh-view").addEventListener("click", refreshCurrent);
+  document.querySelectorAll("[data-theme-choice]").forEach((button) => {
+    button.addEventListener("click", () => setTheme(button.dataset.themeChoice));
+  });
+  $("copy-root").addEventListener("click", () => copyText($("settings-root").textContent, "根目录"));
+  $("copy-token").addEventListener("click", () => copyText($("settings-token").textContent, "Token"));
+  $("reindex").addEventListener("click", rebuildIndex);
+  $("save-aliases").addEventListener("click", saveAliases);
   $("retry-hub").addEventListener("click", retryAll);
   $("close-dialog").addEventListener("click", closeDialog);
   $("cancel-dialog").addEventListener("click", closeDialog);
@@ -1033,9 +1119,247 @@ function bindEvents() {
   });
 }
 
+
+function copyText(value, label) {
+  if (!value || value === "—") return;
+  navigator.clipboard.writeText(value).then(
+    () => toast(`${label}已复制`),
+    () => toast("复制失败", "error"),
+  );
+}
+
+async function loadSettings() {
+  try {
+    const data = await api("/api/settings");
+    state.settings = data;
+    state.aliases = data.aliases || state.aliases;
+    renderSettings();
+  } catch (error) {
+    toast(formatError(error), "error");
+  }
+}
+
+function renderSettings() {
+  const settings = state.settings;
+  if (!settings) return;
+  $("settings-root").textContent = settings.root || "—";
+  $("settings-root").title = settings.root || "";
+  $("settings-facts").textContent = `${settings.facts || 0} 条`;
+  const idx = settings.index || {};
+  $("settings-index").textContent = idx.builtAt
+    ? `${idx.facts || 0} 条 · ${formatDate(idx.builtAt, true)}`
+    : "未建立";
+  $("settings-token").textContent = settings.token || "—";
+  renderAliasList(settings);
+  applyTheme();
+}
+
+function renderAliasList(settings) {
+  const list = $("alias-list");
+  clear(list);
+  const projects = state.status?.projects || [];
+  if (!projects.length) {
+    list.appendChild(element("p", "muted", "还没有项目"));
+    return;
+  }
+  const aliases = settings?.aliases || state.aliases || {};
+  projects.forEach((project) => {
+    const row = element("div", "alias-row");
+    row.dataset.key = project.key;
+    row.appendChild(element("code", "alias-key", project.key));
+    const input = element("input", "");
+    input.type = "text";
+    input.maxLength = 80;
+    input.value = aliases[project.key] || "";
+    input.placeholder = projectLabel(project.key);
+    input.setAttribute("aria-label", `项目 ${project.key} 的显示名`);
+    row.appendChild(input);
+    list.appendChild(row);
+  });
+}
+
+async function saveAliases() {
+  const aliases = {};
+  document.querySelectorAll(".alias-row").forEach((row) => {
+    const value = row.querySelector("input")?.value.trim();
+    if (value) aliases[row.dataset.key] = value;
+  });
+  try {
+    const data = await api("/api/aliases", {
+      method: "PUT",
+      body: JSON.stringify({ aliases }),
+    });
+    state.aliases = data.aliases || {};
+    if (state.settings) state.settings.aliases = state.aliases;
+    renderAliasList(state.settings);
+    renderProjects(state.status?.projects || []);
+    renderProjectOptions(state.status?.projects || []);
+    updateHeading();
+    if (state.view === "memories") renderMemories();
+    toast("已保存");
+  } catch (error) {
+    toast(formatError(error), "error");
+  }
+}
+
+async function rebuildIndex() {
+  const button = $("reindex");
+  button.disabled = true;
+  try {
+    const data = await api("/api/reindex", { method: "POST" });
+    toast(`索引已重建 · ${data.facts || 0} 条`);
+    await loadSettings();
+    await loadStatus();
+    if (state.view === "memories") loadMemories();
+  } catch (error) {
+    toast(formatError(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function renderMemoryHistory(path) {
+  const history = state.memoryHistory;
+  const box = element("div", "memory-history");
+  box.appendChild(element("h3", "", "历史"));
+  if (history.loading) {
+    const loading = element("div", "detail-loading");
+    loading.append(element("span", "skeleton"), element("span", "skeleton"));
+    box.appendChild(loading);
+    return box;
+  }
+  if (history.error) {
+    const error = element("div", "expanded-error");
+    error.append(
+      icon("warning"),
+      element("span", "", formatError(history.error)),
+      (() => {
+        const retry = element("button", "text-button", "重试");
+        retry.type = "button";
+        retry.addEventListener("click", () => toggleMemoryHistory(path, true));
+        return retry;
+      })(),
+    );
+    box.appendChild(error);
+    return box;
+  }
+  if (!history.commits.length) {
+    box.appendChild(element("p", "muted", "还没有提交记录"));
+    return box;
+  }
+  const list = element("div", "memory-commits");
+  history.commits.forEach((commit) => {
+    const row = element("div", `memory-commit${commit.hash === history.selectedHash ? " on" : ""}`);
+    row.append(
+      element("code", "", String(commit.hash || "").slice(0, 8)),
+      element("span", "", commitLabel(commit.subject || "")),
+      element("time", "", commit.date || ""),
+    );
+    row.addEventListener("click", () => loadMemoryDiff(path, commit.hash));
+    list.appendChild(row);
+  });
+  box.appendChild(list);
+  if (history.patchLoading) {
+    box.appendChild(element("div", "detail-loading"));
+  } else if (history.patchError) {
+    box.appendChild(element("p", "muted", formatError(history.patchError)));
+  } else if (history.patch) {
+    const actions = element("div", "diff-actions");
+    const restore = element("button", "button quiet", history.restoring ? "恢复中…" : "恢复此版本");
+    restore.type = "button";
+    restore.disabled = history.restoring;
+    restore.addEventListener("click", () => restoreMemoryVersion(path, history.selectedHash));
+    actions.appendChild(restore);
+    box.appendChild(actions);
+    const diff = element("div", "diff-box");
+    diff.appendChild(element("pre", "", history.patch));
+    box.appendChild(diff);
+  }
+  return box;
+}
+
+async function toggleMemoryHistory(path, force = false) {
+  const history = state.memoryHistory;
+  if (!force && history.open && history.path === path && !history.loading) {
+    history.open = false;
+    renderMemories();
+    return;
+  }
+  Object.assign(history, {
+    path,
+    open: true,
+    loading: true,
+    commits: [],
+    error: null,
+    selectedHash: "",
+    patch: "",
+    patchError: null,
+    patchLoading: false,
+    restoring: false,
+  });
+  renderMemories();
+  try {
+    const data = await api(`/api/memory/history?path=${encodeURIComponent(path)}`);
+    if (history.path !== path) return;
+    history.commits = data.commits || [];
+    history.loading = false;
+  } catch (error) {
+    if (history.path !== path) return;
+    history.loading = false;
+    history.error = error;
+  }
+  renderMemories();
+}
+
+async function loadMemoryDiff(path, hash) {
+  const history = state.memoryHistory;
+  Object.assign(history, { selectedHash: hash, patch: "", patchError: null, patchLoading: true });
+  renderMemories();
+  try {
+    const data = await api(`/api/memory/diff?path=${encodeURIComponent(path)}&hash=${encodeURIComponent(hash)}`);
+    if (history.selectedHash !== hash) return;
+    history.patch = data.patch || "";
+  } catch (error) {
+    if (history.selectedHash !== hash) return;
+    history.patchError = error;
+  }
+  history.patchLoading = false;
+  renderMemories();
+}
+
+async function restoreMemoryVersion(path, hash) {
+  if (!hash) return;
+  if (!window.confirm("恢复这个版本？会生成一次新的提交。")) return;
+  const history = state.memoryHistory;
+  history.restoring = true;
+  renderMemories();
+  try {
+    await api("/api/memory/restore", {
+      method: "POST",
+      body: JSON.stringify({ path, hash }),
+    });
+    state.details.delete(path);
+    toast("已恢复");
+    await selectMemory(path, true);
+    const data = await api(`/api/memory/history?path=${encodeURIComponent(path)}`);
+    history.commits = data.commits || [];
+    history.selectedHash = "";
+    history.patch = "";
+    history.patchError = null;
+    await loadStatus();
+    renderMemories();
+  } catch (error) {
+    toast(formatError(error), "error");
+  } finally {
+    history.restoring = false;
+    renderMemories();
+  }
+}
+
 async function init() {
   bindEvents();
   renderMemoryLoading();
+  applyTheme();
   const status = await loadStatus();
   if (status) await loadMemories();
   else renderMemoryError(new Error("无法连接本地 hub。请运行 `marktoast serve` 后重试。"));
