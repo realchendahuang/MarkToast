@@ -125,6 +125,16 @@ harness --stdin JSON--> marktoast hook --event session-start --agent zcode
 - [ ] 会话摄入读取器（参考 deja-vu，MIT）
 - [ ] 验收：用 ai-memory 的 managed-harness 协议当 checklist（会话身份、只读、pre-turn 注入、幂等）
 
+## 7.5 当前实现状态（2026-11-04）
+
+- `marktoast adapters list`：5 个内置描述符（ZCode/DSH/Hermes/Claude Code/Codex）。
+- `marktoast adapters install zcode [--apply]`：**已实现**。dry-run 打印计划；`--apply` 合并 hooks + MCP、
+  备份配置、保留第三方条目；`uninstall --apply` 精确移除。
+- `marktoast adapters install dsh|hermes`：**staged 半自动**，产出
+  `~/.marktoast/adapters/<id>/hooks.json` + `README.txt` 说明，需用户按说明粘贴。
+- `marktoast hook --event ... --agent ...`：已实现事件记录 + SessionStart 注入。
+- `marktoast mcp`（stdio）与 `serve` 的 `/mcp`（streamable HTTP）：已实现 4 个 memory 工具。
+
 ## 8. 风险
 
 - 上游 harness 版本漂移（hooks schema 变更）→ descriptor 带版本探测 + fixture；注入失败退回指令投影。

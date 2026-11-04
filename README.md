@@ -83,17 +83,22 @@ MarkToast treats memory as what it should be: **a repository you own.**
 
 ## Status
 
-**Private pre-alpha — M0 done, M1 in progress.**
+**Private pre-alpha — core loop shipped (M1–M3), desktop shell next (M4).**
 
-- [x] Brand, product positioning, tech-stack decisions, architecture docs
-- [x] Go module + CLI (`version`, `init`, `status`, `search`, `reindex`,
-      `adapters list`, `serve`)
-- [x] Embedded adapter descriptors (ZCode, DSH, Hermes, Codex, Claude Code)
-- [x] Local hub with `/health` + `/api/status`; vanilla Web UI preview
-- [ ] SQLite FTS5 + CJK indexing (M1 spike)
-- [ ] Git batched commits + `diff`/`rollback` (M1)
-- [ ] Adapter projection/import for the first three harnesses (M2)
-- [ ] MCP server (M3), Wails v3 shell (M4)
+- [x] Go module + CLI (`version`, `init`, `add`, `get`, `search`, `reindex`,
+      `log`, `status`, `hook`, `mcp`, `adapters`, `serve`, `ui`)
+- [x] SQLite FTS5 index with a dependency-free CJK bigram tokenizer
+      (two-character Chinese queries work; OR + BM25 ranking)
+- [x] Markdown repository with Git commits (one commit per mutation for now;
+      debounced batching is next)
+- [x] Adapter descriptors with hooks/MCP/session schema; idempotent ZCode
+      installer (hooks + MCP, preserves third-party entries); DSH/Hermes staged
+- [x] Local hub: status/search/memory/memories/projects/adapters/git-log API;
+      MCP server over stdio and streamable HTTP (`memory_search/get/save/list`)
+- [x] Vanilla web UI inspired by Magpie: search, detail, frontmatter, Git
+      history, adapters, save form (Cmd/Ctrl+K)
+- [ ] Wails v3 desktop shell (M4)
+- [ ] Debounced commits, session ingestion, Hermes memory provider, more adapters
 
 See [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -102,10 +107,13 @@ See [docs/ROADMAP.md](docs/ROADMAP.md).
 ```bash
 make build
 ./bin/marktoast version
-./bin/marktoast init                 # creates ~/Memory + git repo
-./bin/marktoast status
-./bin/marktoast search "发版"
-./bin/marktoast serve                # http://127.0.0.1:3777 (web UI preview)
+./bin/marktoast init                         # creates ~/Memory + git repo
+./bin/marktoast add --name release-rollback \
+  --description "2026-09 发版回滚原因" --type project --body "发版后首页闪屏，决定回滚。"
+./bin/marktoast search "回滚"
+./bin/marktoast serve                        # http://127.0.0.1:3777 (web UI)
+./bin/marktoast mcp                          # stdio MCP server for harnesses
+./bin/marktoast adapters install zcode       # dry run; add --apply to write
 ```
 
 Requirements: Go 1.26+, git. macOS first; Windows/Linux keep building but are

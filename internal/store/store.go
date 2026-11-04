@@ -103,14 +103,15 @@ func SanitizeSlug(value string) string {
 			b.WriteRune('-')
 		}
 	}
-	slug := strings.Trim(b.String(), "-")
+	slug := strings.Trim(b.String(), "-.")
 	for strings.Contains(slug, "--") {
 		slug = strings.ReplaceAll(slug, "--", "-")
 	}
 	if len(slug) > 48 {
 		slug = slug[:48]
 	}
-	if slug == "" {
+	slug = strings.Trim(slug, "-.")
+	if slug == "" || slug == "." || slug == ".." {
 		return "project"
 	}
 	return slug

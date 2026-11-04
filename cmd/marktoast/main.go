@@ -48,6 +48,11 @@ It is local-first by design: no account, no cloud, no telemetry.`,
 		newStatusCmd(),
 		newSearchCmd(),
 		newReindexCmd(),
+		newAddCmd(),
+		newGetCmd(),
+		newLogCmd(),
+		newHookCmd(),
+		newMCPCmd(),
 		newAdaptersCmd(),
 		newServeCmd(),
 		newUICmd(),
@@ -92,6 +97,9 @@ func newInitCmd() *cobra.Command {
 			}
 			if err := store.Init(cfg.Root); err != nil {
 				return err
+			}
+			if _, err := index.Rebuild(cfg.Root); err != nil {
+				return fmt.Errorf("create index: %w", err)
 			}
 			created := false
 			if gitx.Available() {
@@ -150,6 +158,14 @@ func newStatusCmd() *cobra.Command {
 			fmt.Printf("facts     %d\n", len(facts))
 			fmt.Printf("projects  %d (%s)\n", len(names), strings.Join(names, ", "))
 			fmt.Printf("adapters  %d\n", len(adapters))
+			stats := index.Inspect(cfg.Root)
+			if stats.Facts == 0 {
+				fmt.Println("index     empty (run `marktoast reindex`)")
+			} else if stats.BuiltAt == "" {
+				fmt.Printf("index     %d facts (incremental)\n", stats.Facts)
+			} else {
+				fmt.Printf("index     %d facts, built %s\n", stats.Facts, stats.BuiltAt)
+			}
 			if gitx.Available() {
 				status, err := gitx.Status(cfg.Root)
 				if err != nil {
@@ -194,7 +210,7 @@ func newSearchCmd() *cobra.Command {
 			}
 			for _, r := range results {
 				rel, _ := filepath.Rel(cfg.Root, r.Fact.Path)
-				fmt.Printf("%-60s  %5.1f  %s\n", rel, r.Score, oneLine(r.Snippet))
+				fmt.Printf("%-58s  %-10s  %s\n", rel, r.Fact.Type, oneLine(r.Snippet))
 			}
 			return nil
 		},
@@ -208,11 +224,15 @@ func newSearchCmd() *cobra.Command {
 func newReindexCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "reindex",
-		Short: "Regenerate MEMORY.md indexes from the Markdown source",
+		Short: "Rebuild the full-text index and MEMORY.md indexes from Markdown",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := resolve()
 			if err != nil {
 				return err
+			}
+			n, err := index.Rebuild(cfg.Root)
+			if err != nil {
+				return fmt.Errorf("rebuild fts index: %w", err)
 			}
 			if err := store.WriteIndexes(cfg.Root); err != nil {
 				return err
@@ -223,11 +243,11 @@ func newReindexCmd() *cobra.Command {
 					return err
 				}
 				if committed {
-					fmt.Println("✔ indexes regenerated and committed")
+					fmt.Printf("✔ indexed %d facts and committed\n", n)
 					return nil
 				}
 			}
-			fmt.Println("✔ indexes regenerated")
+			fmt.Printf("✔ indexed %d facts\n", n)
 			return nil
 		},
 	}
@@ -238,21 +258,26 @@ func newAdaptersCmd() *cobra.Command {
 		Use:   "adapters",
 		Short: "List harness adapters",
 	}
-	cmd.AddCommand(&cobra.Command{
-		Use:   "list",
-		Short: "List available adapters",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			adapters, err := adapter.All(userAdaptersDir())
-			if err != nil {
-				return err
-			}
-			for _, a := range adapters {
-				caps := strings.Join(a.Capabilities, ",")
-				fmt.Printf("%-12s  %-22s  tier=%-10s  caps=%s\n", a.ID, a.Title, a.Tier, caps)
-			}
-			return nil
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:   "list",
+			Short: "List available adapters",
+			RunE: func(cmd *cobra.Command, args []string) error {
+				adapters, err := adapter.All(userAdaptersDir())
+				if err != nil {
+					return err
+				}
+				for _, a := range adapters {
+					caps := strings.Join(a.Capabilities, ",")
+					fmt.Printf("%-12s  %-22s  tier=%-10s  caps=%s\n", a.ID, a.Title, a.Tier, caps)
+				}
+				return nil
+			},
 		},
-	})
+		newAdapterInstallCmd(),
+		newAdapterUninstallCmd(),
+		newAdapterStatusCmd(),
+	)
 	return cmd
 }
 

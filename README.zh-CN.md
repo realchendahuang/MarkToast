@@ -77,17 +77,19 @@ MarkToast 把记忆还原成它本该有的样子：**一个你拥有的仓库�
 
 ## 现状
 
-**私有 pre-alpha —— M0 完成，M1 进行中。**
+**私有 pre-alpha —— 核心闭环已跑通（M1–M3），桌面壳下一步（M4）。**
 
-- [x] 品牌、产品定位、技术栈决策、架构文档
-- [x] Go module + CLI（`version` / `init` / `status` / `search` / `reindex` /
-      `adapters list` / `serve`）
-- [x] 内置适配器描述符（ZCode、DSH、Hermes、Codex、Claude Code）
-- [x] 本地 hub（`/health` + `/api/status`）与原生 Web UI 预览
-- [ ] SQLite FTS5 + CJK 索引（M1 spike）
-- [ ] Git 批量提交与 `diff` / `rollback`（M1）
-- [ ] 三家 harness 的投影与导入（M2）
-- [ ] MCP server（M3）、Wails v3 桌面壳（M4）
+- [x] Go module + CLI（`version` / `init` / `add` / `get` / `search` / `reindex` /
+      `log` / `status` / `hook` / `mcp` / `adapters` / `serve` / `ui`）
+- [x] SQLite FTS5 索引 + 零依赖 CJK bigram 分词（两字中文可命中；OR + BM25 排序）
+- [x] Markdown 仓库 + Git 提交（当前每次变更一次提交，debounce 批量提交待做）
+- [x] 适配器描述符（hooks / MCP / session）；ZCode 幂等安装器（hooks + MCP，保留第三方条目）；
+      DSH / Hermes 已做半自动 staged 安装
+- [x] 本地 hub：status/search/memory/memories/projects/adapters/git-log API；
+      MCP server（stdio + streamable HTTP，`memory_search/get/save/list`）
+- [x] 原生 Web UI（参考 Magpie）：搜索、详情、frontmatter、Git 历史、适配器、新建记忆（Cmd/Ctrl+K）
+- [ ] Wails v3 桌面壳（M4）
+- [ ] debounce 提交、会话摄取、Hermes memory provider、更多适配器
 
 详见 [docs/ROADMAP.md](docs/ROADMAP.md)。
 
@@ -96,10 +98,13 @@ MarkToast 把记忆还原成它本该有的样子：**一个你拥有的仓库�
 ```bash
 make build
 ./bin/marktoast version
-./bin/marktoast init                 # 创建 ~/Memory + git 仓库
-./bin/marktoast status
-./bin/marktoast search "发版"
-./bin/marktoast serve                # http://127.0.0.1:3777（Web UI 预览）
+./bin/marktoast init                         # 创建 ~/Memory + git 仓库
+./bin/marktoast add --name release-rollback \
+  --description "2026-09 发版回滚原因" --type project --body "发版后首页闪屏，决定回滚。"
+./bin/marktoast search "回滚"
+./bin/marktoast serve                        # http://127.0.0.1:3777（Web UI）
+./bin/marktoast mcp                          # 给 harness 的 stdio MCP server
+./bin/marktoast adapters install zcode       # 默认 dry-run；加 --apply 写入
 ```
 
 依赖：Go 1.26+、git。macOS 优先；Windows/Linux 保持可编译，但不是 v1 目标。

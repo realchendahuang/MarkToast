@@ -1,7 +1,8 @@
 # 桌面壳（Wails v3）
 
-> 状态：M4 才开工。技术栈已定（见 [TECH-STACK.md](TECH-STACK.md)），Wails v3 的 beta
-> 风险已被接受：**锁版本 + 保留 Web UI 兜底**。
+> 状态：**Web UI 已完成并可用**（`marktoast serve` 打开 http://127.0.0.1:3777）；
+> Wails v3 桌面壳是 M4 剩余项。技术栈已定（见 [TECH-STACK.md](TECH-STACK.md)），
+> beta 风险已被接受：**锁版本 + 保留 Web UI 兜底**。
 
 ## 为什么现在不写
 

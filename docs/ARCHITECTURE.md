@@ -158,6 +158,49 @@ tier: native
 - 无遥测、无云默认值；`--root` 可指向加密卷。
 - 公开仓库前清理所有个人记忆样例与 token。
 
-## 11. 里程碑
+
+## 12. 已实现的接口面（v0）
+
+### 12.1 HTTP API（hub，loopback）
+
+| 方法 | 路径 | 作用 |
+|---|---|---|
+| GET | `/api/status` | 版本、仓库、facts、projects、adapters、index、git |
+| GET | `/api/search?q=&project=&type=&limit=` | 排名搜索（FTS5 + BM25） |
+| GET | `/api/memory?path=` / `?name=` | 单条记忆（frontmatter + body + raw） |
+| POST | `/api/memory` | 保存记忆（写 Markdown → 索引 → `MEMORY.md` → commit） |
+| GET | `/api/memories?project=` | 列表 |
+| GET | `/api/projects` | 项目与 facts 计数 |
+| GET | `/api/adapters` | 适配器描述符（hooks/mcp 元数据） |
+| GET | `/api/git/log?n=` | 最近提交 |
+| POST | `/mcp` | MCP Streamable HTTP（Bearer token 来自 `<root>/.marktoast/token`） |
+
+### 12.2 MCP 工具
+
+`memory_search` / `memory_get` / `memory_save` / `memory_list`。
+stdio 入口是 `marktoast mcp`；HTTP 入口由 `marktoast serve` 提供。
+
+### 12.3 Hook 协议
+
+`marktoast hook --event <event> --agent <id>`：
+
+- 从 stdin 读 harness 事件 JSON，追加到 `<root>/.marktoast/events.ndjson`（T2 摄取原料）；
+- `SessionStart` 时输出 `{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"..."}}`，
+  内容是该项目的 `MEMORY.md`（或生成的紧凑索引），超过 6000 字符截断；
+- 其它事件输出 `{}`，兼容要求 JSON 的 harness。
+
+注入是否生效由 harness 决定：ZCode 支持 `additionalContext`；DSH 的 SessionStart 是 detached，
+走 MCP 兜底；Hermes 忽略 on_session_start 输出，要在 `pre_llm_call` 打印 `{"context": ...}`（M2 做）。
+
+### 12.4 适配器安装语义
+
+`marktoast adapters install <id>` 默认 dry-run，`--apply` 才写：
+
+- ZCode：合并 `~/.zcode/cli/config.json` 的 `hooks`（6 事件）与 `mcp.servers.marktoast`，
+  保留第三方条目；写前备份；`uninstall --apply` 精确移除。
+- DSH / Hermes：staged 到 `~/.marktoast/adapters/<id>/` 并打印必须人工粘贴的片段
+  （Cordis patch / Hermes YAML）；不假装一键。
+
+## 13. 里程碑
 
 见 [ROADMAP.md](ROADMAP.md)。核心顺序：**store → index → git → CLI → adapters → hub → UI**。

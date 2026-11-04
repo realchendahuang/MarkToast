@@ -3,52 +3,330 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0e0f12" />
   <title>MarkToast · 马克吐司</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <span class="brand-mark">◍</span>
-      <span class="brand-name">MarkToast</span>
-      <span class="brand-sub">马克吐司</span>
+  <svg class="icon-sprite" aria-hidden="true">
+    <symbol id="icon-search" viewBox="0 0 24 24">
+      <circle cx="11" cy="11" r="6.5"></circle>
+      <path d="m16 16 4 4"></path>
+    </symbol>
+    <symbol id="icon-plus" viewBox="0 0 24 24">
+      <path d="M12 5v14M5 12h14"></path>
+    </symbol>
+    <symbol id="icon-stack" viewBox="0 0 24 24">
+      <path d="m12 3 8 4-8 4-8-4 8-4Z"></path>
+      <path d="m4 12 8 4 8-4M4 17l8 4 8-4"></path>
+    </symbol>
+    <symbol id="icon-folder" viewBox="0 0 24 24">
+      <path d="M3.5 7.5h6l2-2h9v13h-17v-11Z"></path>
+    </symbol>
+    <symbol id="icon-file" viewBox="0 0 24 24">
+      <path d="M6 3.5h8l4 4v13H6v-17Z"></path>
+      <path d="M14 3.5v4h4M9 12h6M9 15.5h6"></path>
+    </symbol>
+    <symbol id="icon-grid" viewBox="0 0 24 24">
+      <rect x="4" y="4" width="6" height="6" rx="1"></rect>
+      <rect x="14" y="4" width="6" height="6" rx="1"></rect>
+      <rect x="4" y="14" width="6" height="6" rx="1"></rect>
+      <rect x="14" y="14" width="6" height="6" rx="1"></rect>
+    </symbol>
+    <symbol id="icon-clock" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="8.5"></circle>
+      <path d="M12 7v5l3.5 2"></path>
+    </symbol>
+    <symbol id="icon-branch" viewBox="0 0 24 24">
+      <circle cx="7" cy="5" r="2"></circle>
+      <circle cx="17" cy="7" r="2"></circle>
+      <circle cx="7" cy="19" r="2"></circle>
+      <path d="M7 7v10M9 10h3a5 5 0 0 0 5-5V7"></path>
+    </symbol>
+    <symbol id="icon-plug" viewBox="0 0 24 24">
+      <path d="M8 12h8v3a4 4 0 0 1-4 4 4 4 0 0 1-4-4v-3Z"></path>
+      <path d="M9 4v5M15 4v5M12 19v2"></path>
+    </symbol>
+    <symbol id="icon-chevron-down" viewBox="0 0 24 24">
+      <path d="m7 9.5 5 5 5-5"></path>
+    </symbol>
+    <symbol id="icon-chevron-right" viewBox="0 0 24 24">
+      <path d="m9.5 7 5 5-5 5"></path>
+    </symbol>
+    <symbol id="icon-copy" viewBox="0 0 24 24">
+      <rect x="8" y="8" width="11" height="11" rx="2"></rect>
+      <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
+    </symbol>
+    <symbol id="icon-close" viewBox="0 0 24 24">
+      <path d="m6 6 12 12M18 6 6 18"></path>
+    </symbol>
+    <symbol id="icon-warning" viewBox="0 0 24 24">
+      <path d="M12 3 2.8 20h18.4L12 3Z"></path>
+      <path d="M12 9v5M12 17.5v.1"></path>
+    </symbol>
+    <symbol id="icon-refresh" viewBox="0 0 24 24">
+      <path d="M20 7v5h-5M4 17v-5h5"></path>
+      <path d="M6.2 9a7 7 0 0 1 11.7-2L20 9M4 15l2.1 2A7 7 0 0 0 17.8 15"></path>
+    </symbol>
+    <symbol id="icon-terminal" viewBox="0 0 24 24">
+      <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+      <path d="m7 9 3 3-3 3M12.5 15H17"></path>
+    </symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24">
+      <path d="m5 12.5 4.5 4.5L19 7"></path>
+    </symbol>
+    <symbol id="icon-menu" viewBox="0 0 24 24">
+      <path d="M4 7h16M4 12h16M4 17h16"></path>
+    </symbol>
+    <symbol id="icon-external" viewBox="0 0 24 24">
+      <path d="M14 4h6v6M20 4l-9 9"></path>
+      <path d="M18 13v7H4V6h7"></path>
+    </symbol>
+  </svg>
+
+  <div class="app-shell">
+    <header class="topbar">
+      <button class="icon-button mobile-menu" id="sidebar-toggle" type="button" aria-label="打开侧栏" aria-expanded="false">
+        <svg class="icon"><use href="#icon-menu"></use></svg>
+      </button>
+      <a class="brand" href="#" aria-label="MarkToast 首页">
+        <span class="brand-mark" aria-hidden="true">◍</span>
+        <span class="brand-name">MarkToast</span>
+        <span class="brand-separator" aria-hidden="true">·</span>
+        <span class="brand-cn">马克吐司</span>
+      </a>
+      <div class="hub-state" id="hub-state" role="status" aria-live="polite">
+        <span class="status-dot"></span>
+        <span id="hub-state-text">正在连接本地 hub</span>
+      </div>
+
+      <div class="global-search-wrap">
+        <svg class="icon search-icon" aria-hidden="true"><use href="#icon-search"></use></svg>
+        <input
+          id="global-search"
+          class="global-search"
+          type="search"
+          placeholder="搜索记忆、路径或代码…"
+          aria-label="全局搜索"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <span class="shortcut" aria-hidden="true"><kbd>⌘</kbd><kbd>K</kbd></span>
+        <button class="search-clear" id="search-clear" type="button" aria-label="清空搜索" hidden>
+          <svg class="icon"><use href="#icon-close"></use></svg>
+        </button>
+      </div>
+
+      <div class="topbar-actions">
+        <a class="icon-button" href="/api/status" target="_blank" rel="noreferrer" aria-label="查看状态 API" title="查看状态 API">
+          <svg class="icon"><use href="#icon-external"></use></svg>
+        </a>
+        <button class="button button-accent topbar-new" id="new-memory-top" type="button">
+          <svg class="icon"><use href="#icon-plus"></use></svg>
+          <span>新建记忆</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside class="sidebar" id="sidebar" aria-label="记忆仓库导航">
+        <nav class="nav-block" aria-label="记忆视图">
+          <button class="nav-row is-active" id="all-memories" type="button" data-project="">
+            <svg class="icon"><use href="#icon-stack"></use></svg>
+            <span class="nav-label">全部记忆</span>
+            <span class="nav-count" id="all-count">—</span>
+          </button>
+          <button class="nav-row" id="recent-memories" type="button">
+            <svg class="icon"><use href="#icon-clock"></use></svg>
+            <span class="nav-label">最近更新</span>
+            <span class="nav-hint">20</span>
+          </button>
+        </nav>
+
+        <section class="sidebar-section" aria-labelledby="projects-heading">
+          <div class="section-heading">
+            <h2 id="projects-heading">项目</h2>
+            <span id="project-total">—</span>
+          </div>
+          <div class="project-list" id="project-list">
+            <div class="sidebar-skeleton"></div>
+            <div class="sidebar-skeleton short"></div>
+            <div class="sidebar-skeleton medium"></div>
+          </div>
+        </section>
+
+        <section class="sidebar-section adapter-section" aria-labelledby="adapters-heading">
+          <div class="section-heading">
+            <h2 id="adapters-heading">适配器</h2>
+            <button class="text-button" id="view-adapters" type="button">查看全部</button>
+          </div>
+          <div class="adapter-mini-list" id="adapter-mini-list">
+            <div class="sidebar-skeleton medium"></div>
+            <div class="sidebar-skeleton short"></div>
+          </div>
+        </section>
+
+        <div class="repo-meta">
+          <div class="repo-meta-head">
+            <svg class="icon"><use href="#icon-terminal"></use></svg>
+            <span>本地仓库</span>
+            <span class="meta-state" id="repo-meta-state">待连接</span>
+          </div>
+          <p class="repo-root mono" id="repo-root">—</p>
+          <p class="repo-version" id="repo-version">MarkToast</p>
+        </div>
+      </aside>
+
+      <main class="main-panel">
+        <div class="panel-toolbar">
+          <div class="view-tabs" role="tablist" aria-label="主视图">
+            <button class="tab is-active" id="tab-memories" type="button" role="tab" aria-selected="true" aria-controls="view-memories" data-view="memories">记忆</button>
+            <button class="tab" id="tab-adapters" type="button" role="tab" aria-selected="false" aria-controls="view-adapters" data-view="adapters">适配器</button>
+            <button class="tab" id="tab-history" type="button" role="tab" aria-selected="false" aria-controls="view-history" data-view="history">历史</button>
+          </div>
+          <button class="icon-button compact" id="refresh-view" type="button" aria-label="刷新当前视图" title="刷新">
+            <svg class="icon"><use href="#icon-refresh"></use></svg>
+          </button>
+        </div>
+
+        <section class="view is-active" id="view-memories" role="tabpanel" aria-labelledby="tab-memories">
+          <header class="list-header">
+            <div>
+              <h1 id="memory-heading">全部记忆</h1>
+              <p id="memory-subtitle">正在读取本地索引…</p>
+            </div>
+            <div class="result-total" id="result-total" aria-live="polite">—</div>
+          </header>
+
+          <div class="filter-row">
+            <label class="select-wrap">
+              <span class="sr-only">项目筛选</span>
+              <select id="project-filter" aria-label="项目筛选">
+                <option value="">全部项目</option>
+              </select>
+              <svg class="icon"><use href="#icon-chevron-down"></use></svg>
+            </label>
+            <label class="select-wrap">
+              <span class="sr-only">类型筛选</span>
+              <select id="type-filter" aria-label="类型筛选">
+                <option value="">全部类型</option>
+                <option value="user">user</option>
+                <option value="feedback">feedback</option>
+                <option value="project">project</option>
+                <option value="reference">reference</option>
+                <option value="decision">decision</option>
+              </select>
+              <svg class="icon"><use href="#icon-chevron-down"></use></svg>
+            </label>
+            <div class="filter-spacer"></div>
+            <button class="sort-button" id="sort-button" type="button" title="按相关度 / 更新时间排序">
+              <svg class="icon"><use href="#icon-grid"></use></svg>
+              <span id="sort-label">相关度</span>
+              <svg class="icon chevron"><use href="#icon-chevron-down"></use></svg>
+            </button>
+          </div>
+
+          <div class="result-region" id="memory-results" aria-live="polite" aria-busy="true"></div>
+        </section>
+
+        <section class="view" id="view-adapters" role="tabpanel" aria-labelledby="tab-adapters" hidden>
+          <header class="list-header">
+            <div>
+              <h1>适配器</h1>
+              <p>连接各类 Agent，让同一份记忆在各处流动。</p>
+            </div>
+            <div class="result-total" id="adapter-count">—</div>
+          </header>
+          <div class="adapters-region" id="adapter-results" aria-live="polite"></div>
+        </section>
+
+        <section class="view" id="view-history" role="tabpanel" aria-labelledby="tab-history" hidden>
+          <header class="list-header">
+            <div>
+              <h1>Git 历史</h1>
+              <p id="git-subtitle">正在读取仓库提交…</p>
+            </div>
+            <div class="git-badge" id="git-badge">检查中</div>
+          </header>
+          <div class="history-region" id="history-results" aria-live="polite"></div>
+        </section>
+      </main>
+
+      <aside class="detail-panel" id="detail-panel" aria-label="记忆详情">
+        <div class="detail-placeholder" id="detail-content">
+          <div class="detail-empty-mark" aria-hidden="true">
+            <span>◍</span>
+          </div>
+          <h2>选择一条记忆</h2>
+          <p>从左侧结果中选择记忆，在这里阅读正文、frontmatter 与路径。</p>
+          <div class="keyboard-hint"><kbd>⌘</kbd><kbd>K</kbd><span>快速搜索</span></div>
+        </div>
+      </aside>
     </div>
-    <div class="status" id="hub-status">connecting…</div>
-  </header>
+  </div>
 
-  <main class="layout">
-    <aside class="sidebar">
-      <input id="search" class="search" type="search" placeholder="搜索记忆…" autocomplete="off" />
-      <div class="section-title">记忆仓库</div>
-      <ul id="projects" class="list muted"></ul>
-      <div class="section-title">适配器</div>
-      <ul id="adapters" class="list muted"></ul>
-    </aside>
+  <div class="sidebar-scrim" id="sidebar-scrim" hidden></div>
 
-    <section class="content">
-      <div class="card">
-        <h1>你的记忆，一个仓库。</h1>
-        <p class="lede">
-          所有 coding agent 共用同一份 Markdown 记忆，Git 管版本，本地跑。
-          这是 v0 的 Web UI 预览（桌面壳 M4）。
-        </p>
-        <dl class="facts">
-          <div><dt>版本</dt><dd id="version">—</dd></div>
-          <div><dt>记忆条数</dt><dd id="fact-count">—</dd></div>
-          <div><dt>仓库根</dt><dd id="root" class="mono">—</dd></div>
-        </dl>
+  <dialog class="memory-dialog" id="memory-dialog" aria-labelledby="dialog-title">
+    <form id="memory-form">
+      <header class="dialog-header">
+        <div>
+          <span class="dialog-mark">◍</span>
+          <h2 id="dialog-title">写一条新记忆</h2>
+        </div>
+        <button class="icon-button" id="close-dialog" type="button" aria-label="关闭">
+          <svg class="icon"><use href="#icon-close"></use></svg>
+        </button>
+      </header>
+      <div class="dialog-body">
+        <div class="form-grid">
+          <label class="field">
+            <span>项目</span>
+            <input id="memory-project" name="project" required placeholder="例如 marktoast" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>类型</span>
+            <span class="select-wrap field-select">
+              <select id="memory-type" name="type" required>
+                <option value="project">project</option>
+                <option value="user">user</option>
+                <option value="feedback">feedback</option>
+                <option value="reference">reference</option>
+                <option value="decision">decision</option>
+              </select>
+              <svg class="icon"><use href="#icon-chevron-down"></use></svg>
+            </span>
+          </label>
+        </div>
+        <label class="field">
+          <span>名称</span>
+          <input id="memory-name" name="name" required placeholder="一句话说清这条记忆" autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>描述 <em>可选</em></span>
+          <input id="memory-description" name="description" placeholder="为搜索结果补充一点上下文" autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>正文 <em>支持 Markdown</em></span>
+          <textarea id="memory-body" name="body" required rows="10" placeholder="## 背景&#10;&#10;记录为什么做这个决定，以及后来的人需要知道什么。"></textarea>
+        </label>
+        <p class="form-error" id="form-error" role="alert" hidden></p>
       </div>
+      <footer class="dialog-footer">
+        <span class="dialog-note">保存后由本地 hub 写入仓库</span>
+        <div class="dialog-actions">
+          <button class="button button-quiet" id="cancel-dialog" type="button">取消</button>
+          <button class="button button-accent" id="submit-memory" type="submit">
+            <svg class="icon"><use href="#icon-check"></use></svg>
+            <span>保存记忆</span>
+          </button>
+        </div>
+      </footer>
+    </form>
+  </dialog>
 
-      <div class="card">
-        <h2>下一步</h2>
-        <pre class="code">marktoast status
-marktoast search "发版"
-marktoast adapters list</pre>
-        <p class="muted">记忆浏览、Git diff 与回滚在 M2–M4 落地。</p>
-      </div>
-    </section>
-  </main>
-
+  <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
   <script src="app.js"></script>
 </body>
 </html>
