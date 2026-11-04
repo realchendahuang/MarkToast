@@ -94,8 +94,8 @@ MarkToast treats memory as what it should be: **a repository you own.**
       `log`, `status`, `hook`, `mcp`, `adapters`, `serve`, `ui`)
 - [x] SQLite FTS5 index with a dependency-free CJK bigram tokenizer
       (two-character Chinese queries work; OR + BM25 ranking)
-- [x] Markdown repository with Git commits (one commit per mutation for now;
-      debounced batching is next)
+- [x] Markdown repository with Git commits; the hub batches writes into a
+      debounced commit (5s quiet period)
 - [x] Adapter descriptors with hooks/MCP/session schema; idempotent ZCode
       installer (hooks + MCP, preserves third-party entries); DSH/Hermes staged
 - [x] Local hub: status/search/memory/memories/projects/adapters/git-log API;
@@ -105,7 +105,7 @@ auto dark, indigo accent), 212px sidebar, breadcrumb header, white list cards an
 rows, **its motion** (view fade-up, segmented thumb glide 280ms, row fold 420ms,
 dialog in/out, skeleton shimmer, reduced-motion), modal, Cmd/Ctrl+K
 - [x] Wails v3.1 desktop shell (`make desktop`; opens the same hub in a native window)
-- [ ] Debounced commits, session ingestion, Hermes memory provider, more adapters
+- [ ] Session ingestion, Hermes memory provider, i18n, TUI, more adapters
 
 See [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -115,13 +115,18 @@ See [docs/ROADMAP.md](docs/ROADMAP.md).
 make build
 ./bin/marktoast version
 ./bin/marktoast init                         # creates ~/Memory + git repo
+./bin/marktoast import zcode                  # import existing harness memories
+./bin/marktoast backup                       # tar.gz snapshot
 ./bin/marktoast add --name release-rollback \
   --description "2026-09 发版回滚原因" --type project --body "发版后首页闪屏，决定回滚。"
 ./bin/marktoast search "回滚"
 ./bin/marktoast serve                        # http://127.0.0.1:3777 (web UI)
 make desktop && ./bin/marktoast-desktop              # native Wails window
 ./bin/marktoast mcp                          # stdio MCP server for harnesses
+./bin/marktoast diff release-rollback        # show the last patch
+./bin/marktoast rollback release-rollback --yes
 ./bin/marktoast adapters install zcode       # dry run; add --apply to write
+make install                                # CLI + MarkToast.app
 ```
 
 Requirements: Go 1.26+, git. macOS first; Windows/Linux keep building but are

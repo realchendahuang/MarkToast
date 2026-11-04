@@ -28,10 +28,13 @@ make desktop
 - [x] `--root` / `--addr` 参数；config 默认值复用
 - [x] Wails v3.1.0 锁版本；链接时的 macOS 版本警告来自上游对象文件，不影响运行
 
+- [x] 菜单栏托盘（显示窗口 / 浏览器打开 / 退出）
+- [x] `.app` 打包脚本（`scripts/install.sh`、`make install`，含图标与 Info.plist）
+- [x] 应用图标（吐司）与 Dock 图标
+
 ## 待办（M4 剩余）
 
-- [ ] 菜单栏 / 托盘常驻与全局快捷键
-- [ ] 应用打包（`.app` + Info.plist）、签名、公证
+- [ ] 签名与公证
 - [ ] 自动更新（Wails updater）
-- [ ] 菜单里的"打开记忆仓库 / 重新索引 / 退出 hub"
-- [ ] 图标与 About 面板
+- [ ] 菜单里的"打开记忆仓库 / 重新索引"
+- [ ] About 面板
