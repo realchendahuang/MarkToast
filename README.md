@@ -105,7 +105,7 @@ auto dark, indigo accent), 212px sidebar, breadcrumb header, white list cards an
 rows, **its motion** (view fade-up, segmented thumb glide 280ms, row fold 420ms,
 dialog in/out, skeleton shimmer, reduced-motion), modal, Cmd/Ctrl+K
 - [x] Wails v3.1 desktop shell (`make desktop`; opens the same hub in a native window)
-- [ ] Hermes memory provider, i18n, TUI, plugin host, more adapters
+- [ ] Hermes memory provider, TUI, plugin host, more adapters
 
 See [docs/ROADMAP.md](docs/ROADMAP.md).
 

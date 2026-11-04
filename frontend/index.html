@@ -278,13 +278,20 @@
               <button type="button" data-theme-choice="light">浅色</button>
               <button type="button" data-theme-choice="dark">深色</button>
             </div>
+            <div class="settings-row language-row">
+              <span class="settings-label">语言</span>
+              <div class="theme-switch" role="group" aria-label="语言">
+                <button type="button" data-lang="zh">中文</button>
+                <button type="button" data-lang="en">English</button>
+              </div>
+            </div>
           </section>
 
           <section class="settings-card">
             <h2>仓库</h2>
             <div class="settings-row">
               <span class="settings-label">根目录</span>
-              <code class="settings-value" id="settings-root">—</code>
+              <code class="settings-value" id="settings-root" data-no-i18n>—</code>
               <button class="icon" id="copy-root" type="button" aria-label="复制根目录" title="复制">
                 <svg class="ic"><use href="#icon-copy"></use></svg>
               </button>
@@ -300,7 +307,7 @@
             </div>
             <div class="settings-row">
               <span class="settings-label">备份</span>
-              <span class="settings-value" id="settings-backup">—</span>
+              <span class="settings-value" id="settings-backup" data-no-i18n>—</span>
               <button class="button quiet" id="backup-now" type="button">备份</button>
             </div>
           </section>
@@ -309,7 +316,7 @@
             <h2>MCP</h2>
             <div class="settings-row">
               <span class="settings-label">Token</span>
-              <code class="settings-value" id="settings-token">—</code>
+              <code class="settings-value" id="settings-token" data-no-i18n>—</code>
               <button class="icon" id="copy-token" type="button" aria-label="复制 MCP token" title="复制">
                 <svg class="ic"><use href="#icon-copy"></use></svg>
               </button>
@@ -399,6 +406,7 @@
   </div>
 
   <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
+  <script src="i18n.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

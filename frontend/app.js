@@ -3,6 +3,7 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
+const tr = (text) => (window.MarkToastI18n ? window.MarkToastI18n.t(text) : text);
 
 const state = {
   status: null,
@@ -148,7 +149,8 @@ function formatDate(value, withTime = false) {
   const options = withTime
     ? { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }
     : { year: "numeric", month: "2-digit", day: "2-digit" };
-  return new Intl.DateTimeFormat("zh-CN", options).format(date).replaceAll("/", "-");
+  const locale = window.MarkToastI18n?.language === "en" ? "en-US" : "zh-CN";
+  return new Intl.DateTimeFormat(locale, options).format(date).replaceAll("/", "-");
 }
 
 function relativeDate(value) {
@@ -484,6 +486,7 @@ function renderMemories() {
     row.append(icon("file", "ic memory-icon"));
 
     const who = element("div", "who");
+    who.dataset.noI18n = "true";
     who.append(
       element("div", "name", result.name || fileName(result.path)),
       element("div", "sub", result.description || cleanSnippet(result.snippet) || shortPath(result.path)),
@@ -767,7 +770,7 @@ function renderMemoryError(error) {
 
 async function runAdapterAction(adapter) {
   const verb = adapter.installed ? "重新写入" : "写入";
-  if (!window.confirm(`${verb} ZCode 配置？会先备份原文件。`)) return;
+  if (!window.confirm(tr(`${verb} ZCode 配置？会先备份原文件。`))) return;
   try {
     const data = await api("/api/adapters/action", {
       method: "POST",
@@ -834,6 +837,7 @@ function renderInbox() {
     const row = element("div", "row inbox-row");
     row.append(icon("inbox"));
     const who = element("div", "who");
+    who.dataset.noI18n = "true";
     who.append(
       element("div", "name", candidate.name || "候选记忆"),
       element("div", "sub", candidate.description || ""),
@@ -872,7 +876,7 @@ async function promoteCandidate(candidate) {
 }
 
 async function dismissCandidate(candidate) {
-  if (!window.confirm("丢弃这条候选记忆？")) return;
+  if (!window.confirm(tr("丢弃这条候选记忆？"))) return;
   try {
     await api("/api/inbox/dismiss", {
       method: "POST",
@@ -1578,7 +1582,7 @@ async function loadMemoryDiff(path, hash) {
 
 async function restoreMemoryVersion(path, hash) {
   if (!hash) return;
-  if (!window.confirm("恢复这个版本？会生成一次新的提交。")) return;
+  if (!window.confirm(tr("恢复这个版本？会生成一次新的提交。"))) return;
   const history = state.memoryHistory;
   history.restoring = true;
   renderMemories();

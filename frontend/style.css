@@ -1101,3 +1101,4 @@ body.mac { --top-h: 54px; }
   .inbox-row { flex-wrap: wrap; }
   .inbox-actions { width: 100%; justify-content: flex-end; }
 }
+.language-row { margin-top: 10px; }
