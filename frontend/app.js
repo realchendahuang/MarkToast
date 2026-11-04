@@ -803,9 +803,10 @@ function renderMemoryError(error) {
   els.resultRegion.appendChild(list);
 }
 
-async function runAdapterAction(adapter) {
+async function runAdapterAction(adapter, button) {
   const verb = adapter.installed ? "重新写入" : "写入";
   if (!window.confirm(tr(`${verb} ZCode 配置？会先备份原文件。`))) return;
+  setButtonLoading(button, true);
   try {
     const data = await api("/api/adapters/action", {
       method: "POST",
@@ -816,10 +817,13 @@ async function runAdapterAction(adapter) {
     await loadStatus();
   } catch (error) {
     toast(formatError(error), "error");
+  } finally {
+    setButtonLoading(button, false);
   }
 }
 
-async function stageAdapter(adapter) {
+async function stageAdapter(adapter, button) {
+  setButtonLoading(button, true);
   try {
     const data = await api("/api/adapters/action", {
       method: "POST",
@@ -833,6 +837,8 @@ async function stageAdapter(adapter) {
     }
   } catch (error) {
     toast(formatError(error), "error");
+  } finally {
+    setButtonLoading(button, false);
   }
 }
 
@@ -987,13 +993,13 @@ function renderAdapters() {
       if (adapter.installable && adapter.detected) {
         const action = element("button", "button quiet adapter-action", installed ? "修复" : "接入");
         action.type = "button";
-        action.addEventListener("click", () => runAdapterAction(adapter));
+        action.addEventListener("click", (event) => runAdapterAction(adapter, event.currentTarget));
         row.appendChild(action);
       } else if (adapter.detected && adapter.staged) {
         const stage = element("button", "button quiet adapter-action", "片段");
         stage.type = "button";
         stage.title = "生成合并片段";
-        stage.addEventListener("click", () => stageAdapter(adapter));
+        stage.addEventListener("click", (event) => stageAdapter(adapter, event.currentTarget));
         row.appendChild(stage);
       }
       row.appendChild(tier);
@@ -1361,6 +1367,22 @@ function bindEvents() {
   els.form.addEventListener("submit", submitMemory);
   els.modal.addEventListener("click", (event) => {
     if (event.target === els.modal) closeDialog();
+  });
+  els.modal.addEventListener("keydown", (event) => {
+    if (event.key !== "Tab") return;
+    const focusables = [...els.modal.querySelectorAll(
+      'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href]',
+    )].filter((node) => node.offsetParent !== null);
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   });
   document.querySelectorAll("#side-toggle, #side-toggle-top").forEach((button) => {
     button.addEventListener("click", () => {
