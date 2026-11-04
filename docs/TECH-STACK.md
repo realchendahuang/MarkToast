@@ -17,7 +17,7 @@
 | 样式 | **手写 CSS + design tokens** | CSS 变量 + 一套 token（颜色/间距/字号） | 与 Magpie 的克制风格一致；可主题化、中英文自适应 | Tailwind（构建链更重，与"手写精修"路线冲突） |
 | TUI | **Bubble Tea + Lipgloss**（后期） | `charmbracelet/bubbletea` | Magpie 同款；给无 GUI 场景/远程使用 | 不做 TUI（少一个界面，但少一个卖点） |
 | 数据库/索引 | **modernc.org/sqlite**（纯 Go） | 最新稳定版 | 无 CGo、交叉编译简单、内建 FTS5 | mattn/go-sqlite3（CGo）、Tantivy（额外索引层） |
-| 全文检索 | **SQLite FTS5** | FTS5 + BM25 | 嵌入、零服务、可重建；中文先 trigram，后续 jieba 预分词 | Meilisearch/Typesense（重）、纯 grep（无排序） |
+| 全文检索 | **SQLite FTS5**（预分词 + BM25） | FTS5 + BM25 + OR 查询 | 嵌入、零服务、可重建；中文用 **bigram 快路径 + gse 可选** 预分词；trigram 仅作 ≥3 字符回退（实测两字查询 0 命中） | Bleve + CJK analyzer（备选）、纯 grep（无排序） |
 | Git | **调用 `git` CLI**（exec）+ 批量提交 | 系统 git | 行为可预期、实现简单、覆盖所有边界操作；开发者本机已有 git | go-git（纯 Go 但对复杂操作支持弱，后续可选） |
 | Hub 协议 | **HTTP + MCP** | 官方 MCP Go SDK（备选 `mark3labs/mcp-go`） | 一套服务两用：UI/脚本走 HTTP，所有 agent 走 MCP | 仅 MCP（UI 不好走）、仅 HTTP（agent 接入面窄） |
 | 适配器 | **YAML descriptor + Go 接口** | 自研 | 加一家 harness = 一个 YAML；社区可贡献 | 每家写死 Go 代码（不可扩展） |
@@ -79,10 +79,11 @@ MarkToast/
 | Wails v3 仍是 beta | 锁 exact 版本；保留"浏览器 Web UI"模式（`marktoast ui --web`）做开发/兜底 |
 | moejs 仍是 alpha | 插件引擎推迟到 M5；v1 适配器全部 Go+YAML |
 | 上游 harness 格式变动 | descriptor 化；适配器带版本探测与 fixture 测试 |
-| modernc FTS5 能力边界 | M1 先写 spike 验证 FTS5 + trigram（含中文两字词）；不行再换分词方案 |
+| modernc 不支持自定义 FTS5 tokenizer（已实测） | 走"写入/查询两侧同一预分词"：bigram（零依赖）+ gse（可选）；trigram 仅回退；需要更强分词再评估 gojieba（CGO）或 Bleve |
 | Git 仓库膨胀 | debounce + 合并提交；`.gitignore` 排除索引；大仓库归档策略 |
 
 ## 决策记录
 
 - 2026-11-04：技术栈定稿；前端确定为原生 HTML/CSS/JS（对齐 Magpie），不上 React。
 - 2026-11-04：许可证方向 MIT；v1 平台 macOS 优先；记忆模型暂定单一真源（见 PRODUCT.md）。
+- 2026-11-04：复用调研完成（[RESEARCH-REUSE.md](RESEARCH-REUSE.md)）：v1 不引入第三方记忆引擎；检索走 SQLite FTS5 + 预分词；MCP 选 mark3labs/mcp-go（MIT）；会话读取参考 deja-vu（MIT）；AGPL 项目不进入二进制。

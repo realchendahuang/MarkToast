@@ -24,6 +24,11 @@ MarkToast 不是从石头里蹦出来的。它的产品形态、存储格式和�
 | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | MIT | 插件/工具/MCP 接缝与实验性会话搜索；MarkToast 作为其外部记忆插件接入。 |
 | [EverOS](https://github.com/EverMind-AI/EverOS)（**13.8k★**） | Apache-2.0 | "local-first + Markdown + 多 harness 插件"的生态组织方式。 |
 | [memsearch](https://github.com/zilliztech/memsearch)（Zilliz） | MIT | "Markdown 源 + 派生语义索引"的混合检索思路。 |
+| [deja-vu](https://github.com/vshulcz/deja-vu) | MIT | Go 写的会话读取器（43 agents，含 ZCode/Hermes/DSH）、`cjkfold` 繁简折叠、`atomicfile` 原子写——会话摄取与 CJK 细节的重要参考。 |
+| [Letta / memfs](https://github.com/letta-ai/letta-code) | Apache-2.0 | 根 `MEMORY.md` 作索引、子目录各自 `MEMORY.md`、git 冲突四态与 attempt token。 |
+| [go-ego/gse](https://github.com/go-ego/gse) | Apache-2.0 | 纯 Go 中文分词（可选精度路径；bigram 快路径之外的选择）。 |
+| [mark3labs/mcp-go](https://github.com/mark3labs/mcp-go) | MIT | MCP server 的 Go 实现（stdio + streamable HTTP）。 |
+| [gitleaks](https://github.com/gitleaks/gitleaks) | MIT | 写入记忆前的密钥/隐私脱敏规则集。 |
 
 ## 依赖
 
