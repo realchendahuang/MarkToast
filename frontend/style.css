@@ -1488,3 +1488,8 @@ body.side-collapsed .top .seg button.on { color: var(--fg); background: var(--se
 .top .seg button.on .ic { color: var(--fg); }
 .side-row .ic { width: 16px; height: 16px; }
 .top .seg button .ic { width: 16px; height: 16px; }
+.side-scroll { overflow-x: hidden; }
+.project-list { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+.side-row.project-row { min-width: 0; overflow: hidden; }
+.side-row.project-row .side-name { flex: 1 1 auto; min-width: 0; }
+.side-row.project-row .side-count { flex: none; }
