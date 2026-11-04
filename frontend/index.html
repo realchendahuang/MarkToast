@@ -50,6 +50,11 @@
       <path d="M3 4.5h14v7l-2.2 4H5.2L3 11.5Z"></path>
       <path d="M3 11.5h4l1 2h4l1-2h4"></path>
     </symbol>
+    <symbol id="icon-sidebar" viewBox="0 0 16 16">
+      <rect x="2" y="2.8" width="12" height="10.4" rx="2.2"></rect>
+      <path d="M6.5 2.8v10.4"></path>
+      <rect x="2.6" y="3.4" width="3.3" height="9.2" rx="1" fill="currentColor" stroke="none"></rect>
+    </symbol>
     <symbol id="icon-stack" viewBox="0 0 20 20">
       <path d="m10 2.8 7 3.4-7 3.4-7-3.4 7-3.4Z"></path>
       <path d="m3 10.3 7 3.4 7-3.4M3 14.2l7 3.3 7-3.3"></path>
@@ -101,50 +106,57 @@
   </svg>
 
 
-  <header class="window-bar">
-    <div class="window-side">
+  <header class="top">
+    <button class="icon side-toggle" id="side-toggle-top" type="button" aria-label="展开侧栏" title="展开侧栏" hidden>
+      <svg class="ic"><use href="#icon-sidebar"></use></svg>
+    </button>
+    <a class="brand compact-brand" href="#" aria-label="MarkToast 首页">
+      <svg class="logo" viewBox="0 0 20 20" aria-hidden="true"><use href="#icon-logo"></use></svg>
+      <span class="brand-name">Mark<b>Toast</b></span>
+    </a>
+    <div class="breadcrumb" id="breadcrumb" aria-label="当前位置">
+      <span>记忆库</span>
+      <i aria-hidden="true">/</i>
+      <b id="breadcrumb-current">全部记忆</b>
+    </div>
+
+    <nav class="seg" id="main-nav" aria-label="主导航">
+      <span class="thumb" id="seg-thumb" aria-hidden="true"></span>
+      <button class="on" type="button" data-view="memories" aria-current="page">记忆</button>
+      <button type="button" data-view="inbox">收件箱</button>
+      <button type="button" data-view="adapters">适配器</button>
+      <button type="button" data-view="history">历史</button>
+    </nav>
+
+    <div class="top-actions">
+      <div class="search-shell" id="search-shell">
+        <button class="icon search-toggle" id="search-toggle" type="button" aria-label="搜索" title="搜索">
+          <svg class="ic"><use href="#icon-search"></use></svg>
+        </button>
+        <input id="global-search" type="search" placeholder="搜索" autocomplete="off" spellcheck="false" aria-label="搜索记忆" tabindex="-1" />
+        <button class="search-clear" id="search-clear" type="button" aria-label="清空搜索" hidden>
+          <svg class="ic"><use href="#icon-close"></use></svg>
+        </button>
+      </div>
+      <button class="icon" id="refresh-view" type="button" aria-label="刷新当前视图" title="刷新">
+        <svg class="ic"><use href="#icon-refresh"></use></svg>
+      </button>
+      <button class="icon top-settings" id="open-settings" data-view="settings" type="button" aria-label="设置" title="设置">
+        <svg class="ic"><use href="#icon-settings"></use></svg>
+      </button>
+    </div>
+  </header>
+
+  <aside class="sidebar" id="sidebar" aria-label="记忆仓库导航">
+    <div class="side-top">
+      <button class="icon side-toggle" id="side-toggle" type="button" aria-label="收起侧栏" title="收起侧栏">
+        <svg class="ic"><use href="#icon-sidebar"></use></svg>
+      </button>
       <a class="brand" href="#" aria-label="MarkToast 首页">
         <svg class="logo" viewBox="0 0 20 20" aria-hidden="true"><use href="#icon-logo"></use></svg>
         <span class="brand-name">Mark<b>Toast</b></span>
       </a>
     </div>
-    <div class="window-main">
-      <div class="breadcrumb" id="breadcrumb" aria-label="当前位置">
-        <span>记忆库</span>
-        <i aria-hidden="true">/</i>
-        <b id="breadcrumb-current">全部记忆</b>
-      </div>
-
-      <nav class="seg" id="main-nav" aria-label="主导航">
-        <span class="thumb" id="seg-thumb" aria-hidden="true"></span>
-        <button class="on" type="button" data-view="memories" aria-current="page">记忆</button>
-        <button type="button" data-view="inbox">收件箱</button>
-        <button type="button" data-view="adapters">适配器</button>
-        <button type="button" data-view="history">历史</button>
-      </nav>
-
-      <div class="top-actions">
-        <div class="search-shell" id="search-shell">
-          <button class="icon search-toggle" id="search-toggle" type="button" aria-label="搜索" title="搜索">
-            <svg class="ic"><use href="#icon-search"></use></svg>
-          </button>
-          <input id="global-search" type="search" placeholder="搜索" autocomplete="off" spellcheck="false" aria-label="搜索记忆" tabindex="-1" />
-          <button class="search-clear" id="search-clear" type="button" aria-label="清空搜索" hidden>
-            <svg class="ic"><use href="#icon-close"></use></svg>
-          </button>
-        </div>
-        <button class="icon" id="refresh-view" type="button" aria-label="刷新当前视图" title="刷新">
-          <svg class="ic"><use href="#icon-refresh"></use></svg>
-        </button>
-        <button class="icon top-settings" id="open-settings" data-view="settings" type="button" aria-label="设置" title="设置">
-          <svg class="ic"><use href="#icon-settings"></use></svg>
-        </button>
-      </div>
-    </div>
-  </header>
-
-  <div class="app-body">
-  <aside class="sidebar" id="sidebar" aria-label="记忆仓库导航">
     <div class="side-scroll">
       <section class="side-group" aria-labelledby="library-label">
         <div class="side-label" id="library-label">记忆</div>
@@ -351,7 +363,6 @@
 
     </div>
   </main>
-  </div>
 
   <div class="modal" id="memory-modal" hidden>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">

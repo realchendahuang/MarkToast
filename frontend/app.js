@@ -73,6 +73,9 @@ const desktopShell = Boolean(
   /Wails/i.test(navigator.userAgent),
 );
 if (desktopShell) document.body.classList.add("desktop");
+try {
+  if (localStorage.getItem("marktoast-sidebar") === "collapsed") document.body.classList.add("side-collapsed");
+} catch (error) {}
 
 const THEME_KEY = "marktoast-theme";
 const themeMedia = matchMedia("(prefers-color-scheme: dark)");
@@ -1323,6 +1326,18 @@ function bindEvents() {
   els.form.addEventListener("submit", submitMemory);
   els.modal.addEventListener("click", (event) => {
     if (event.target === els.modal) closeDialog();
+  });
+  document.querySelectorAll("#side-toggle, #side-toggle-top").forEach((button) => {
+    button.addEventListener("click", () => {
+      const collapsed = document.body.classList.toggle("side-collapsed");
+      try {
+        localStorage.setItem("marktoast-sidebar", collapsed ? "collapsed" : "open");
+      } catch (error) {}
+      const topToggle = document.getElementById("side-toggle-top");
+      if (topToggle) topToggle.hidden = !collapsed;
+      button.setAttribute("aria-label", collapsed ? "展开侧栏" : "收起侧栏");
+      button.title = collapsed ? "展开侧栏" : "收起侧栏";
+    });
   });
   document.querySelectorAll(".brand").forEach((brand) => {
     brand.addEventListener("click", (event) => {

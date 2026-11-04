@@ -1115,82 +1115,114 @@ body.desktop .top { --wails-draggable: drag; }
 .language-row { margin-top: 10px; }
 
 
-/* ---- unified Magpie-style window bar ---------------------------------- */
+/* ---- Magpie pixel layout: sidebar head + content header ----------------- */
+:root { --top-h: 50px; }
 body {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  padding-left: 0;
+  padding-left: var(--side-w);
   overflow: hidden;
 }
-.window-bar {
-  position: relative;
-  z-index: 30;
+.sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 10;
+  width: var(--side-w);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border-right: .5px solid var(--line);
+}
+.side-top {
   display: flex;
   flex: none;
-  align-items: stretch;
+  align-items: center;
+  gap: 6px;
   height: var(--top-h);
-  background: var(--bg);
-  border-bottom: .5px solid var(--line);
+  padding: 0 8px 0 14px;
+  color: var(--muted);
   --wails-draggable: drag;
 }
-.window-side {
+body.desktop .side-top {
+  padding: 2px 8px 0 92px;
+  height: 50px;
+}
+body.desktop .side-top .brand .logo { width: 18px; height: 18px; }
+.side-top .brand { height: 32px; gap: 5px; }
+.side-top .brand-name { font-size: 12.5px; letter-spacing: .005em; }
+.side-toggle { flex: none; width: 26px; height: 26px; border-radius: 7px; color: var(--muted); }
+.side-toggle:hover { background: var(--pill); color: var(--fg); }
+.side-toggle .ic { width: 15px; height: 15px; }
+.top .side-toggle { display: none; }
+body.side-collapsed .sidebar { display: none; }
+body.side-collapsed { padding-left: 0; }
+body.side-collapsed .top { padding-left: 10px; }
+body.side-collapsed #side-toggle-top { display: inline-flex; }
+.side-top button, .side-top a { --wails-draggable: no-drag; }
+.side-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 10px 10px; scrollbar-width: none; }
+
+.top {
+  position: relative;
+  z-index: 20;
   display: flex;
   flex: none;
   align-items: center;
-  width: var(--side-w);
-  padding: 0 12px 0 14px;
+  gap: 8px;
+  height: 50px;
+  padding: 2px 10px 0 20px;
+  background: var(--bg);
+  border-bottom: 0;
+  backdrop-filter: none;
+  --wails-draggable: drag;
 }
-body.desktop .window-side { padding-left: 78px; }
-.window-side .brand { height: 34px; }
-.window-side .brand .logo { width: 22px; height: 22px; }
-.window-side .brand-name { font-size: 14.5px; }
-.window-main {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  align-items: center;
-  gap: 10px;
-  padding: 0 12px 0 20px;
+.top button, .top input, .top select, .top a { --wails-draggable: no-drag; }
+.top .breadcrumb { gap: 7px; margin-left: 0; font-size: 13.5px; }
+.top .breadcrumb span { color: var(--muted); }
+.top .breadcrumb i { color: var(--faint); }
+.top .breadcrumb b { color: var(--fg); font-weight: 600; letter-spacing: 0; }
+.top .top-actions { gap: 2px; margin-left: auto; }
+.top .icon { width: 26px; height: 26px; border-radius: 7px; }
+.top .icon .ic { width: 14px; height: 14px; }
+.top .compact-brand { display: none; }
+
+/* Desktop: the toolbar search stays visible, as in Magpie's header. */
+@media (min-width: 901px) {
+  .top .search-shell {
+    width: clamp(220px, 23vw, 340px);
+    height: 32px;
+    padding: 0 8px 0 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--card);
+    box-shadow: 0 1px 1px rgba(0, 0, 0, .02);
+  }
+  .top .search-shell .search-toggle { width: 22px; height: 22px; }
+  .top .search-shell .search-toggle .ic { width: 14px; height: 14px; }
+  .top .search-shell input {
+    width: auto;
+    flex: 1;
+    opacity: 1;
+    pointer-events: auto;
+    font-size: 12.5px;
+    transition: none;
+  }
+  .top .search-shell.is-open { padding-right: 8px; background: var(--card); }
 }
-.window-main .breadcrumb { flex: none; margin-left: 0; }
-.window-main .top-actions { margin-left: auto; }
-.window-main .seg { display: none; }
-.window-bar button,
-.window-bar input,
-.window-bar select,
-.window-bar a { --wails-draggable: no-drag; }
-.app-body {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-.app-body .sidebar {
-  position: static;
-  inset: auto;
-  width: var(--side-w);
-  height: auto;
-  flex: none;
-}
-.app-body .view { flex: 1; min-width: 0; }
-.app-body .side-scroll { padding-top: 8px; }
 
 @media (max-width: 900px) {
-  body { height: 100vh; }
-  .window-bar {
+  body { padding-left: 0; }
+  .sidebar { display: none; }
+  .top {
     height: auto;
     min-height: var(--top-h);
     flex-wrap: wrap;
-    align-items: center;
-    padding: 7px 10px 6px;
-    gap: 5px 8px;
+    gap: 6px 8px;
+    padding: 8px 10px 6px;
   }
-  .window-side { width: auto; padding: 0; }
-  .window-side .brand-name { font-size: 14px; }
-  .window-main { flex: 1; min-width: 0; padding: 0; flex-wrap: wrap; }
-  .window-main .breadcrumb { display: none; }
-  .window-main .seg {
+  .top .compact-brand { display: flex; }
+  .top .breadcrumb { display: none; }
+  .top .seg {
     position: static;
     display: flex;
     order: 5;
@@ -1199,30 +1231,6 @@ body.desktop .window-side { padding-left: 78px; }
     margin-top: 3px;
     transform: none;
   }
-  .window-main .top-actions { margin-left: auto; }
-}
-
-/* Desktop: keep the search field visible, like Magpie's toolbar search. */
-@media (min-width: 901px) {
-  .window-main .search-shell {
-    width: clamp(220px, 23vw, 340px);
-    height: 32px;
-    padding: 0 8px 0 10px;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: var(--card);
-  }
-  .window-main .search-shell .search-toggle { width: 22px; height: 22px; }
-  .window-main .search-shell input {
-    width: auto;
-    flex: 1;
-    opacity: 1;
-    pointer-events: auto;
-    transition: none;
-  }
-  .window-main .search-shell.is-open {
-    padding-right: 8px;
-    background: var(--card);
-  }
-  .window-main .search-shell input::placeholder { color: var(--muted); }
+  .top .top-actions { margin-left: auto; }
+  .view { padding-right: 12px; padding-left: 12px; }
 }
