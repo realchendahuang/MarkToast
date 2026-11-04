@@ -108,7 +108,9 @@ function setTheme(preference) {
   } catch {
     // Private mode or a locked-down shell: apply for this session only.
   }
+  document.documentElement.classList.add("theming");
   applyTheme(preference);
+  window.setTimeout(() => document.documentElement.classList.remove("theming"), 380);
 }
 
 function icon(name, className = "ic") {
