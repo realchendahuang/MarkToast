@@ -1392,3 +1392,30 @@ body.desktop.side-collapsed .top { padding-left: 96px; }
 }
 .settings-row input:focus { border-color: var(--accent); outline: none; }
 .settings-row + .settings-row:last-child { border-bottom: 0; }
+.history-row { min-height: 48px; }
+.history-hash { width: 74px; font-size: 11px; color: var(--muted); }
+.history-subject { text-align: left; font-size: 13px; color: var(--fg); }
+.history-date { flex: none; color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+@media (min-width: 901px) {
+  .top .search-shell {
+    width: min(220px, 24vw);
+    height: 26px;
+    padding: 0 7px 0 9px;
+    border-radius: 7px;
+  }
+  .top .search-shell .search-toggle { width: 20px; height: 20px; }
+  .top .search-shell .search-toggle .ic { width: 13px; height: 13px; }
+  .top .search-shell input { font-size: 12px; }
+  .top .search-shell.is-open { padding-right: 7px; }
+  .top .search-clear { width: 18px; height: 18px; }
+}
+.button {
+  min-height: 27px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.button.compact { min-height: 27px; padding: 0 10px; border-radius: 6px; font-size: 12px; }
+.button.primary { box-shadow: none; }
+.button.primary:hover { filter: brightness(1.08); background: var(--accent); }
+.button.quiet { box-shadow: 0 1px 1px rgba(0, 0, 0, .04); }
