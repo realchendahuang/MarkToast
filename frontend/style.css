@@ -1449,3 +1449,7 @@ html.theming *::after {
 @media (prefers-reduced-motion: reduce) {
   html.theming, html.theming * { transition: none !important; }
 }
+.modal { animation: fade-in .18s ease-out; }
+.dialog { animation: dialog-in .22s var(--ease); }
+.modal.closing { animation: fade-out .26s var(--ease) forwards; }
+.modal.closing .dialog { animation: dialog-out .26s var(--ease) forwards; }

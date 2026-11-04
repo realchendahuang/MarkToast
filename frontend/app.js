@@ -1146,7 +1146,7 @@ function closeDialog() {
   window.setTimeout(() => {
     els.modal.hidden = true;
     els.modal.classList.remove("closing");
-  }, 150);
+  }, 260);
   if (state.lastFocus && typeof state.lastFocus.focus === "function") state.lastFocus.focus();
 }
 
