@@ -1105,21 +1105,34 @@ function switchView(view) {
 function animateTopNavFromSidebar(fromRect) {
   const seg = document.getElementById("main-nav");
   if (!seg || !fromRect) return;
-  requestAnimationFrame(() => {
-    positionSegThumb();
-    const to = seg.getBoundingClientRect();
-    if (!to.width || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const dx = fromRect.left + fromRect.width / 2 - (to.left + to.width / 2);
-    const dy = fromRect.top + fromRect.height / 2 - (to.top + to.height / 2);
-    seg.getAnimations().forEach((animation) => animation.cancel());
-    seg.animate(
-      [
-        { transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px) scale(.35)`, opacity: .15 },
-        { transform: "translate(-50%, -50%)", opacity: 1 },
-      ],
-      { duration: 300, easing: "cubic-bezier(.2, .8, .2, 1)" },
-    );
-  });
+  const to = seg.getBoundingClientRect();
+  if (!to.width) return;
+  positionSegThumb();
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const dx = fromRect.left + fromRect.width / 2 - (to.left + to.width / 2);
+  const dy = fromRect.top + fromRect.height / 2 - (to.top + to.height / 2);
+  const baseTransform = "translate(-50%, -50%)";
+  const startTransform = `${baseTransform} translate(${dx}px, ${dy}px) scale(.35)`;
+  seg.getAnimations().forEach((animation) => animation.cancel());
+  seg.style.transform = startTransform;
+  seg.style.opacity = ".15";
+  const animation = seg.animate(
+    [
+      { transform: startTransform, opacity: .15 },
+      { transform: baseTransform, opacity: 1 },
+    ],
+    { duration: 300, easing: "cubic-bezier(.2, .8, .2, 1)", fill: "forwards" },
+  );
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    seg.style.transform = "";
+    seg.style.opacity = "";
+    animation.cancel();
+  };
+  animation.finished.then(cleanup).catch(cleanup);
+  window.setTimeout(cleanup, 380);
 }
 
 // animateTopNavToSidebar is the reverse: the top tabs fold back down into the
@@ -1127,35 +1140,44 @@ function animateTopNavFromSidebar(fromRect) {
 function animateTopNavToSidebar(fromRect) {
   const seg = document.getElementById("main-nav");
   if (!seg || !fromRect) return;
-  requestAnimationFrame(() => {
-    seg.classList.add("nav-return");
-    const base = seg.getBoundingClientRect();
-    const row = document.querySelector(".side-scroll .side-row");
-    const sidebar = document.querySelector(".sidebar");
-    if (!row || !sidebar || !base.width) {
-      seg.classList.remove("nav-return");
-      return;
-    }
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      seg.classList.remove("nav-return");
-      return;
-    }
-    const rowRect = row.getBoundingClientRect();
-    const sidebarRect = sidebar.getBoundingClientRect();
-    const targetX = rowRect.left - sidebarRect.left + rowRect.width / 2;
-    const targetY = rowRect.top + rowRect.height / 2;
-    const dx = targetX - (base.left + base.width / 2);
-    const dy = targetY - (base.top + base.height / 2);
-    seg.getAnimations().forEach((animation) => animation.cancel());
-    const animation = seg.animate(
-      [
-        { transform: "translate(-50%, -50%)", opacity: 1 },
-        { transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px) scale(.35)`, opacity: 0 },
-      ],
-      { duration: 260, easing: "cubic-bezier(.2, .8, .2, 1)" },
-    );
-    animation.finished.then(() => seg.classList.remove("nav-return")).catch(() => {});
-  });
+  seg.classList.add("nav-return");
+  const base = seg.getBoundingClientRect();
+  const row = document.querySelector(".side-scroll .side-row");
+  const sidebar = document.querySelector(".sidebar");
+  if (!row || !sidebar || !base.width) {
+    seg.classList.remove("nav-return");
+    return;
+  }
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    seg.classList.remove("nav-return");
+    return;
+  }
+  const rowRect = row.getBoundingClientRect();
+  const sidebarRect = sidebar.getBoundingClientRect();
+  const targetX = rowRect.left - sidebarRect.left + rowRect.width / 2;
+  const targetY = rowRect.top + rowRect.height / 2;
+  const dx = targetX - (base.left + base.width / 2);
+  const dy = targetY - (base.top + base.height / 2);
+  const baseTransform = "translate(-50%, -50%)";
+  const endTransform = `${baseTransform} translate(${dx}px, ${dy}px) scale(.35)`;
+  seg.getAnimations().forEach((animation) => animation.cancel());
+  const animation = seg.animate(
+    [
+      { transform: baseTransform, opacity: 1 },
+      { transform: endTransform, opacity: 0 },
+    ],
+    { duration: 260, easing: "cubic-bezier(.2, .8, .2, 1)", fill: "forwards" },
+  );
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    seg.classList.remove("nav-return");
+    seg.getAnimations().forEach((item) => item.cancel());
+    animation.cancel();
+  };
+  animation.finished.then(cleanup).catch(cleanup);
+  window.setTimeout(cleanup, 340);
 }
 
 // positionSegThumb slides the segmented control's thumb under the picked tab.
@@ -1455,9 +1477,10 @@ function bindEvents() {
       const sideRect = wasCollapsed
         ? null
         : document.querySelector(".side-scroll")?.getBoundingClientRect();
-      const topRect = wasCollapsed
-        ? document.getElementById("main-nav")?.getBoundingClientRect()
-        : null;
+      const segEl = document.getElementById("main-nav");
+      const topRect = wasCollapsed ? segEl?.getBoundingClientRect() : null;
+      if (!wasCollapsed && segEl) segEl.classList.remove("nav-return");
+      if (wasCollapsed && segEl) segEl.classList.add("nav-return");
       const collapsed = document.body.classList.toggle("side-collapsed");
       try {
         localStorage.setItem("marktoast-sidebar", collapsed ? "collapsed" : "open");
