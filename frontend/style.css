@@ -1481,3 +1481,8 @@ html.theming *::after {
 body.side-collapsed .top .seg .thumb { display: none; }
 body.side-collapsed .top .seg button.on { color: var(--fg); background: var(--seg-thumb); box-shadow: var(--seg-edge); }
 .top .seg.nav-return { display: inline-flex; pointer-events: none; }
+.top .compact-brand .brand-name { font-size: 13.5px; }
+.top .compact-brand .logo { width: 18px; height: 18px; }
+.top .seg button { display: inline-flex; align-items: center; gap: 5px; }
+.top .seg button .ic { width: 15px; height: 15px; color: var(--muted); }
+.top .seg button.on .ic { color: var(--fg); }
