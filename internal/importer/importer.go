@@ -119,6 +119,7 @@ func Hermes(root, source string, dryRun bool) (Result, error) {
 		}
 	}
 	seen := map[string]bool{}
+	seenBody := map[string]bool{}
 	existing := map[string]bool{}
 	if facts, err := store.ListFacts(root); err == nil {
 		for _, fact := range facts {
@@ -131,6 +132,12 @@ func Hermes(root, source string, dryRun bool) (Result, error) {
 			continue
 		}
 		for i, block := range splitHermes(string(data)) {
+			bodyKey := strings.Join(strings.Fields(block), " ")
+			if seenBody[bodyKey] {
+				result.Skipped++
+				continue
+			}
+			seenBody[bodyKey] = true
 			name := factName(block, file.kind, i)
 			if name == "" {
 				continue

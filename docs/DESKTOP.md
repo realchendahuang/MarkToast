@@ -1,6 +1,6 @@
 # 桌面壳（Wails v3）
 
-> 状态：**已实现**（Wails **v3.1.0 稳定版**）。`make desktop` 产出 `bin/MarkToast`，
+> 状态：**已实现**（Wails **v3.1.0 稳定版**）。`make desktop` 产出 `bin/marktoast-desktop`，
 > 启动时在进程内拉起（或复用）本地 hub，并打开原生窗口加载同一套 Web UI。
 
 ## 为什么是这个方案
@@ -13,8 +13,8 @@
 
 ```bash
 make desktop
-./bin/MarkToast                    # 默认 root 来自 config（~/Memory）
-./bin/MarkToast --root ~/Memory --addr 127.0.0.1:3777
+./bin/marktoast-desktop                    # 默认 root 来自 config（~/Memory）
+./bin/marktoast-desktop --root ~/Memory --addr 127.0.0.1:3777
 ```
 
 - 壳内会启动 hub；如果 3777 已被 `marktoast serve` 占用，壳直接加载已存在的 hub。

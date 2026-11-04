@@ -106,7 +106,7 @@ make build
   --description "2026-09 发版回滚原因" --type project --body "发版后首页闪屏，决定回滚。"
 ./bin/marktoast search "回滚"
 ./bin/marktoast serve                        # http://127.0.0.1:3777（Web UI）
-make desktop && ./bin/MarkToast              # 原生 Wails 窗口
+make desktop && ./bin/marktoast-desktop              # 原生 Wails 窗口
 ./bin/marktoast mcp                          # 给 harness 的 stdio MCP server
 ./bin/marktoast adapters install zcode       # 默认 dry-run；加 --apply 写入
 ```

@@ -21,6 +21,38 @@ func TestProjectKeyStable(t *testing.T) {
 	}
 }
 
+func TestMemoryDirGlobal(t *testing.T) {
+	root := t.TempDir()
+	if got := MemoryDir(root, GlobalProject); got != filepath.Join(root, GlobalProject) {
+		t.Fatalf("global memory dir = %q", got)
+	}
+	if got := MemoryDir(root, "demo-0123456789abcdef"); got != filepath.Join(root, "projects", "demo-0123456789abcdef", "memory") {
+		t.Fatalf("project memory dir = %q", got)
+	}
+}
+
+func TestWriteGlobalFact(t *testing.T) {
+	root := t.TempDir()
+	if err := Init(root); err != nil {
+		t.Fatal(err)
+	}
+	path, err := WriteFact(root, GlobalProject, Fact{Name: "global-fact", Body: "body"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(root, GlobalProject, "global-fact.md")
+	if path != want {
+		t.Fatalf("global path = %q, want %q", path, want)
+	}
+	facts, err := ListFacts(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts) != 1 || facts[0].Project != GlobalProject {
+		t.Fatalf("unexpected facts: %+v", facts)
+	}
+}
+
 func TestWriteAndParseFact(t *testing.T) {
 	root := t.TempDir()
 	if err := Init(root); err != nil {

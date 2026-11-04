@@ -9,12 +9,13 @@ all: build
 build:
 	go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/marktoast
 
-# Wails v3 desktop shell (macOS first; needs CGO).
+# Wails v3 desktop shell (macOS first; needs CGO). The output must not be
+# "MarkToast": on case-insensitive APFS that collides with bin/marktoast.
 desktop:
-	go build -ldflags "$(LDFLAGS)" -o bin/MarkToast ./cmd/marktoast-desktop
+	go build -ldflags "$(LDFLAGS)" -o bin/marktoast-desktop ./cmd/marktoast-desktop
 
 run-desktop: desktop
-	./bin/MarkToast
+	./bin/marktoast-desktop
 
 run:
 	go run ./cmd/marktoast $(ARGS)

@@ -119,7 +119,7 @@ make build
   --description "2026-09 发版回滚原因" --type project --body "发版后首页闪屏，决定回滚。"
 ./bin/marktoast search "回滚"
 ./bin/marktoast serve                        # http://127.0.0.1:3777 (web UI)
-make desktop && ./bin/MarkToast              # native Wails window
+make desktop && ./bin/marktoast-desktop              # native Wails window
 ./bin/marktoast mcp                          # stdio MCP server for harnesses
 ./bin/marktoast adapters install zcode       # dry run; add --apply to write
 ```

@@ -66,7 +66,7 @@ func TestHermesImport(t *testing.T) {
 	writeFile(t, filepath.Join(source, "memories", "USER.md"),
 		"用户要快，不要长扫描\n§\n中文名字的项目也要能导入\n")
 	writeFile(t, filepath.Join(source, "profiles", "coder", "memories", "MEMORY.md"),
-		"写代码先读现有配置\n")
+		"写代码先读现有配置\n§\n用户要快，不要长扫描\n")
 	root := t.TempDir()
 
 	result, err := Hermes(root, source, false)
@@ -74,7 +74,10 @@ func TestHermesImport(t *testing.T) {
 		t.Fatal(err)
 	}
 	if result.Facts != 5 {
-		t.Fatalf("expected 5 facts, got %+v", result)
+		t.Fatalf("expected 5 unique facts, got %+v", result)
+	}
+	if result.Skipped != 1 {
+		t.Fatalf("expected 1 duplicate to be skipped, got %+v", result)
 	}
 	facts, err := store.ListFacts(root)
 	if err != nil {
@@ -95,7 +98,7 @@ func TestHermesImport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again.Facts != 0 || again.Skipped != 5 {
+	if again.Facts != 0 || again.Skipped != 6 {
 		t.Fatalf("expected second run to skip, got %+v", again)
 	}
 }

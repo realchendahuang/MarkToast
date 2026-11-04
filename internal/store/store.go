@@ -73,8 +73,12 @@ func Init(root string) error {
 	return nil
 }
 
-// MemoryDir returns <root>/projects/<project>/memory.
+// MemoryDir returns <root>/projects/<project>/memory, or <root>/global for
+// the reserved global project.
 func MemoryDir(root, project string) string {
+	if project == "" || project == GlobalProject {
+		return filepath.Join(root, GlobalProject)
+	}
 	return filepath.Join(root, "projects", project, "memory")
 }
 
