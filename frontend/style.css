@@ -1069,3 +1069,25 @@ body.mac { --top-h: 54px; }
 .top-actions { margin-left: auto; }
 .search-shell { margin-left: 0; }
 .search-shell:focus-within { border-color: transparent; box-shadow: none; }
+/* project list stays scrollable so the page nav does not scroll away */
+.side-label-row { height: 22px; }
+.side-label-count { padding-right: 8px; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.project-list {
+  max-height: 300px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  padding-right: 1px;
+}
+.project-list::-webkit-scrollbar { display: none; }
+.adapter-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+.adapter-state::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--faint); }
+.adapter-state.is-on { color: var(--fg-2); }
+.adapter-state.is-on::before { background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }

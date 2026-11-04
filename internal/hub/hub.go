@@ -280,13 +280,16 @@ func handleAdapters(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]map[string]any, 0, len(adapters))
 	for _, a := range adapters {
+		detected := adapter.Detect(a)
 		out = append(out, map[string]any{
-			"id":           a.ID,
-			"title":        a.Title,
-			"tier":         a.Tier,
-			"capabilities": a.Capabilities,
-			"detect":       a.Detect,
-			"notes":        a.Notes,
+			"id":            a.ID,
+			"title":         a.Title,
+			"tier":          a.Tier,
+			"capabilities":  a.Capabilities,
+			"detect":        a.Detect,
+			"detected":      len(detected) > 0,
+			"detected_path": strings.Join(detected, ", "),
+			"notes":         a.Notes,
 			"hooks": map[string]any{
 				"events": a.Hooks.Events, "install_kind": a.Hooks.InstallKind,
 				"injection": a.Hooks.Injection, "needs_trust": a.Hooks.NeedsTrust,

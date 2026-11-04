@@ -152,3 +152,35 @@ func All(userDir string) ([]Descriptor, error) {
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
 }
+
+// ExpandPath expands "~" and environment variables in a descriptor path.
+func ExpandPath(path string) string {
+	if path == "" {
+		return ""
+	}
+	path = os.ExpandEnv(path)
+	if path == "~" {
+		home, _ := os.UserHomeDir()
+		return home
+	}
+	if strings.HasPrefix(path, "~/") {
+		home, _ := os.UserHomeDir()
+		return filepath.Join(home, path[2:])
+	}
+	return path
+}
+
+// Detect returns the descriptor's existing detection paths.
+func Detect(d Descriptor) []string {
+	found := make([]string, 0, len(d.Detect))
+	for _, pattern := range d.Detect {
+		path := ExpandPath(pattern)
+		if path == "" {
+			continue
+		}
+		if _, err := os.Stat(path); err == nil {
+			found = append(found, path)
+		}
+	}
+	return found
+}

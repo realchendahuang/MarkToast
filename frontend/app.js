@@ -311,13 +311,15 @@ async function loadAliases() {
 
 function renderProjects(projects) {
   clear(els.projectList);
+  const total = $("project-total");
+  if (total) total.textContent = projects.length ? String(projects.length) : "";
   if (!projects.length) {
     els.projectList.appendChild(element("div", "side-label", state.status ? "暂无项目" : "等待本地 hub"));
     return;
   }
   projects
     .slice()
-    .sort((a, b) => String(a.key).localeCompare(String(b.key), "zh-CN"))
+    .sort((a, b) => (Number(b.facts) || 0) - (Number(a.facts) || 0) || projectLabel(a.key).localeCompare(projectLabel(b.key), "zh-CN"))
     .forEach((project) => {
       const button = element("button", `side-row project-row${state.project === project.key ? " is-active" : ""}`);
       button.type = "button";
@@ -795,19 +797,27 @@ function renderAdapters() {
     return;
   }
   const list = element("div", "list");
-  state.adapters.forEach((adapter) => {
-    const entry = element("article", "adapter-entry");
-    const row = element("div", "row adapter-row");
-    row.append(icon("plug", "ic adapter-icon"));
-    const who = element("div", "who");
-    who.append(
-      element("div", "name", adapter.title || adapter.id || "Adapter"),
-      element("div", "sub", adapter.notes || adapter.id || ""),
-    );
-    row.append(who, element("span", "pill", adapter.tier || ""));
-    entry.appendChild(row);
-    list.appendChild(entry);
-  });
+  state.adapters
+    .slice()
+    .sort((a, b) => (b.detected ? 1 : 0) - (a.detected ? 1 : 0) || String(a.title || a.id).localeCompare(String(b.title || b.id), "zh-CN"))
+    .forEach((adapter) => {
+      const entry = element("article", "adapter-entry");
+      const row = element("div", "row adapter-row");
+      row.append(icon("plug", "ic adapter-icon"));
+      const who = element("div", "who");
+      who.append(
+        element("div", "name", adapter.title || adapter.id || "Adapter"),
+        element("div", "sub", adapter.notes || adapter.id || ""),
+      );
+      const state = element("span", `adapter-state${adapter.detected ? " is-on" : ""}`, adapter.detected ? "已接入" : "未接入");
+      if (adapter.detected_path) state.title = adapter.detected_path;
+      const tierLabel = { native: "原生", projection: "投影", readonly: "只读" }[adapter.tier] || adapter.tier || "";
+      const tier = element("span", "pill", tierLabel);
+      tier.title = adapter.tier || "";
+      row.append(who, state, tier);
+      entry.appendChild(row);
+      list.appendChild(entry);
+    });
   els.adapterRegion.appendChild(list);
 }
 
