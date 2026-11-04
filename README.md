@@ -105,7 +105,7 @@ auto dark, indigo accent), 212px sidebar, breadcrumb header, white list cards an
 rows, **its motion** (view fade-up, segmented thumb glide 280ms, row fold 420ms,
 dialog in/out, skeleton shimmer, reduced-motion), modal, Cmd/Ctrl+K
 - [x] Wails v3.1 desktop shell (`make desktop`; opens the same hub in a native window)
-- [ ] TUI, plugin host, more adapters
+- [ ] Plugin host, more adapters
 
 See [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -121,6 +121,7 @@ make build
 ./bin/marktoast add --name release-rollback \
   --description "2026-09 发版回滚原因" --type project --body "发版后首页闪屏，决定回滚。"
 ./bin/marktoast search "回滚"
+./bin/marktoast tui                          # terminal UI
 ./bin/marktoast serve                        # http://127.0.0.1:3777 (web UI)
 make desktop && ./bin/marktoast-desktop              # native Wails window
 ./bin/marktoast mcp                          # stdio MCP server for harnesses

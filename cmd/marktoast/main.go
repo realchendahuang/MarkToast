@@ -62,6 +62,7 @@ It is local-first by design: no account, no cloud, no telemetry.`,
 		newAdaptersCmd(),
 		newServeCmd(),
 		newUICmd(),
+		newTUICmd(),
 	)
 	return cmd
 }

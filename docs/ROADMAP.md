@@ -59,7 +59,7 @@
 
 - [x] 导入器：ZCode / Hermes（2026-11-04）；ai-memory / EverOS 待做
 - [ ] 插件宿主（moejs）与 adapter 贡献文档
-- [ ] TUI（Bubble Tea）作为无 GUI/远程场景的第二界面
+- [x] TUI（Bubble Tea）作为无 GUI/远程场景的第二界面（2026-11-04，搜索/列表/详情/滚动）
 - [x] 手动备份（`marktoast backup` + 设置页按钮，tar.gz 到 ~/.marktoast/backups，2026-11-04）
 - [x] 自动备份（启动时每日一次，2026-11-04）/ 安装脚本（`scripts/install.sh` + `make install`）
 - [ ] 更新器
