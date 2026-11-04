@@ -1471,3 +1471,12 @@ html.theming *::after {
   .view, .dialog, .modal, .toast, .skeleton { animation: none !important; }
   .sidebar, .side-hl, body, .memory-row, .side-row, .button, .icon { transition: none !important; }
 }
+
+/* When the sidebar folds away its menu lands in the title bar, as Magpie's. */
+@media (min-width: 901px) {
+  body.side-collapsed .top .seg { display: inline-flex; }
+  body.side-collapsed .top .compact-brand { display: flex; }
+  body.side-collapsed .breadcrumb { display: none; }
+}
+body.side-collapsed .top .seg .thumb { display: none; }
+body.side-collapsed .top .seg button.on { color: var(--fg); background: var(--seg-thumb); box-shadow: var(--seg-edge); }

@@ -1100,6 +1100,28 @@ function switchView(view) {
   if (view === "memories" && !state.results.length) loadMemories();
 }
 
+// animateTopNavFromSidebar mirrors Magpie's navMorph: the sidebar menu lands
+// in the title bar as horizontal tabs instead of disappearing with the panel.
+function animateTopNavFromSidebar(fromRect) {
+  const seg = document.getElementById("main-nav");
+  if (!seg || !fromRect) return;
+  requestAnimationFrame(() => {
+    positionSegThumb();
+    const to = seg.getBoundingClientRect();
+    if (!to.width || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const dx = fromRect.left + fromRect.width / 2 - (to.left + to.width / 2);
+    const dy = fromRect.top + fromRect.height / 2 - (to.top + to.height / 2);
+    seg.getAnimations().forEach((animation) => animation.cancel());
+    seg.animate(
+      [
+        { transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px) scale(.35)`, opacity: .15 },
+        { transform: "translate(-50%, -50%)", opacity: 1 },
+      ],
+      { duration: 300, easing: "cubic-bezier(.2, .8, .2, 1)" },
+    );
+  });
+}
+
 // positionSegThumb slides the segmented control's thumb under the picked tab.
 function positionSegThumb() {
   const seg = document.getElementById("main-nav");
@@ -1393,6 +1415,9 @@ function bindEvents() {
   });
   document.querySelectorAll("#side-toggle, #side-toggle-top").forEach((button) => {
     button.addEventListener("click", () => {
+      const sideRect = document.body.classList.contains("side-collapsed")
+        ? null
+        : document.querySelector(".side-scroll")?.getBoundingClientRect();
       const collapsed = document.body.classList.toggle("side-collapsed");
       try {
         localStorage.setItem("marktoast-sidebar", collapsed ? "collapsed" : "open");
@@ -1400,6 +1425,7 @@ function bindEvents() {
       const topToggle = document.getElementById("side-toggle-top");
       if (topToggle) topToggle.hidden = !collapsed;
       updateSidebarIcons();
+      if (collapsed) animateTopNavFromSidebar(sideRect);
       window.setTimeout(positionSideHighlight, 0);
       button.setAttribute("aria-label", collapsed ? "展开侧栏" : "收起侧栏");
       button.title = collapsed ? "展开侧栏" : "收起侧栏";
