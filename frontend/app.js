@@ -263,6 +263,7 @@ async function loadStatus({ announce = false } = {}) {
     await loadAliases();
     $("all-count").textContent = String(data.facts ?? 0);
     $("inbox-count").textContent = Number(data.inbox) ? String(data.inbox) : "";
+  requestAnimationFrame(positionSideHighlight);
     $("repo-count").textContent = `${Number(data.facts) || 0} 条`;
     $("repo-count").title = `${Number(data.facts) || 0} 条记忆`;
     $("repo-status").title = data.root || "";
@@ -373,6 +374,35 @@ function selectProject(project) {
   $("all-memories").classList.toggle("is-active", !project);
   switchView("memories");
   loadMemories({ preserveSelection: false });
+}
+
+// positionSideHighlight slides one white row shape to the active sidebar row,
+// the way Magpie's navigation does, instead of toggling a background per row.
+function positionSideHighlight() {
+  const highlight = document.getElementById("side-hl");
+  const scroll = document.querySelector(".side-scroll");
+  if (!highlight || !scroll) return;
+  const active = scroll.querySelector(".side-row.is-active, .side-row.on");
+  if (!active || !active.getClientRects().length) {
+    highlight.style.opacity = "0";
+    return;
+  }
+  const scrollRect = scroll.getBoundingClientRect();
+  const rowRect = active.getBoundingClientRect();
+  const first = !highlight.dataset.ready;
+  if (first) highlight.classList.add("still");
+  highlight.style.opacity = "1";
+  highlight.style.transform = `translate(${rowRect.left - scrollRect.left + scroll.scrollLeft}px, ${rowRect.top - scrollRect.top + scroll.scrollTop}px)`;
+  highlight.style.width = `${rowRect.width}px`;
+  highlight.style.height = `${rowRect.height}px`;
+  highlight.style.borderRadius = getComputedStyle(active).borderRadius;
+  document.body.classList.add("has-side-hl");
+  if (first) {
+    requestAnimationFrame(() => {
+      highlight.dataset.ready = "1";
+      highlight.classList.remove("still");
+    });
+  }
 }
 
 function updateBreadcrumb() {
@@ -1037,6 +1067,14 @@ function switchView(view) {
   });
   updateBreadcrumb();
   positionSegThumb();
+  const viewport = document.querySelector(".view");
+  if (viewport) viewport.scrollTop = 0;
+  $("all-memories")?.classList.toggle("is-active", view === "memories" && !state.project);
+  document.querySelectorAll(".project-row").forEach((row) => {
+    row.classList.toggle("is-active", view === "memories" && Boolean(state.project) && row.dataset.project === state.project);
+  });
+  requestAnimationFrame(positionSideHighlight);
+  window.setTimeout(positionSideHighlight, 60);
   const newButton = $("new-memory-top");
   if (newButton) newButton.hidden = view !== "memories";
   if (view === "inbox") loadInbox();
@@ -1329,6 +1367,7 @@ function bindEvents() {
       } catch (error) {}
       const topToggle = document.getElementById("side-toggle-top");
       if (topToggle) topToggle.hidden = !collapsed;
+      window.setTimeout(positionSideHighlight, 0);
       button.setAttribute("aria-label", collapsed ? "展开侧栏" : "收起侧栏");
       button.title = collapsed ? "展开侧栏" : "收起侧栏";
     });

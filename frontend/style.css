@@ -1276,3 +1276,55 @@ body.desktop .side-top { padding-left: 96px; }
 .top .top-new .ic { width: 13px; height: 13px; }
 .view { animation-duration: .24s; }
 .side-row { transition: color .2s var(--ease), background .2s var(--ease); }
+
+/* ---- Magpie motion + modal metrics -------------------------------------- */
+:root { --ease: cubic-bezier(.2, .8, .2, 1); }
+.button:active { transform: scale(.96); }
+.icon:active { transform: scale(.9); }
+.side-row:active:not(.is-active) { background: color-mix(in srgb, var(--fg) 10%, transparent); }
+.modal {
+  background: rgba(0, 0, 0, .28);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
+  backdrop-filter: blur(8px) saturate(1.1);
+  padding: 28px 24px;
+}
+body.desktop .modal { top: 50px; padding: 16px 24px 24px; }
+.dialog {
+  width: min(600px, 100%);
+  max-height: 100%;
+  border: 0;
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: 0 0 0 1px var(--line), 0 24px 60px rgba(0, 0, 0, .32), 0 2px 8px rgba(0, 0, 0, .12);
+  backdrop-filter: none;
+}
+.dialog form { max-height: min(780px, calc(100vh - 36px)); }
+.dialog-head { height: 48px; padding: 0 14px 0 18px; }
+.dialog-body { padding: 14px 18px; gap: 10px; }
+.dialog-foot { min-height: 48px; padding: 8px 18px; }
+.dialog-actions .button { min-height: 27px; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 8px; background: var(--faint); background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: var(--muted); background-clip: padding-box; }
+
+
+/* Magpie's single sliding selection shape in the sidebar. */
+.side-scroll { position: relative; }
+.side-hl {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  width: 0;
+  height: 30px;
+  border-radius: 7px;
+  background: var(--card);
+  box-shadow: var(--seg-edge);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform .28s var(--ease), width .28s var(--ease), height .28s var(--ease), border-radius .28s var(--ease), opacity .12s;
+}
+.side-hl.still { transition: none; }
+.side-scroll .side-row { position: relative; z-index: 1; }
+body.has-side-hl .side-row.is-active, body.has-side-hl .side-row.on { background: transparent; box-shadow: none; }
+body.has-side-hl .side-row.is-active:hover, body.has-side-hl .side-row.on:hover { background: transparent; }
