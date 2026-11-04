@@ -66,7 +66,13 @@ const els = {
 };
 
 if (/Mac|iPhone|iPad/.test(navigator.platform)) document.body.classList.add("mac");
-if (window._wails) document.body.classList.add("desktop");
+const desktopShell = Boolean(
+  window._wails ||
+  /^wails:/.test(location.protocol) ||
+  location.hostname.includes("wails") ||
+  /Wails/i.test(navigator.userAgent),
+);
+if (desktopShell) document.body.classList.add("desktop");
 
 const THEME_KEY = "marktoast-theme";
 const themeMedia = matchMedia("(prefers-color-scheme: dark)");
