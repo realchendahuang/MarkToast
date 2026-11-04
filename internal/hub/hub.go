@@ -63,6 +63,7 @@ func Serve(o Options) error {
 	mux.HandleFunc("/api/reindex", func(w http.ResponseWriter, r *http.Request) { handleReindex(w, r, o) })
 	mux.HandleFunc("/api/aliases", func(w http.ResponseWriter, r *http.Request) { handleAliases(w, r, o) })
 	mux.HandleFunc("/api/import", func(w http.ResponseWriter, r *http.Request) { handleImport(w, r, o) })
+	mux.HandleFunc("/api/backup", func(w http.ResponseWriter, r *http.Request) { handleBackup(w, r, o) })
 	mux.HandleFunc("/api/memory/history", func(w http.ResponseWriter, r *http.Request) { handleMemoryHistory(w, r, o) })
 	mux.HandleFunc("/api/memory/diff", func(w http.ResponseWriter, r *http.Request) { handleMemoryDiff(w, r, o) })
 	mux.HandleFunc("/api/memory/restore", func(w http.ResponseWriter, r *http.Request) { handleMemoryRestore(w, r, o) })

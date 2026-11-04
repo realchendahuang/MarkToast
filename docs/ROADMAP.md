@@ -43,7 +43,7 @@
 - [x] HTTP API：status / search / memory / memories / projects / adapters / git-log
 - [x] 降级：hub 停止时 Markdown 仍可读，CLI 仍可搜索（线性扫描回退）
 - [ ] 会话日志摄取 → `inbox/` 候选记忆（T2）
-- [ ] 敏感信息脱敏（gitleaks 规则）
+- [x] 敏感信息脱敏（高置信度规则：私钥 / OpenAI / GitHub / AWS / Google / Slack / Stripe / JWT / Bearer，2026-11-04）
 
 ## M4 — 桌面 UI 🟡（Web UI + Wails 壳完成，差 diff/回滚与 i18n）
 
@@ -60,6 +60,7 @@
 - [x] 导入器：ZCode / Hermes（2026-11-04）；ai-memory / EverOS 待做
 - [ ] 插件宿主（moejs）与 adapter 贡献文档
 - [ ] TUI（Bubble Tea）作为无 GUI/远程场景的第二界面
+- [x] 手动备份（`marktoast backup` + 设置页按钮，tar.gz 到 ~/.marktoast/backups，2026-11-04）
 - [ ] 自动备份 / 更新器 / 安装脚本
 - [ ] 安全审计：脱敏、token、公开仓库前的数据清理
 - [ ] 公开仓库 + MIT 许可证 + 文档站 + 发布首版

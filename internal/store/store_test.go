@@ -83,6 +83,31 @@ func TestWriteAndParseFact(t *testing.T) {
 	}
 }
 
+func TestWriteFactRedactsSecrets(t *testing.T) {
+	root := t.TempDir()
+	if err := Init(root); err != nil {
+		t.Fatal(err)
+	}
+	path, err := WriteFact(root, "demo-0123456789abcdef", Fact{
+		Name:        "leaked-token",
+		Description: "token sk-proj-abcdefghijklmnopqrstuvwxyz123456",
+		Body:        "never commit ghp_0123456789abcdefghijABCDEFGHIJ",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "sk-proj-abcdefghijklmnopqrstuvwxyz123456") || strings.Contains(string(data), "ghp_0123456789abcdefghijABCDEFGHIJ") {
+		t.Fatalf("secret was not redacted: %s", data)
+	}
+	if !strings.Contains(string(data), "[REDACTED:") {
+		t.Fatalf("redaction marker missing: %s", data)
+	}
+}
+
 func TestWriteIndexes(t *testing.T) {
 	root := t.TempDir()
 	if err := Init(root); err != nil {

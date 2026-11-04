@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/realchendahuang/MarkToast/internal/redact"
 )
 
 const (
@@ -201,7 +203,7 @@ func WriteFact(root, project string, f Fact) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
-	meta := frontmatter{Name: f.Name, Description: f.Description}
+	meta := frontmatter{Name: f.Name, Description: redact.String(f.Description)}
 	meta.Metadata.NodeType = "memory"
 	if f.NodeType != "" {
 		meta.Metadata.NodeType = f.NodeType
@@ -217,7 +219,7 @@ func WriteFact(root, project string, f Fact) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	body := strings.TrimLeft(f.Body, "\r\n")
+	body := redact.String(strings.TrimLeft(f.Body, "\r\n"))
 	content := "---\n" + string(head) + "---\n\n" + body + "\n"
 
 	path := filepath.Join(dir, factFileName(f.Name))

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/realchendahuang/MarkToast/internal/backup"
 	"github.com/realchendahuang/MarkToast/internal/gitx"
 	"github.com/realchendahuang/MarkToast/internal/importer"
 	"github.com/realchendahuang/MarkToast/internal/index"
@@ -241,4 +242,23 @@ func handleImport(w http.ResponseWriter, r *http.Request, o Options) {
 		"skipped":  result.Skipped,
 		"dryRun":   result.DryRun,
 	})
+}
+
+func handleBackup(w http.ResponseWriter, r *http.Request, o Options) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+	path, err := backup.Create(o.Root)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	info, _ := os.Stat(path)
+	size := int64(0)
+	if info != nil {
+		size = info.Size()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"path": path, "bytes": size})
 }

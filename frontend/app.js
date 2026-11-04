@@ -1210,6 +1210,7 @@ function bindEvents() {
   $("copy-root").addEventListener("click", () => copyText($("settings-root").textContent, "根目录"));
   $("copy-token").addEventListener("click", () => copyText($("settings-token").textContent, "Token"));
   $("reindex").addEventListener("click", rebuildIndex);
+  $("backup-now").addEventListener("click", backupNow);
   $("save-aliases").addEventListener("click", saveAliases);
   document.querySelectorAll("[data-import]").forEach((button) => {
     button.addEventListener("click", () => importSource(button.dataset.import, button));
@@ -1341,6 +1342,21 @@ async function importSource(from, button) {
       button.disabled = false;
       button.textContent = label;
     }
+  }
+}
+
+async function backupNow() {
+  const button = $("backup-now");
+  button.disabled = true;
+  try {
+    const data = await api("/api/backup", { method: "POST" });
+    $("settings-backup").textContent = data.path || "—";
+    $("settings-backup").title = data.path || "";
+    toast("备份已创建");
+  } catch (error) {
+    toast(formatError(error), "error");
+  } finally {
+    button.disabled = false;
   }
 }
 
