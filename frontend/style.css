@@ -1467,3 +1467,7 @@ html.theming *::after {
   border-radius: 50%;
   animation: spin .8s linear infinite;
 }
+@media (prefers-reduced-motion: reduce) {
+  .view, .dialog, .modal, .toast, .skeleton { animation: none !important; }
+  .sidebar, .side-hl, body, .memory-row, .side-row, .button, .icon { transition: none !important; }
+}
