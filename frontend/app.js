@@ -408,6 +408,13 @@ function positionSideHighlight() {
   }
 }
 
+function updateSidebarIcons() {
+  const collapsed = document.body.classList.contains("side-collapsed");
+  document.querySelectorAll("#side-toggle use, #side-toggle-top use").forEach((use) => {
+    use.setAttribute("href", collapsed ? "#icon-sidebar-open" : "#icon-sidebar");
+  });
+}
+
 function updateBreadcrumb() {
   const crumb = document.getElementById("breadcrumb-current");
   if (!crumb) return;
@@ -1392,6 +1399,7 @@ function bindEvents() {
       } catch (error) {}
       const topToggle = document.getElementById("side-toggle-top");
       if (topToggle) topToggle.hidden = !collapsed;
+      updateSidebarIcons();
       window.setTimeout(positionSideHighlight, 0);
       button.setAttribute("aria-label", collapsed ? "展开侧栏" : "收起侧栏");
       button.title = collapsed ? "展开侧栏" : "收起侧栏";
