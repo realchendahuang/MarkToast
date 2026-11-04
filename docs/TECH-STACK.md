@@ -19,7 +19,7 @@
 | 数据库/索引 | **modernc.org/sqlite**（纯 Go） | 最新稳定版 | 无 CGo、交叉编译简单、内建 FTS5 | mattn/go-sqlite3（CGo）、Tantivy（额外索引层） |
 | 全文检索 | **SQLite FTS5**（预分词 + BM25） | FTS5 + BM25 + OR 查询 | 嵌入、零服务、可重建；中文用 **bigram 快路径 + gse 可选** 预分词；trigram 仅作 ≥3 字符回退（实测两字查询 0 命中） | Bleve + CJK analyzer（备选）、纯 grep（无排序） |
 | Git | **调用 `git` CLI**（exec）+ 批量提交 | 系统 git | 行为可预期、实现简单、覆盖所有边界操作；开发者本机已有 git | go-git（纯 Go 但对复杂操作支持弱，后续可选） |
-| Hub 协议 | **HTTP + MCP** | 官方 MCP Go SDK（备选 `mark3labs/mcp-go`） | 一套服务两用：UI/脚本走 HTTP，所有 agent 走 MCP | 仅 MCP（UI 不好走）、仅 HTTP（agent 接入面窄） |
+| Hub 协议 | **HTTP + MCP** | 官方 `modelcontextprotocol/go-sdk`（stdlib + streamable HTTP；备选 mark3labs/mcp-go） | 一套服务两用：UI/脚本走 HTTP，所有 agent 走 MCP；官方 SDK 覆盖多 client、token/session metadata | 仅 MCP（UI 不好走）、仅 HTTP（agent 接入面窄） |
 | 适配器 | **YAML descriptor + Go 接口** | 自研 | 加一家 harness = 一个 YAML；社区可贡献 | 每家写死 Go 代码（不可扩展） |
 | 插件引擎（后期） | **moejs**（Apache-2.0） | Magpie 同款 JS 网关插件引擎 | 复用成熟插件宿主，适配器可热插拔 | 自研插件系统（重复造轮子） |
 | CLI | **cobra** | `spf13/cobra` | 子命令多、帮助/补全开箱即用 | 标准库 flag（子命令管理费劲） |
@@ -86,4 +86,4 @@ MarkToast/
 
 - 2026-11-04：技术栈定稿；前端确定为原生 HTML/CSS/JS（对齐 Magpie），不上 React。
 - 2026-11-04：许可证方向 MIT；v1 平台 macOS 优先；记忆模型暂定单一真源（见 PRODUCT.md）。
-- 2026-11-04：复用调研完成（[RESEARCH-REUSE.md](RESEARCH-REUSE.md)）：v1 不引入第三方记忆引擎；检索走 SQLite FTS5 + 预分词；MCP 选 mark3labs/mcp-go（MIT）；会话读取参考 deja-vu（MIT）；AGPL 项目不进入二进制。
+- 2026-11-04：复用调研完成（[RESEARCH-REUSE.md](RESEARCH-REUSE.md)）：v1 不引入第三方记忆引擎；检索走 SQLite FTS5 + 预分词；MCP 选官方 `modelcontextprotocol/go-sdk`（备选 mark3labs/mcp-go）；会话读取参考 deja-vu（MIT）；AGPL 项目不进入二进制。

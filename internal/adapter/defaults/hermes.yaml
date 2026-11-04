@@ -9,9 +9,31 @@ instruction_file:
 native_memory:
   root: ~/.hermes/memories
   index: MEMORY.md
+hooks:
+  events:
+    - on_session_start
+    - pre_llm_call
+    - pre_tool_call
+    - post_tool_call
+    - on_session_end
+    - on_session_finalize
+  install_kind: yaml_snippet
+  target: ~/.hermes/config.yaml
+  injection: pre_llm_call_context
+  needs_trust: true
+  notes: "不会自动写 ~/.hermes/config.yaml；受 hooks_auto_accept 门控；Hermes 忽略 on_session_start 输出，要在 pre_llm_call 打印 {\"context\": ...}。"
+mcp:
+  kind: stdio_bridge
+  target: ~/.hermes/config.yaml
+  notes: "mcp_servers 支持 stdio 与 HTTP/Streamable HTTP；Hermes 不读 MCP server instructions。仅 MCP = 只有工具调用，无 prefetch/sync_turn 生命周期。"
+session:
+  roots:
+    - ~/.hermes/state.db
+  format: sqlite
+  notes: "会话导出优先 `hermes sessions export --format jsonl`；Markdown 是渲染格式，不是无损回导格式。"
 session_logs: ~/.hermes/state.db
 tier: native
 capabilities:
   - read
   - write
-notes: "Built-in MEMORY.md/USER.md are §-delimited with 2200/1375-char budgets; a memory provider plugin is the long-term path."
+notes: "内置 MEMORY.md/USER.md 用精确 \"\\n§\\n\" 分隔，2200/1375 字符预算（本机 MEMORY.md 已 2528/2200 超限）；完整 preload/turn sync 需实现 standalone MemoryProvider 并关闭内置写入以避免双写。"

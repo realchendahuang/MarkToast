@@ -9,9 +9,35 @@ instruction_file:
 native_memory:
   root: ""
   index: ""
+hooks:
+  events:
+    - SessionStart
+    - UserPromptSubmit
+    - PreToolUse
+    - PostToolUse
+    - PostToolUseFailure
+    - Stop
+    - SubagentStart
+    - SubagentStop
+    - PreCompact
+    - SessionEnd
+  install_kind: json_merge
+  target: ~/.claude/settings.json
+  injection: stdout_additional_context
+  needs_trust: false
+  notes: "SessionStart 的 additionalContext 注入可用；hooks 可放用户级 settings.json 或项目 .claude/settings.json。"
+mcp:
+  kind: http
+  target: ~/.claude.json
+  notes: "claude mcp add --transport http（用户 scope: ~/.claude.json；项目 scope: .mcp.json）。"
+session:
+  roots:
+    - ~/.claude/projects
+  format: jsonl
+  notes: "项目目录下 .jsonl 会话；deja-vu 有 reader。"
 session_logs: ~/.claude/projects
 tier: projection
 capabilities:
   - read
   - inject
-notes: "CLAUDE.md projection; MCP tools available for recall."
+notes: "指令投影 + MCP；hooks 可作为 T2 会话摄取来源。"

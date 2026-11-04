@@ -9,9 +9,30 @@ instruction_file:
 native_memory:
   root: ""
   index: ""
+hooks:
+  events:
+    - SessionStart
+    - UserPromptSubmit
+    - PreToolUse
+    - PostToolUse
+    - Stop
+    - SessionEnd
+  install_kind: toml_merge
+  target: ~/.codex/config.toml
+  injection: stdout_additional_context
+  notes: "SessionEnd 自 Codex CLI 0.145.0 起可用；旧版本用 finalize 兜底。hook 具体 schema 待本机核实。"
+mcp:
+  kind: stdio_bridge
+  target: ~/.codex/config.toml
+  notes: "config.toml 的 mcp_servers；HTTP/stdio 待核实。"
+session:
+  roots:
+    - ~/.codex/sessions
+  format: jsonl
+  notes: "jsonl 会话；deja-vu 有 reader。"
 session_logs: ~/.codex/sessions
 tier: projection
 capabilities:
   - read
   - inject
-notes: "Instruction projection now; hooks integration later."
+notes: "指令投影 + MCP；SessionEnd 版本差异要在适配器里探测。"

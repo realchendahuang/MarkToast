@@ -9,10 +9,32 @@ instruction_file:
 native_memory:
   root: ""
   index: ""
+hooks:
+  events:
+    - SessionStart
+    - UserPromptSubmit
+    - PreToolUse
+    - PostToolUse
+    - Stop
+    - SubagentStart
+    - SubagentStop
+  install_kind: patch_fragment
+  target: ~/.dsh/profiles/{profile}/cordis.patch.yml
+  injection: mcp_handoff
+  notes: "通过 @deepseek-ai/dsh-hooks-claude-code 桥（BSD-3-Clause，只执行 command hook）；SessionStart detached，stdout 注入不可靠 → 用 MCP handoff。patch 需用户手合并。"
+mcp:
+  kind: patch_fragment
+  target: ~/.dsh/profiles/{profile}/cordis.patch.yml
+  notes: "@deepseek-ai/dsh-mcp-client 0.2.1-rc.2（MIT，旧 npm 版本曾 BSD-3，须锁版本）；insert 一行 id/name/config，transport: streamable-http + serverName + url + headers。"
+session:
+  roots:
+    - ~/.dsh/sessions
+  format: jsonl
+  notes: "session.v4.jsonl.zstd（SESSION_FORMAT_VERSION=4）；deja-vu 已有 reader 可参考。"
 session_logs: ~/.dsh/sessions
 tier: projection
 capabilities:
   - read
   - inject
   - mcp
-notes: "MCP via @deepseek-ai/dsh-mcp-client; hooks can bridge through dsh-hooks-claude-code."
+notes: "无固定 MCP 配置文件；静态兜底是受管 AGENTS.md 区块（约 65536 bytes），但不能替代 MCP。"

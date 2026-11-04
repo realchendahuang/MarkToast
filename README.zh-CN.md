@@ -132,6 +132,7 @@ MarkToast 站在这些项目肩上——具体借鉴了什么见 [docs/CREDITS.m
 | [架构设计](docs/ARCHITECTURE.md) | 组件、存储布局、适配器、故障模式 |
 | [路线图](docs/ROADMAP.md) | M0–M5 |
 | [复用调研](docs/RESEARCH-REUSE.md) | 开源记忆生态里哪些能复用、哪些不能碰 |
+| [harness 接入](docs/HARNESS-INTEGRATION.md) | ZCode / DSH / Hermes / Claude Code / Codex 的接线参考矩阵 |
 | [致敬](docs/CREDITS.md) | 向谁学习、在什么许可下 |
 | [桌面壳](docs/DESKTOP.md) | Wails v3 计划（M4） |
 | [适配器](adapters/README.md) | 如何新增一家 harness |

@@ -10,7 +10,7 @@
 |---|---|---|---|---|
 | **modernc.org/sqlite** | BSD-3-Clause | 直接依赖 | `internal/index`（FTS5 派生索引） | v1.61.1 |
 | **go-ego/gse** | Apache-2.0 | 可选依赖 | `internal/index` 中文分词（`Tokenizer` 实现之一） | v1.3.1 |
-| **mark3labs/mcp-go** | MIT | 直接依赖 | `internal/hub` MCP server（stdio + streamable HTTP） | v1.5.0 |
+| **mark3labs/mcp-go**（备选）/ **官方 MCP Go SDK** | MIT / Apache-2.0 AND MIT | 直接依赖 | `internal/hub` MCP server（stdio + streamable HTTP） | v1.5.0 / v1.8.0 |
 | **自研 bigram tokenizer** | —（本项目） | 自研 | 无词典、零依赖的中文快路径（CLI / 兜底） | — |
 | **deja-vu**（vshulcz） | MIT | **参考/可移植** | 会话读取器（43 agents，含 ZCode/Hermes/DSH）、`cjkfold` 繁简折叠、`atomicfile` | HEAD |
 | **ai-memory**（akitaonrails） | MIT | 设计参考 + v2 sidecar 插槽 | retention/decay 公式、单写者 + 可重建索引结构、MCP 工具命名 | 15k★ |
@@ -95,11 +95,13 @@
 
 | SDK | 许可证 | 版本 | 结论 |
 |---|---|---|---|
-| **mark3labs/mcp-go** | MIT | v1.5.0（2026-10-30） | **v1 首选**：MIT 干净、9.2k★、stdio + streamable HTTP 都成熟、API 简单 |
-| 官方 modelcontextprotocol/go-sdk | MIT → Apache-2.0 过渡（混合） | v1.8.0（2026-09-04） | 备选/长期：官方规范实现，但许可证处于过渡期，需保留双许可声明 |
+| **modelcontextprotocol/go-sdk**（官方） | Apache-2.0 AND MIT（过渡期混合） | v1.8.0（2026-09-04） | 5.3k★，pushed 2026-11-03 | **v1 首选**：官方规范实现；stdio + Streamable HTTP（`mcp/streamable.go`）、多 client（`mcp/server.go`）、session/header/token metadata、middleware——正好支撑"一个 hub 服务多个 harness + 每 harness 独立 token/scope"；混合许可需保留双声明 |
+| mark3labs/mcp-go | MIT | v1.5.0（2026-10-30） | 9.2k★，pushed 2026-11-03 | 备选：MIT 单一许可更干净，`server/streamable_http.go` 成熟；若不想处理混合许可可换它 |
 
 MarkToast 的 hub 用一个进程同时提供 stdio（给 CLI 型 harness）和 streamable HTTP（给常驻 harness）；
 每个 harness 一个 client token，工具面固定为 `memory_search` / `memory_get` / `memory_save` / `memory_list`。
+服务端在 middleware 里做 bearer 认证，按 `harness/project/scope` 授权；stdio 用一次性 token（环境变量），
+不要写进普通客户端配置。
 
 ### 4.2 三家 harness 的最省力路径
 
@@ -146,7 +148,8 @@ MarkToast 的 hub 用一个进程同时提供 stdio（给 CLI 型 harness）和 
 2. 索引：SQLite FTS5 + 预分词；实现 `Tokenizer` 接口，提供 **bigram（零依赖快路径）** 与 **gse（可选精度路径）**；
    CLI 默认 bigram，hub 可启用 gse；用 eval 决定默认值。
 3. 查询：**OR + BM25**（非 AND），名称/短语加分，trigram 仅 ≥3 字符回退，两字用 bigram 兜底。
-4. MCP：**mark3labs/mcp-go v1.5.0**（MIT），stdio + streamable HTTP，一个 hub 服务多 harness。
+4. MCP：**官方 `modelcontextprotocol/go-sdk` v1.8.0**（stdio + Streamable HTTP、多 client、token/session metadata；
+   许可证为 Apache-2.0 AND MIT，保留双声明），`mark3labs/mcp-go`（MIT）作为备选。
 5. 接入顺序：**ZCode（hooks + MCP）→ DSH（MCP + marker 注入）→ Hermes（provider 插件）**；
    Codex / Claude Code / Pi 走指令投影 + MCP。
 6. 会话摄取：**移植 deja-vu 的 reader**（MIT，署名），先做三家，不做 43 家。

@@ -32,6 +32,31 @@ type NativeMemory struct {
 	Index string `yaml:"index"`
 }
 
+// Hooks describes how a harness exposes lifecycle hooks and how MarkToast
+// should install them.
+type Hooks struct {
+	Events      []string `yaml:"events"`
+	InstallKind string   `yaml:"install_kind"` // json_merge | toml_merge | yaml_snippet | patch_fragment | plugin_bundle | none
+	Target      string   `yaml:"target"`
+	Injection   string   `yaml:"injection"` // stdout_additional_context | pre_llm_call_context | mcp_handoff | none
+	NeedsTrust  bool     `yaml:"needs_trust"`
+	Notes       string   `yaml:"notes,omitempty"`
+}
+
+// MCP describes how to register MarkToast as an MCP server for the harness.
+type MCP struct {
+	Kind   string `yaml:"kind"` // http | stdio_bridge | patch_fragment | none
+	Target string `yaml:"target"`
+	Notes  string `yaml:"notes,omitempty"`
+}
+
+// Session describes where the harness keeps its session transcripts.
+type Session struct {
+	Roots  []string `yaml:"roots"`
+	Format string   `yaml:"format"` // jsonl | sqlite | json | unknown
+	Notes  string   `yaml:"notes,omitempty"`
+}
+
 // Descriptor is one harness integration.
 type Descriptor struct {
 	ID              string          `yaml:"id"`
@@ -39,6 +64,9 @@ type Descriptor struct {
 	Detect          []string        `yaml:"detect"`
 	InstructionFile InstructionFile `yaml:"instruction_file"`
 	NativeMemory    NativeMemory    `yaml:"native_memory"`
+	Hooks           Hooks           `yaml:"hooks"`
+	MCP             MCP             `yaml:"mcp"`
+	Session         Session         `yaml:"session"`
 	SessionLogs     string          `yaml:"session_logs"`
 	Tier            string          `yaml:"tier"` // native | projection | readonly
 	Capabilities    []string        `yaml:"capabilities"`

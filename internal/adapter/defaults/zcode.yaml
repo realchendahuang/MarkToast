@@ -9,10 +9,31 @@ instruction_file:
 native_memory:
   root: ~/.zcode/cli/memories/projects/{projectKey}/memory
   index: MEMORY.md
-session_logs: ~/.zcode/v2/sessions
+hooks:
+  events:
+    - SessionStart
+    - UserPromptSubmit
+    - PreToolUse
+    - PostToolUse
+    - PostToolUseFailure
+    - Stop
+  install_kind: plugin_bundle # 优先用插件 hooks/hooks.json（自动启用）；config.json 合并作 fallback
+  target: ~/.zcode/cli/config.json
+  injection: stdout_additional_context
+  notes: "SessionStart 的 additionalContext 可用；Stop 是回合边界（无真正 SessionEnd）；PermissionRequest 官方有但会与交互权限竞态，不装。hook 的 transcript_path 不是完整会话日志。"
+mcp:
+  kind: http
+  target: ~/.zcode/cli/config.json
+  notes: "mcp.servers 严格 schema（type/url/headers）；token 只能写字面量，token 存文件时需手动加。"
+session:
+  roots:
+    - ~/.zcode/cli/db/db.sqlite
+  format: sqlite
+  notes: "session/message/part/session_entry 的 JSON 文本列；不要在 MarkToast 里依赖其 schema，优先读原生记忆目录。"
+session_logs: ~/.zcode/cli/db/db.sqlite
 tier: native
 capabilities:
   - read
   - write
   - inject
-notes: "Project memory: MEMORY.md index + one Markdown file per fact (frontmatter)."
+notes: "项目记忆：MEMORY.md 索引（≤200 行 / 25,000 字符）+ 一条事实一个 Markdown（frontmatter）。"

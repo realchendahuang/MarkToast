@@ -11,7 +11,11 @@ MarkToast 不是从石头里蹦出来的。它的产品形态、存储格式和�
 | 项目 | 许可 | 我们借鉴了什么 |
 |---|---|---|
 | [magpie](https://github.com/yetone/magpie)（yetone，**29k★**） | MIT | 桌面产品的整体形态：Go + Wails v3 单二进制、系统 WebView、原生 HTML/CSS/JS 无框架、菜单栏 + TUI 多界面、插件引擎（moejs）、配置写入器（"只改每个 agent 最关键的那一个键"）、备份/更新/i18n 等产品化细节。MarkToast 只做记忆，不做模型网关。 |
-| [ai-memory](https://github.com/akitaonrails/ai-memory)（**15k★**） | MIT | "Markdown 是源、索引是派生、Git 是版本"的记忆引擎思路；批量提交/降级/零云端等工程取舍。 |
+| [ai-memory](https://github.com/akitaonrails/ai-memory)（**15k★**） | MIT | "Markdown 是源、索引是派生、Git 是版本"的记忆引擎思路；批量提交/降级/零云端等工程取舍；**跨 harness 支持矩阵、hook 脚本模板与 managed-harness 协议**（`docs/support-matrix.md`、`hooks/`、`docs/managed-harness-contributions.md`）是 MarkToast 适配层的首要参考。 |
+| [deja-vu](https://github.com/vshulcz/deja-vu) | MIT | Go 写的会话读取器（43 agents，含 ZCode/Hermes/DSH）、`cjkfold` 繁简折叠、`atomicfile` 原子写——会话摄取与 CJK 细节的重要参考。 |
+| [dsh-memory-manager](https://www.npmjs.com/package/@duke-dsh-plugins/dsh-memory-manager) | MIT | ZCode 风格项目记忆的 scan/frontmatter/dedupe/index 参考实现。 |
+| [dsh-claude-move](https://www.npmjs.com/package/@deepseek-ai/dsh-claude-move) | Apache-2.0 | 白名单、冲突状态、幂等 manifest、受管 AGENTS.md 块的参考实现。 |
+| [modelcontextprotocol/go-sdk](https://github.com/modelcontextprotocol/go-sdk) | Apache-2.0 AND MIT | MCP server（stdio + Streamable HTTP、多 client、token/session metadata）。 |
 | [Wails](https://github.com/wailsapp/wails) | MIT | 桌面壳框架（v3 beta）。 |
 | [moejs](https://github.com/MoeForge/moejs) | Apache-2.0 | 后期插件引擎候选（适配器插件化）。 |
 

@@ -142,6 +142,7 @@ MarkToast is built in public debt to these projects — see
 | [Architecture](docs/ARCHITECTURE.md) | Components, storage layout, adapters, failure modes |
 | [Roadmap](docs/ROADMAP.md) | M0–M5 |
 | [Reuse research](docs/RESEARCH-REUSE.md) | What we reuse from the open-source memory ecosystem (and what we must not) |
+| [Harness integration](docs/HARNESS-INTEGRATION.md) | Reference matrix for hooking ZCode / DSH / Hermes / Claude Code / Codex |
 | [Credits](docs/CREDITS.md) | Who we learned from, and under which license |
 | [Desktop](docs/DESKTOP.md) | Wails v3 plan (M4) |
 | [Adapters](adapters/README.md) | How to add a harness |
