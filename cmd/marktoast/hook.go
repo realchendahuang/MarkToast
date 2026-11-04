@@ -77,14 +77,10 @@ func sessionContext(root, project, cwd string) string {
 		key = store.ProjectKey(cwd)
 	}
 	var lines []string
-	indexPath := filepath.Join(store.MemoryDir(root, key), store.IndexFile)
-	if data, err := os.ReadFile(indexPath); err == nil {
-		lines = strings.Split(strings.TrimSpace(string(data)), "\n")
-	} else {
-		// Fall back to a generated compact list from the repository.
-		facts, _ := store.ListFacts(root)
+	facts, _ := store.ListFacts(root)
+	add := func(project string, limit int) {
 		for _, f := range facts {
-			if key != "" && f.Project != key {
+			if project != "" && f.Project != project {
 				continue
 			}
 			desc := strings.TrimSpace(f.Description)
@@ -92,10 +88,19 @@ func sessionContext(root, project, cwd string) string {
 				desc = "(no description)"
 			}
 			lines = append(lines, fmt.Sprintf("- [%s](%s) — %s", f.Name, f.Name, desc))
-			if len(lines) >= 40 {
-				break
+			if len(lines) >= limit {
+				return
 			}
 		}
+	}
+	if key != "" {
+		add(key, 40)
+	}
+	if len(lines) == 0 {
+		add(store.GlobalProject, 40)
+	}
+	if len(lines) == 0 {
+		add("", 20)
 	}
 	if len(lines) == 0 {
 		return ""
