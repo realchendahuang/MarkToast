@@ -779,6 +779,23 @@ async function runAdapterAction(adapter) {
   }
 }
 
+async function stageAdapter(adapter) {
+  try {
+    const data = await api("/api/adapters/action", {
+      method: "POST",
+      body: JSON.stringify({ id: adapter.id, action: "stage" }),
+    });
+    try {
+      await navigator.clipboard.writeText(data.dir);
+      toast("片段已准备，路径已复制");
+    } catch {
+      toast(`片段已准备：${data.dir}`);
+    }
+  } catch (error) {
+    toast(formatError(error), "error");
+  }
+}
+
 async function loadAdapters() {
   clear(els.adapterRegion);
   const list = element("div", "list");
@@ -843,6 +860,12 @@ function renderAdapters() {
         action.type = "button";
         action.addEventListener("click", () => runAdapterAction(adapter));
         row.appendChild(action);
+      } else if (adapter.detected && adapter.staged) {
+        const stage = element("button", "button quiet adapter-action", "片段");
+        stage.type = "button";
+        stage.title = "生成合并片段";
+        stage.addEventListener("click", () => stageAdapter(adapter));
+        row.appendChild(stage);
       }
       row.appendChild(tier);
       entry.appendChild(row);

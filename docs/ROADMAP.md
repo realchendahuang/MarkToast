@@ -27,8 +27,8 @@
 
 - [x] descriptor YAML schema（instruction / native memory / hooks / mcp / session）
 - [x] **ZCode**：幂等安装器（插件优先说明 + config.json hooks 合并 + MCP 合并 + 备份 + 卸载；UI 一键接入/修复）
-- [x] **DSH**：staged hooks.json + cordis patch 说明（半自动）
-- [x] **Hermes**：staged hooks/mcp 片段 + 说明（半自动）
+- [x] **DSH**：staged hooks.json + cordis patch 说明（半自动；UI「片段」一键生成）
+- [x] **Hermes**：staged hooks/mcp 片段 + 说明（半自动；UI「片段」一键生成）
 - [x] `marktoast adapters list|install|uninstall|status` + 适配器检测状态 / UI 接入
 - [x] `marktoast hook`：事件记录 + SessionStart 注入
 - [x] 导入现有 525 条 ZCode 记忆 / Hermes MEMORY.md（2026-11-04，含去重与 global 布局修正）
