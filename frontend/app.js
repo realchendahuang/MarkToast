@@ -228,6 +228,7 @@ function toast(message, kind = "success") {
 function setButtonLoading(button, loading, loadingText = "处理中…") {
   if (!button) return;
   const label = button.querySelector("span");
+  button.classList.toggle("is-loading", Boolean(loading));
   if (loading) {
     button.dataset.original = label ? label.textContent : button.textContent.trim();
     button.disabled = true;

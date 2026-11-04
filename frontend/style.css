@@ -1455,3 +1455,15 @@ html.theming *::after {
 .modal.closing .dialog { animation: dialog-out .26s var(--ease) forwards; }
 .button.quiet:hover { border-color: var(--muted); background: var(--card-2); color: var(--fg); }
 .top .search-shell:focus-within { border-color: var(--accent); box-shadow: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.button.is-loading { pointer-events: none; opacity: .72; }
+.button.is-loading .ic { display: none; }
+.button.is-loading::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
