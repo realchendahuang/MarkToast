@@ -72,6 +72,9 @@ func main() {
 		MinHeight:        640,
 		URL:              url,
 		BackgroundColour: application.NewRGB(14, 15, 18),
+		Mac: application.MacWindow{
+			TitleBar: application.MacTitleBarHidden,
+		},
 	})
 
 	tray := app.SystemTray.New()

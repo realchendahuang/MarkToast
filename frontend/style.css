@@ -972,6 +972,17 @@ a { color: inherit; text-decoration: none; }
   backdrop-filter: none;
 }
 body.mac { --top-h: 54px; }
+body.desktop .side-top { padding-left: 78px; padding-right: 10px; gap: 8px; }
+body.desktop .side-top .logo { width: 25px; height: 25px; }
+body.desktop .side-brand-name { font-size: 13px; }
+body.desktop .side-top { --wails-draggable: drag; }
+body.desktop .side-top button,
+body.desktop .side-top a,
+body.desktop .top button,
+body.desktop .top input,
+body.desktop .top select,
+body.desktop .top a { --wails-draggable: no-drag; }
+body.desktop .top { --wails-draggable: drag; }
 .breadcrumb { gap: 8px; margin-left: 2px; font-size: 12px; }
 .breadcrumb span { color: var(--muted); }
 .breadcrumb i { color: var(--faint); }
