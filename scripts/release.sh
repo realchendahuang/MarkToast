@@ -16,14 +16,20 @@ mkdir -p dist
 APP_DIR="$ROOT/dist/MarkToast.app" CLI_DIR="$ROOT/dist/bin" VERSION="$VERSION" ./scripts/install.sh
 
 ditto -c -k --sequesterRsrc --keepParent "dist/MarkToast.app" "dist/${NAME}.zip"
-shasum -a 256 "dist/${NAME}.zip" > "dist/SHA256SUMS"
+if command -v hdiutil >/dev/null 2>&1; then
+  hdiutil create -volname "MarkToast" -srcfolder "dist/MarkToast.app" -ov -format UDZO "dist/${NAME}.dmg" >/dev/null
+fi
+shasum -a 256 dist/${NAME}.* > "dist/SHA256SUMS"
 
 if [ -n "${NOTARY_PROFILE:-}" ]; then
   echo "→ notarizing ${NAME}.zip (profile: ${NOTARY_PROFILE})"
   xcrun notarytool submit "dist/${NAME}.zip" --keychain-profile "$NOTARY_PROFILE" --wait
   xcrun stapler staple "dist/MarkToast.app"
   ditto -c -k --sequesterRsrc --keepParent "dist/MarkToast.app" "dist/${NAME}.zip"
-  shasum -a 256 "dist/${NAME}.zip" > "dist/SHA256SUMS"
+  if command -v hdiutil >/dev/null 2>&1; then
+    hdiutil create -volname "MarkToast" -srcfolder "dist/MarkToast.app" -ov -format UDZO "dist/${NAME}.dmg" >/dev/null
+  fi
+  shasum -a 256 dist/${NAME}.* > "dist/SHA256SUMS"
 fi
 
 echo

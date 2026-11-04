@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 )
@@ -128,6 +129,34 @@ func LoadDir(dir string) ([]Descriptor, error) {
 	return out, nil
 }
 
+var (
+	dynamicMu sync.RWMutex
+	dynamic   []Descriptor
+)
+
+// RegisterDynamic adds or replaces an adapter created by a JS plugin.
+func RegisterDynamic(d Descriptor) {
+	if strings.TrimSpace(d.ID) == "" {
+		return
+	}
+	dynamicMu.Lock()
+	defer dynamicMu.Unlock()
+	for i := range dynamic {
+		if dynamic[i].ID == d.ID {
+			dynamic[i] = d
+			return
+		}
+	}
+	dynamic = append(dynamic, d)
+}
+
+// ResetDynamic clears plugin-registered adapters.
+func ResetDynamic() {
+	dynamicMu.Lock()
+	defer dynamicMu.Unlock()
+	dynamic = nil
+}
+
 // All returns defaults overlaid with the user directory (same id replaces).
 func All(userDir string) ([]Descriptor, error) {
 	byID := map[string]Descriptor{}
@@ -145,6 +174,11 @@ func All(userDir string) ([]Descriptor, error) {
 	for _, d := range user {
 		byID[d.ID] = d
 	}
+	dynamicMu.RLock()
+	for _, d := range dynamic {
+		byID[d.ID] = d
+	}
+	dynamicMu.RUnlock()
 	out := make([]Descriptor, 0, len(byID))
 	for _, d := range byID {
 		out = append(out, d)

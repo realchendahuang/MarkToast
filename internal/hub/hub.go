@@ -23,6 +23,7 @@ import (
 	"github.com/realchendahuang/MarkToast/internal/harness"
 	"github.com/realchendahuang/MarkToast/internal/index"
 	"github.com/realchendahuang/MarkToast/internal/ingest"
+	"github.com/realchendahuang/MarkToast/internal/plugin"
 	"github.com/realchendahuang/MarkToast/internal/store"
 	"github.com/realchendahuang/MarkToast/internal/version"
 )
@@ -35,6 +36,7 @@ type Options struct {
 	AutoCommit  bool
 	Debounce    time.Duration
 	Committer   *committer
+	Plugins     *plugin.Host
 }
 
 // Serve starts the HTTP hub and blocks.
@@ -48,6 +50,14 @@ func Serve(o Options) error {
 	}
 	mcpServer := NewMCPServer(o.Root)
 	token, _ := EnsureToken(o.Root)
+	plugins, pluginErr := plugin.Load(o.Root)
+	if pluginErr != nil {
+		log.Printf("marktoast: plugin load: %v", pluginErr)
+	}
+	o.Plugins = plugins
+	if plugins != nil {
+		defer plugins.Close()
+	}
 	if path, created, err := backup.EnsureDaily(o.Root); err != nil {
 		log.Printf("marktoast: daily backup failed: %v", err)
 	} else if created {
@@ -242,6 +252,11 @@ func handleMemory(w http.ResponseWriter, r *http.Request, o Options) {
 			return
 		}
 		commit(o, fmt.Sprintf("mem(%s): save %s", args.Project, args.Name))
+		if o.Plugins != nil {
+			o.Plugins.Emit("memory.saved", map[string]any{
+				"path": path, "project": args.Project, "name": args.Name, "type": args.Type,
+			})
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"path": path})
 	default:
 		w.Header().Set("Allow", "GET, POST")
@@ -498,6 +513,9 @@ func handleInboxPromote(w http.ResponseWriter, r *http.Request, o Options) {
 		return
 	}
 	commit(o, fmt.Sprintf("inbox: promote %s", filepath.Base(path)))
+	if o.Plugins != nil {
+		o.Plugins.Emit("inbox.promoted", map[string]any{"path": path})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"path": path})
 }
 

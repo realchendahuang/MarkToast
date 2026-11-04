@@ -168,6 +168,9 @@ func handleMemoryRestore(w http.ResponseWriter, r *http.Request, o Options) {
 		name = fact.Name
 	}
 	commit(o, fmt.Sprintf("restore(%s): %s", project, name))
+	if o.Plugins != nil {
+		o.Plugins.Emit("memory.restored", map[string]any{"path": abs, "project": project, "name": name})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "path": abs})
 }
 

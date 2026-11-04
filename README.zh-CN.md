@@ -137,6 +137,7 @@ MarkToast 站在这些项目肩上——具体借鉴了什么见 [docs/CREDITS.m
 | 文档 | 内容 |
 |---|---|
 | [品牌规范](docs/BRAND.md) | Logo、颜色、字体、资产清单 |
+| [插件](docs/PLUGINS.md) | JS 插件 API 与事件 |
 | [产品定位](docs/PRODUCT.md) | 用户、场景、非目标、成功指标 |
 | [技术栈](docs/TECH-STACK.md) | 每个选型的理由、备选与风险 |
 | [架构设计](docs/ARCHITECTURE.md) | 组件、存储布局、适配器、故障模式 |

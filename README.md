@@ -105,7 +105,7 @@ auto dark, indigo accent), 212px sidebar, breadcrumb header, white list cards an
 rows, **its motion** (view fade-up, segmented thumb glide 280ms, row fold 420ms,
 dialog in/out, skeleton shimmer, reduced-motion), modal, Cmd/Ctrl+K
 - [x] Wails v3.1 desktop shell (`make desktop`; opens the same hub in a native window)
-- [ ] Plugin host, more adapters
+- [ ] More adapters
 
 See [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -163,6 +163,7 @@ MarkToast is built in public debt to these projects — see
 | Doc | What |
 |---|---|
 | [Brand](docs/BRAND.md) | Logo, colours, type, asset list |
+| [Plugins](docs/PLUGINS.md) | JS plugin API and events |
 | [Product](docs/PRODUCT.md) | Positioning, users, non-goals, success metrics |
 | [Tech stack](docs/TECH-STACK.md) | Every decision, with alternatives and risks |
 | [Architecture](docs/ARCHITECTURE.md) | Components, storage layout, adapters, failure modes |
