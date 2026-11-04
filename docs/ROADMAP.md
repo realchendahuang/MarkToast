@@ -33,7 +33,7 @@
 - [x] `marktoast hook`：事件记录 + SessionStart 注入
 - [x] 导入现有 525 条 ZCode 记忆 / Hermes MEMORY.md（2026-11-04，含去重与 global 布局修正）
 - [ ] 端到端验证：三家读到同一份记忆（需要重启各 harness 实测）
-- [ ] Hermes memory provider 插件（完整生命周期）
+- [x] Hermes memory provider 插件（完整生命周期，2026-11-04；`adapters/hermes/marktoast`，需 `hermes memory setup` 激活）
 
 ## M3 — Hub（HTTP + MCP）✅（2026-11-04）
 

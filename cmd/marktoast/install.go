@@ -382,8 +382,10 @@ Paste the generated snippets:
   commands pointing at the MarkToast binary (marktoast hook --event ... --agent hermes)
 - mcp_servers: marktoast (stdio: marktoast mcp)
 
-For the full lifecycle (prefetch/sync_turn) a standalone MemoryProvider is the
-next step; until then MCP + hooks is the supported path.
+For the full lifecycle (prefetch/sync_turn) use the bundled MemoryProvider:
+  cp -R adapters/hermes/marktoast ~/.hermes/plugins/marktoast
+  hermes plugins enable marktoast
+  hermes memory setup   # select marktoast
 Staged files: ~/.marktoast/adapters/hermes/`
 }
 

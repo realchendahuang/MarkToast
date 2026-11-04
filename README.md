@@ -105,7 +105,7 @@ auto dark, indigo accent), 212px sidebar, breadcrumb header, white list cards an
 rows, **its motion** (view fade-up, segmented thumb glide 280ms, row fold 420ms,
 dialog in/out, skeleton shimmer, reduced-motion), modal, Cmd/Ctrl+K
 - [x] Wails v3.1 desktop shell (`make desktop`; opens the same hub in a native window)
-- [ ] Hermes memory provider, TUI, plugin host, more adapters
+- [ ] TUI, plugin host, more adapters
 
 See [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -127,6 +127,7 @@ make desktop && ./bin/marktoast-desktop              # native Wails window
 ./bin/marktoast diff release-rollback        # show the last patch
 ./bin/marktoast rollback release-rollback --yes
 ./bin/marktoast adapters install zcode       # dry run; add --apply to write
+cp -R adapters/hermes/marktoast ~/.hermes/plugins/marktoast  # Hermes provider
 make install                                # CLI + MarkToast.app
 ```
 

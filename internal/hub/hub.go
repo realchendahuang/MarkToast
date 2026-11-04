@@ -72,6 +72,7 @@ func Serve(o Options) error {
 	mux.HandleFunc("/api/import", func(w http.ResponseWriter, r *http.Request) { handleImport(w, r, o) })
 	mux.HandleFunc("/api/backup", func(w http.ResponseWriter, r *http.Request) { handleBackup(w, r, o) })
 	mux.HandleFunc("/api/inbox", func(w http.ResponseWriter, r *http.Request) { handleInbox(w, r, o) })
+	mux.HandleFunc("/api/inbox/candidate", func(w http.ResponseWriter, r *http.Request) { handleInboxCandidate(w, r, o) })
 	mux.HandleFunc("/api/inbox/promote", func(w http.ResponseWriter, r *http.Request) { handleInboxPromote(w, r, o) })
 	mux.HandleFunc("/api/inbox/dismiss", func(w http.ResponseWriter, r *http.Request) { handleInboxDismiss(w, r, o) })
 	mux.HandleFunc("/api/memory/history", func(w http.ResponseWriter, r *http.Request) { handleMemoryHistory(w, r, o) })
@@ -519,4 +520,44 @@ func handleInboxDismiss(w http.ResponseWriter, r *http.Request, o Options) {
 	}
 	commit(o, "inbox: dismiss candidate")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func handleInboxCandidate(w http.ResponseWriter, r *http.Request, o Options) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+	var payload struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Body        string `json:"body"`
+		Agent       string `json:"agent"`
+		Session     string `json:"session"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if strings.TrimSpace(payload.Body) == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("body is required"))
+		return
+	}
+	candidate := ingest.Candidate{
+		Name:        strings.TrimSpace(payload.Name),
+		Description: strings.TrimSpace(payload.Description),
+		Body:        payload.Body,
+		Agent:       payload.Agent,
+		SessionID:   payload.Session,
+		Created:     time.Now().UTC(),
+	}
+	if candidate.Name == "" {
+		candidate.Name = "Hermes candidate"
+	}
+	written, err := ingest.Write(o.Root, []ingest.Candidate{candidate})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"written": written, "count": len(written)})
 }

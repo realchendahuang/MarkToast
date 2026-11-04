@@ -26,7 +26,10 @@ for @deepseek-ai/dsh-hooks-claude-code. SessionStart is detached, so use
 MCP handoff rather than stdout injection.`,
 		"hermes": `Hermes: paste the hook commands into ~/.hermes/config.yaml
 (hooks_auto_accept must be on) and the stdio MCP server into mcp_servers.
-The full prefetch/sync_turn lifecycle needs a standalone MemoryProvider.`,
+For the full lifecycle use the bundled MemoryProvider:
+  cp -R adapters/hermes/marktoast ~/.hermes/plugins/marktoast
+  hermes plugins enable marktoast
+  hermes memory setup   # select marktoast`,
 	}[id]
 	if instructions == "" {
 		return StagedReport{}, fmt.Errorf("adapter %q has no staging recipe", id)
