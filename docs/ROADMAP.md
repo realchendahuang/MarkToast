@@ -20,18 +20,18 @@
 - [x] `marktoast add` / `get` / `log`：写记忆 + 自动索引 + 自动提交
 - [x] `marktoast status`：仓库、索引、Git、适配器状态
 - [x] 测试：store / index / gitx 各一组
-- [ ] debounce 批量提交（当前一次变更一次 commit）
-- [ ] `diff` / `rollback` 子命令（当前用 git 原生）
+- [ ] debounce 批量提交（当前一次变更一次 commit；UI 已按变更事务写，批量队列待做）
+- [x] `diff` / `rollback` 子命令（2026-11-04）
 
 ## M2 — 适配器（先三家）🟡（骨架完成，端到端待验证）
 
 - [x] descriptor YAML schema（instruction / native memory / hooks / mcp / session）
-- [x] **ZCode**：幂等安装器（插件优先说明 + config.json hooks 合并 + MCP 合并 + 备份 + 卸载）
+- [x] **ZCode**：幂等安装器（插件优先说明 + config.json hooks 合并 + MCP 合并 + 备份 + 卸载；UI 一键接入/修复）
 - [x] **DSH**：staged hooks.json + cordis patch 说明（半自动）
 - [x] **Hermes**：staged hooks/mcp 片段 + 说明（半自动）
-- [x] `marktoast adapters list|install|uninstall|status`
+- [x] `marktoast adapters list|install|uninstall|status` + 适配器检测状态 / UI 接入
 - [x] `marktoast hook`：事件记录 + SessionStart 注入
-- [ ] 导入现有 525 条 ZCode 记忆 / Hermes MEMORY.md
+- [x] 导入现有 525 条 ZCode 记忆 / Hermes MEMORY.md（2026-11-04，含去重与 global 布局修正）
 - [ ] 端到端验证：三家读到同一份记忆（需要重启各 harness 实测）
 - [ ] Hermes memory provider 插件（完整生命周期）
 
@@ -51,13 +51,13 @@
 - [x] 中文界面 + 离线/错误状态
 - [x] Wails v3.1 桌面壳（`make desktop`；壳内启动/连接 hub，单进程）
 - [x] 桌面壳加载同一 Web UI（原生窗口，1280×820）
-- [ ] 菜单栏常驻 / 托盘
-- [ ] 记忆详情里的 Git diff 与回滚按钮
+- [x] 菜单栏常驻 / 托盘（2026-11-04）
+- [x] 记忆详情里的 Git diff 与回滚按钮（2026-11-04）
 - [ ] 中英 i18n 切换
 
 ## M5 — 打磨与开源准备
 
-- [ ] 导入器：ai-memory / ZCode / Hermes / EverOS 格式
+- [x] 导入器：ZCode / Hermes（2026-11-04）；ai-memory / EverOS 待做
 - [ ] 插件宿主（moejs）与 adapter 贡献文档
 - [ ] TUI（Bubble Tea）作为无 GUI/远程场景的第二界面
 - [ ] 自动备份 / 更新器 / 安装脚本

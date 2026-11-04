@@ -58,7 +58,7 @@ func main() {
 		Description: "Every agent's memory. One place. Yours.",
 		Icon:        iconPNG,
 	})
-	app.Window.NewWithOptions(application.WebviewWindowOptions{
+	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:            "MarkToast · 马克吐司",
 		Width:            1280,
 		Height:           820,
@@ -67,6 +67,25 @@ func main() {
 		URL:              url,
 		BackgroundColour: application.NewRGB(14, 15, 18),
 	})
+
+	tray := app.SystemTray.New()
+	tray.SetIcon(iconPNG)
+	tray.SetTooltip("MarkToast · 马克吐司")
+	tray.AttachWindow(window)
+	trayMenu := app.NewMenu()
+	trayMenu.Add("显示 MarkToast").OnClick(func(*application.Context) {
+		window.Show()
+		window.Focus()
+	})
+	trayMenu.Add("在浏览器打开").OnClick(func(*application.Context) {
+		_ = app.Browser.OpenURL(url)
+	})
+	trayMenu.AddSeparator()
+	trayMenu.Add("退出").OnClick(func(*application.Context) {
+		app.Quit()
+	})
+	tray.SetMenu(trayMenu)
+
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
 	}
