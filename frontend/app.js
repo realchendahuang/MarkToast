@@ -18,6 +18,7 @@ const state = {
   detailErrors: new Map(),
   detailLoading: false,
   adapters: [],
+  inbox: [],
   history: [],
   aliases: {},
   settings: null,
@@ -250,6 +251,7 @@ async function loadStatus({ announce = false } = {}) {
     setHubState("online", "在线");
     await loadAliases();
     $("all-count").textContent = String(data.facts ?? 0);
+    $("inbox-count").textContent = Number(data.inbox) ? String(data.inbox) : "";
     $("repo-count").textContent = `${Number(data.facts) || 0} 条`;
     $("repo-count").title = `${Number(data.facts) || 0} 条记忆`;
     $("repo-status").title = data.root || "";
@@ -796,6 +798,94 @@ async function stageAdapter(adapter) {
   }
 }
 
+async function loadInbox() {
+  const region = $("inbox-results");
+  clear(region);
+  const list = element("div", "list");
+  list.append(
+    element("div", "row loading-row"),
+    element("div", "row loading-row"),
+  );
+  region.appendChild(list);
+  try {
+    const data = await api("/api/inbox");
+    state.inbox = data.candidates || [];
+    renderInbox();
+  } catch (error) {
+    clear(region);
+    const list = element("div", "list");
+    list.appendChild(emptyState("收件箱加载失败", formatError(error), "重试", loadInbox));
+    region.appendChild(list);
+  }
+}
+
+function renderInbox() {
+  const region = $("inbox-results");
+  clear(region);
+  $("inbox-total").textContent = String(state.inbox.length);
+  if (!state.inbox.length) {
+    const list = element("div", "list");
+    list.appendChild(emptyState("收件箱是空的", "会话结束后，候选记忆会出现在这里。"));
+    region.appendChild(list);
+    return;
+  }
+  const list = element("div", "list");
+  state.inbox.forEach((candidate) => {
+    const row = element("div", "row inbox-row");
+    row.append(icon("inbox"));
+    const who = element("div", "who");
+    who.append(
+      element("div", "name", candidate.name || "候选记忆"),
+      element("div", "sub", candidate.description || ""),
+    );
+    const meta = element("div", "memory-meta");
+    meta.append(
+      element("span", "pill", candidate.agent || "agent"),
+      element("span", "memory-time", relativeDate(candidate.created)),
+    );
+    const actions = element("div", "inbox-actions");
+    const keep = element("button", "button primary compact", "保留");
+    keep.type = "button";
+    keep.addEventListener("click", () => promoteCandidate(candidate));
+    const drop = element("button", "button quiet compact", "丢弃");
+    drop.type = "button";
+    drop.addEventListener("click", () => dismissCandidate(candidate));
+    actions.append(keep, drop);
+    row.append(who, meta, actions);
+    list.appendChild(row);
+  });
+  region.appendChild(list);
+}
+
+async function promoteCandidate(candidate) {
+  try {
+    await api("/api/inbox/promote", {
+      method: "POST",
+      body: JSON.stringify({ path: candidate.path }),
+    });
+    toast("已保留");
+    await loadStatus();
+    await loadInbox();
+  } catch (error) {
+    toast(formatError(error), "error");
+  }
+}
+
+async function dismissCandidate(candidate) {
+  if (!window.confirm("丢弃这条候选记忆？")) return;
+  try {
+    await api("/api/inbox/dismiss", {
+      method: "POST",
+      body: JSON.stringify({ path: candidate.path }),
+    });
+    toast("已丢弃");
+    await loadStatus();
+    await loadInbox();
+  } catch (error) {
+    toast(formatError(error), "error");
+  }
+}
+
 async function loadAdapters() {
   clear(els.adapterRegion);
   const list = element("div", "list");
@@ -926,7 +1016,7 @@ function renderHistory() {
   els.historyRegion.appendChild(list);
 }
 
-const VIEW_LABELS = { memories: "全部记忆", adapters: "适配器", history: "历史", settings: "设置" };
+const VIEW_LABELS = { memories: "全部记忆", inbox: "收件箱", adapters: "适配器", history: "历史", settings: "设置" };
 
 function switchView(view) {
   state.view = view;
@@ -941,6 +1031,7 @@ function switchView(view) {
   });
   updateBreadcrumb();
   positionSegThumb();
+  if (view === "inbox") loadInbox();
   if (view === "adapters" && !state.adapters.length) loadAdapters();
   if (view === "history") loadHistory();
   if (view === "settings") loadSettings();

@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/realchendahuang/MarkToast/internal/ingest"
 	"github.com/realchendahuang/MarkToast/internal/store"
 )
 
@@ -43,6 +44,9 @@ func newHookCmd() *cobra.Command {
 			sessionID := stringField(fields, "sessionId", "session_id", "session")
 
 			_ = appendEvent(cfg.Root, event, agent, sessionID, cwd, payload)
+			if candidates := ingest.Extract(agent, event, payload); len(candidates) > 0 {
+				_, _ = ingest.Write(cfg.Root, candidates)
+			}
 
 			if strings.EqualFold(event, "SessionStart") {
 				context := sessionContext(cfg.Root, project, cwd)

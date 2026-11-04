@@ -46,6 +46,10 @@
       <circle cx="7.3" cy="10" r="1.5"></circle>
       <circle cx="12.3" cy="13.8" r="1.5"></circle>
     </symbol>
+    <symbol id="icon-inbox" viewBox="0 0 20 20">
+      <path d="M3 4.5h14v7l-2.2 4H5.2L3 11.5Z"></path>
+      <path d="M3 11.5h4l1 2h4l1-2h4"></path>
+    </symbol>
     <symbol id="icon-stack" viewBox="0 0 20 20">
       <path d="m10 2.8 7 3.4-7 3.4-7-3.4 7-3.4Z"></path>
       <path d="m3 10.3 7 3.4 7-3.4M3 14.2l7 3.3 7-3.3"></path>
@@ -108,6 +112,11 @@
           <svg class="ic"><use href="#icon-stack"></use></svg>
           <span class="side-name">全部记忆</span>
           <span class="side-count" id="all-count">—</span>
+        </button>
+        <button class="side-row" type="button" data-view="inbox">
+          <svg class="ic"><use href="#icon-inbox"></use></svg>
+          <span class="side-name">收件箱</span>
+          <span class="side-count" id="inbox-count"></span>
         </button>
         <button class="side-row" type="button" data-view="adapters">
           <svg class="ic"><use href="#icon-plug"></use></svg>
@@ -231,6 +240,14 @@
             <div class="row loading-row"><span class="skeleton title"></span><span class="skeleton line"></span></div>
           </div>
         </div>
+      </section>
+
+      <section class="view-panel" id="view-inbox" role="tabpanel" aria-label="收件箱" hidden>
+        <div class="view-head">
+          <h1>收件箱</h1>
+          <span class="view-count" id="inbox-total" aria-live="polite">—</span>
+        </div>
+        <div id="inbox-results" aria-live="polite"></div>
       </section>
 
       <section class="view-panel" id="view-adapters" role="tabpanel" aria-label="适配器" hidden>

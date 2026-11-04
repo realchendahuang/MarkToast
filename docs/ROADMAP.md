@@ -42,7 +42,7 @@
 - [x] MCP stdio（`marktoast mcp`）+ Streamable HTTP（`/mcp`）
 - [x] HTTP API：status / search / memory / memories / projects / adapters / git-log
 - [x] 降级：hub 停止时 Markdown 仍可读，CLI 仍可搜索（线性扫描回退）
-- [ ] 会话日志摄取 → `inbox/` 候选记忆（T2）
+- [x] 会话日志摄取 → `inbox/` 候选记忆（T2，2026-11-04；保留/丢弃 UI + CLI）
 - [x] 敏感信息脱敏（高置信度规则：私钥 / OpenAI / GitHub / AWS / Google / Slack / Stripe / JWT / Bearer，2026-11-04）
 
 ## M4 — 桌面 UI 🟡（Web UI + Wails 壳完成，差 diff/回滚与 i18n）

@@ -22,6 +22,7 @@ import (
 	"github.com/realchendahuang/MarkToast/internal/gitx"
 	"github.com/realchendahuang/MarkToast/internal/harness"
 	"github.com/realchendahuang/MarkToast/internal/index"
+	"github.com/realchendahuang/MarkToast/internal/ingest"
 	"github.com/realchendahuang/MarkToast/internal/store"
 	"github.com/realchendahuang/MarkToast/internal/version"
 )
@@ -70,6 +71,9 @@ func Serve(o Options) error {
 	mux.HandleFunc("/api/aliases", func(w http.ResponseWriter, r *http.Request) { handleAliases(w, r, o) })
 	mux.HandleFunc("/api/import", func(w http.ResponseWriter, r *http.Request) { handleImport(w, r, o) })
 	mux.HandleFunc("/api/backup", func(w http.ResponseWriter, r *http.Request) { handleBackup(w, r, o) })
+	mux.HandleFunc("/api/inbox", func(w http.ResponseWriter, r *http.Request) { handleInbox(w, r, o) })
+	mux.HandleFunc("/api/inbox/promote", func(w http.ResponseWriter, r *http.Request) { handleInboxPromote(w, r, o) })
+	mux.HandleFunc("/api/inbox/dismiss", func(w http.ResponseWriter, r *http.Request) { handleInboxDismiss(w, r, o) })
 	mux.HandleFunc("/api/memory/history", func(w http.ResponseWriter, r *http.Request) { handleMemoryHistory(w, r, o) })
 	mux.HandleFunc("/api/memory/diff", func(w http.ResponseWriter, r *http.Request) { handleMemoryDiff(w, r, o) })
 	mux.HandleFunc("/api/memory/restore", func(w http.ResponseWriter, r *http.Request) { handleMemoryRestore(w, r, o) })
@@ -152,6 +156,7 @@ func handleStatus(w http.ResponseWriter, r *http.Request, o Options) {
 		"projects": projects,
 		"adapters": adapterList,
 		"index":    map[string]any{"facts": stats.Facts, "builtAt": stats.BuiltAt},
+		"inbox":    inboxCount(o.Root),
 		"git":      gitStatus,
 	})
 }
@@ -433,4 +438,85 @@ func marktoastCLI() string {
 		}
 	}
 	return ""
+}
+
+func inboxCount(root string) int {
+	candidates, err := ingest.List(root)
+	if err != nil {
+		return 0
+	}
+	return len(candidates)
+}
+
+func handleInbox(w http.ResponseWriter, r *http.Request, o Options) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET")
+		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+	candidates, err := ingest.List(o.Root)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	out := make([]map[string]any, 0, len(candidates))
+	for _, candidate := range candidates {
+		out = append(out, map[string]any{
+			"path":        candidate.Path,
+			"name":        candidate.Name,
+			"description": candidate.Description,
+			"agent":       candidate.Agent,
+			"session":     candidate.SessionID,
+			"created":     candidate.Created.Format(time.RFC3339),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"candidates": out, "count": len(out)})
+}
+
+func handleInboxPromote(w http.ResponseWriter, r *http.Request, o Options) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+	var payload struct {
+		Path    string `json:"path"`
+		Project string `json:"project"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	path, err := ingest.Promote(o.Root, payload.Path, payload.Project)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := upsertIndex(o.Root, path); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	commit(o, fmt.Sprintf("inbox: promote %s", filepath.Base(path)))
+	writeJSON(w, http.StatusOK, map[string]any{"path": path})
+}
+
+func handleInboxDismiss(w http.ResponseWriter, r *http.Request, o Options) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+	var payload struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := ingest.Dismiss(o.Root, payload.Path); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	commit(o, "inbox: dismiss candidate")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
