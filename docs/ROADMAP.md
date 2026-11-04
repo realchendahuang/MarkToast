@@ -45,14 +45,15 @@
 - [ ] 会话日志摄取 → `inbox/` 候选记忆（T2）
 - [ ] 敏感信息脱敏（gitleaks 规则）
 
-## M4 — 桌面 UI 🟡（Web UI 完成，Wails 壳待接）
+## M4 — 桌面 UI 🟡（Web UI + Wails 壳完成，差 diff/回滚与 i18n）
 
 - [x] 浏览器 Web UI（Magpie 风格）由 hub 托管：搜索、详情、frontmatter、Git 历史、适配器、新建记忆、Cmd+K
 - [x] 中文界面 + 离线/错误状态
-- [ ] Wails v3 桌面壳 + 菜单栏常驻
+- [x] Wails v3.1 桌面壳（`make desktop`；壳内启动/连接 hub，单进程）
+- [x] 桌面壳加载同一 Web UI（原生窗口，1280×820）
+- [ ] 菜单栏常驻 / 托盘
 - [ ] 记忆详情里的 Git diff 与回滚按钮
 - [ ] 中英 i18n 切换
-- [ ] 桌面壳内嵌 hub（单进程启动）
 
 ## M5 — 打磨与开源准备
 

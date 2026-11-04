@@ -17,6 +17,8 @@ ZCode, Hermes and DSH first — Codex, Claude Code, Pi and the rest next.
 
 </div>
 
+![MarkToast UI](docs/assets/ui-search.png)
+
 ---
 
 ## Why MarkToast
@@ -97,7 +99,7 @@ MarkToast treats memory as what it should be: **a repository you own.**
       MCP server over stdio and streamable HTTP (`memory_search/get/save/list`)
 - [x] Vanilla web UI inspired by Magpie: search, detail, frontmatter, Git
       history, adapters, save form (Cmd/Ctrl+K)
-- [ ] Wails v3 desktop shell (M4)
+- [x] Wails v3.1 desktop shell (`make desktop`; opens the same hub in a native window)
 - [ ] Debounced commits, session ingestion, Hermes memory provider, more adapters
 
 See [docs/ROADMAP.md](docs/ROADMAP.md).
@@ -112,6 +114,7 @@ make build
   --description "2026-09 发版回滚原因" --type project --body "发版后首页闪屏，决定回滚。"
 ./bin/marktoast search "回滚"
 ./bin/marktoast serve                        # http://127.0.0.1:3777 (web UI)
+make desktop && ./bin/MarkToast              # native Wails window
 ./bin/marktoast mcp                          # stdio MCP server for harnesses
 ./bin/marktoast adapters install zcode       # dry run; add --apply to write
 ```

@@ -12,7 +12,7 @@
 | 层 | 选择 | 版本/库 | 理由 | 被否方案 |
 |---|---|---|---|---|
 | 核心语言 | **Go** | 1.26.x | 单二进制、跨平台交叉编译、IO/并发简单；作者已有 Go 经验；与 Wails 同栈 | Rust（学习+编译成本）、TypeScript/Node（分发依赖运行时） |
-| 桌面壳 | **Wails v3** | `github.com/wailsapp/wails/v3`（beta，锁版本） | 系统 WebView、单二进制、Mac/Windows/Linux；Magpie 同款 | Tauri 2（Rust 双语言）、Electron（体积/内存） |
+| 桌面壳 | **Wails v3**（已实现） | `github.com/wailsapp/wails/v3` **v3.1.0 稳定版** | 系统 WebView、单二进制、Mac/Windows/Linux；Magpie 同款 | Tauri 2（Rust 双语言）、Electron（体积/内存） |
 | 前端 | **原生 HTML/CSS/JS** | Vite 构建；无框架；ES modules | 与 Magpie 一致：系统 WebView 内足够快、无框架负担、UI 测试用 `.cjs` 直跑 | React / Svelte / Vue（都为复杂状态引入，v1 不需要） |
 | 样式 | **手写 CSS + design tokens** | CSS 变量 + 一套 token（颜色/间距/字号） | 与 Magpie 的克制风格一致；可主题化、中英文自适应 | Tailwind（构建链更重，与"手写精修"路线冲突） |
 | TUI | **Bubble Tea + Lipgloss**（后期） | `charmbracelet/bubbletea` | Magpie 同款；给无 GUI 场景/远程使用 | 不做 TUI（少一个界面，但少一个卖点） |
@@ -76,7 +76,7 @@ MarkToast/
 
 | 风险 | 对策 |
 |---|---|
-| Wails v3 仍是 beta | 锁 exact 版本；保留"浏览器 Web UI"模式（`marktoast ui --web`）做开发/兜底 |
+| Wails v3（已到稳定 3.1.0） | 锁 exact 版本；保留浏览器 Web UI（`marktoast serve`）做开发/兜底 |
 | moejs 仍是 alpha | 插件引擎推迟到 M5；v1 适配器全部 Go+YAML |
 | 上游 harness 格式变动 | descriptor 化；适配器带版本探测与 fixture 测试 |
 | modernc 不支持自定义 FTS5 tokenizer（已实测） | 走"写入/查询两侧同一预分词"：bigram（零依赖）+ gse（可选）；trigram 仅回退；需要更强分词再评估 gojieba（CGO）或 Bleve |

@@ -17,6 +17,8 @@
 
 </div>
 
+![MarkToast UI](docs/assets/ui-search.png)
+
 ---
 
 ## 为什么需要 MarkToast
@@ -88,7 +90,7 @@ MarkToast 把记忆还原成它本该有的样子：**一个你拥有的仓库�
 - [x] 本地 hub：status/search/memory/memories/projects/adapters/git-log API；
       MCP server（stdio + streamable HTTP，`memory_search/get/save/list`）
 - [x] 原生 Web UI（参考 Magpie）：搜索、详情、frontmatter、Git 历史、适配器、新建记忆（Cmd/Ctrl+K）
-- [ ] Wails v3 桌面壳（M4）
+- [x] Wails v3.1 桌面壳（`make desktop`；原生窗口加载同一个 hub）
 - [ ] debounce 提交、会话摄取、Hermes memory provider、更多适配器
 
 详见 [docs/ROADMAP.md](docs/ROADMAP.md)。
@@ -103,6 +105,7 @@ make build
   --description "2026-09 发版回滚原因" --type project --body "发版后首页闪屏，决定回滚。"
 ./bin/marktoast search "回滚"
 ./bin/marktoast serve                        # http://127.0.0.1:3777（Web UI）
+make desktop && ./bin/MarkToast              # 原生 Wails 窗口
 ./bin/marktoast mcp                          # 给 harness 的 stdio MCP server
 ./bin/marktoast adapters install zcode       # 默认 dry-run；加 --apply 写入
 ```
