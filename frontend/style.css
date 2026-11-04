@@ -769,3 +769,72 @@ a { color: inherit; text-decoration: none; }
   .top .compact-brand { display: flex; }
   .top .breadcrumb { display: none; }
 }
+
+/* ---- quiet footer and expanded meta ------------------------------------ */
+.side-foot { padding: 9px 14px 11px; }
+.side-foot-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.side-foot-row .side-count { margin-left: auto; font-variant-numeric: tabular-nums; }
+.copy-path { width: 24px; height: 24px; margin-left: auto; }
+.copy-path .ic { width: 13px; height: 13px; }
+.expanded-meta {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-bottom: 10px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.expanded-project { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.expanded-time { color: var(--muted); white-space: nowrap; }
+.history-hash { flex: none; color: var(--muted); font-size: 11px; }
+.history-subject { min-width: 0; flex: 1; overflow: hidden; color: var(--fg); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+.history-date { flex: none; color: var(--muted); font: 10.5px var(--code); font-variant-numeric: tabular-nums; }
+.type-pill.type-user { color: var(--green); background: var(--green-soft); }
+.type-pill.type-feedback { color: var(--amber); background: var(--amber-soft); }
+.type-pill.type-project { color: var(--accent); background: var(--accent-soft); }
+.type-pill.type-reference { color: var(--fg-2); background: var(--pill); }
+
+/* header: search and actions live in one flex row on desktop, two rows on
+   narrow windows (Magpie keeps the relayout calm instead of overflow) */
+.search-shell { margin-left: auto; }
+.top-actions { margin-left: 0; }
+@media (max-width: 900px) {
+  .top {
+    height: auto;
+    padding: 8px 10px;
+    flex-wrap: wrap;
+    gap: 6px 8px;
+  }
+  .compact-brand { flex: 0 0 auto; width: auto; }
+  .top-actions { margin-left: auto; width: auto; flex-wrap: nowrap; gap: 4px; }
+  .top-new { width: 30px; flex: 0 0 30px; padding: 0; justify-content: center; }
+  .top-new span { display: none; }
+  .search-shell {
+    order: 4;
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: none;
+    height: 32px;
+    margin-left: 0;
+  }
+  .seg {
+    order: 5;
+    position: relative;
+    left: auto;
+    top: auto;
+    transform: none;
+    width: 100%;
+    max-width: none;
+  }
+  .shortcut { display: none; }
+}
+@media (max-width: 640px) {
+  .brand { width: auto; }
+  .top-actions { width: auto; }
+}

@@ -30,7 +30,6 @@ const els = {
   hubAlertText: $("hub-alert-text"),
   hubStateText: $("hub-state-text"),
   statusDot: $("side-status-dot"),
-  metaState: $("repo-meta-state"),
   search: $("global-search"),
   searchClear: $("search-clear"),
   projectList: $("project-list"),
@@ -39,12 +38,9 @@ const els = {
   resultRegion: $("memory-results"),
   resultTotal: $("result-total"),
   memoryHeading: $("memory-heading"),
-  memorySubtitle: $("memory-subtitle"),
   adapterRegion: $("adapter-results"),
   adapterCount: $("adapter-count"),
   historyRegion: $("history-results"),
-  gitSubtitle: $("git-subtitle"),
-  gitBadge: $("git-badge"),
   modal: $("memory-modal"),
   form: $("memory-form"),
   formError: $("form-error"),
@@ -141,9 +137,7 @@ async function api(path, options = {}) {
 function setHubState(kind, text) {
   els.statusDot.classList.remove("is-online", "is-offline");
   if (kind) els.statusDot.classList.add(`is-${kind}`);
-  els.hubStateText.textContent = text;
-  els.metaState.classList.toggle("is-offline", kind === "offline");
-  els.metaState.textContent = kind === "online" ? "已连接" : kind === "offline" ? "离线" : "连接中";
+  els.hubStateText.textContent = kind === "online" ? "在线" : kind === "offline" ? "离线" : "连接中";
 }
 
 function showHubAlert(message) {
@@ -203,34 +197,50 @@ async function loadStatus({ announce = false } = {}) {
     state.status = data;
     state.root = data.root || "";
     hideHubAlert();
-    setHubState("online", `在线 · ${Number(data.facts) || 0} 条记忆`);
+    setHubState("online", "在线");
     $("all-count").textContent = String(data.facts ?? 0);
-    $("repo-root").textContent = data.root || "—";
-    $("repo-root").title = data.root || "";
-    $("repo-version").textContent = `MarkToast · v${data.version || "dev"}`;
-    $("settings-root").textContent = shortPath(data.root || "");
-    $("settings-root").title = data.root || "";
-    $("settings-index").textContent = `${Number(data.index?.facts) || 0} 条 · ${formatDate(data.index?.builtAt, true)}`;
+    $("repo-count").textContent = `${Number(data.facts) || 0} 条`;
+    $("repo-count").title = `${Number(data.facts) || 0} 条记忆`;
+    $("repo-status").title = data.root || "";
     renderProjects(data.projects || []);
     renderProjectOptions(data.projects || []);
-    renderAdapterMiniatures(data.adapters || []);
     if (announce) toast("已连接到本地 hub");
     return data;
   } catch (error) {
     state.status = null;
-    setHubState("offline", "本地 hub 离线");
+    setHubState("offline", "离线");
     showHubAlert(formatError(error));
-    $("repo-root").textContent = "尚未连接本地仓库";
-    $("repo-version").textContent = "MarkToast · offline";
-    $("settings-root").textContent = "—";
-    $("settings-index").textContent = "等待本地 hub";
+    $("repo-count").textContent = "";
     renderProjects([]);
     renderProjectOptions([]);
-    renderAdapterMiniatures([]);
     if (state.view === "memories" && !state.results.length) renderMemoryError(error);
     if (announce) toast(formatError(error), "error");
     return null;
   }
+}
+
+const TYPE_LABELS = { user: "用户", feedback: "反馈", project: "项目", reference: "参考", decision: "决策" };
+
+function typeLabel(type) {
+  return TYPE_LABELS[type] || type || "记忆";
+}
+
+function commitLabel(subject) {
+  const value = String(subject || "");
+  const match = value.match(/^mem\(([^)]+)\):\s*(.*)$/);
+  if (!match) return value;
+  const project = projectLabel(match[1]);
+  const action = match[2]
+    .replace(/^add\s+/, "新增 ")
+    .replace(/^save\s+/, "保存 ")
+    .replace(/^reindex$/, "重建索引");
+  return `${project} · ${action}`;
+}
+
+function projectLabel(key) {
+  const value = String(key || "");
+  const match = value.match(/^(.*)-[0-9a-f]{16}$/);
+  return match ? match[1] : value;
 }
 
 function renderProjects(projects) {
@@ -250,7 +260,7 @@ function renderProjects(projects) {
       button.setAttribute("aria-pressed", String(state.project === project.key));
       button.append(
         icon("folder"),
-        element("span", "side-name", project.key),
+        element("span", "side-name", projectLabel(project.key)),
         element("span", "side-count", project.facts ?? 0),
       );
       button.addEventListener("click", () => selectProject(project.key));
@@ -265,30 +275,11 @@ function renderProjectOptions(projects) {
   all.value = "";
   els.projectFilter.appendChild(all);
   projects.forEach((project) => {
-    const option = element("option", "", project.key);
+    const option = element("option", "", projectLabel(project.key));
     option.value = project.key;
     els.projectFilter.appendChild(option);
   });
   els.projectFilter.value = projects.some((project) => project.key === current) ? current : "";
-}
-
-function renderAdapterMiniatures(adapters) {
-  const list = $("adapter-mini-list");
-  clear(list);
-  if (!adapters.length) {
-    list.appendChild(element("div", "side-label", state.status ? "暂无适配器" : "等待本地 hub"));
-    return;
-  }
-  adapters.slice(0, 5).forEach((adapter) => {
-    const item = element("div", "adapter-mini");
-    item.title = `${adapter.title || adapter.id} · ${adapter.tier || ""}`;
-    item.append(
-      element("span", "adapter-dot"),
-      element("span", "adapter-mini-name", adapter.id || adapter.title),
-      element("span", "tier-label", adapter.tier || ""),
-    );
-    list.appendChild(item);
-  });
 }
 
 function selectProject(project) {
@@ -299,24 +290,29 @@ function selectProject(project) {
   els.projectFilter.value = project;
   renderProjects(state.status?.projects || []);
   $("all-memories").classList.toggle("is-active", !project);
-  $("recent-memories").classList.remove("is-active");
   switchView("memories");
   loadMemories({ preserveSelection: false });
 }
 
+function updateBreadcrumb() {
+  const crumb = document.getElementById("breadcrumb-current");
+  if (!crumb) return;
+  if (state.view !== "memories") crumb.textContent = VIEW_LABELS[state.view] || "全部记忆";
+  else if (state.query) crumb.textContent = "搜索结果";
+  else if (state.project) crumb.textContent = projectLabel(state.project);
+  else crumb.textContent = "全部记忆";
+}
+
 function updateHeading() {
-  const project = state.project || "全部项目";
   if (state.query) {
     els.memoryHeading.textContent = "搜索结果";
-    els.memorySubtitle.textContent = `“${state.query}” · ${project}${state.type ? ` · ${state.type}` : ""}`;
   } else if (state.project) {
-    els.memoryHeading.textContent = state.project;
-    els.memorySubtitle.textContent = `${state.type ? `${state.type} · ` : ""}本地记忆中与这个项目有关的内容。`;
+    els.memoryHeading.textContent = projectLabel(state.project);
   } else {
     els.memoryHeading.textContent = "全部记忆";
-    els.memorySubtitle.textContent = "来自本地仓库，随时可读、可搜索。";
   }
   $("sort-label").textContent = state.sort === "updated" ? "最近更新" : state.sort === "title" ? "标题" : "相关度";
+  updateBreadcrumb();
 }
 
 function renderMemoryLoading(count = 5) {
@@ -393,13 +389,13 @@ function sortResults(results) {
 
 function renderMemories() {
   clear(els.resultRegion);
-  els.resultTotal.textContent = state.results.length ? `共 ${state.results.length} 条` : "0 条";
+  els.resultTotal.textContent = String(state.results.length);
   if (!state.results.length) {
     const list = element("div", "list");
     list.appendChild(emptyState(
-      state.query ? "没有找到匹配的记忆" : "仓库还是空的",
-      state.query ? "换一个更短的关键词，或清除项目与类型筛选后再试。" : "写下第一条记忆，让不同的 Agent 从这里接上上下文。",
-      state.query ? "清除筛选" : "新建记忆",
+      state.query ? "没有匹配" : "还没有记忆",
+      state.query ? "换个关键词试试。" : "先写一条。",
+      state.query ? "清除筛选" : "新建",
       state.query ? clearFilters : openDialog,
     ));
     els.resultRegion.appendChild(list);
@@ -425,11 +421,16 @@ function renderMemories() {
     row.appendChild(who);
 
     const meta = element("div", "memory-meta");
-    meta.append(
-      element("span", "pill type-pill", result.type || "memory"),
-      element("span", "memory-project", result.project || "—"),
-      element("span", "memory-time", relativeDate(result.updated)),
-    );
+    const type = result.type || "memory";
+    const typePill = element("span", `pill type-pill type-${type}`, typeLabel(type));
+    typePill.title = type;
+    meta.appendChild(typePill);
+    if (!state.project && result.project) {
+      const project = element("span", "memory-project", projectLabel(result.project));
+      project.title = result.project;
+      meta.appendChild(project);
+    }
+    meta.appendChild(element("span", "memory-time", relativeDate(result.updated)));
     const chevron = element("span", "chev");
     chevron.appendChild(icon("chevron-right"));
     meta.appendChild(chevron);
@@ -483,39 +484,30 @@ function renderExpandedMemory(result) {
     return box;
   }
 
-  const head = element("div", "expanded-head");
-  const path = element("span", "path", shortPath(detail.path || result.path));
-  path.title = detail.path || result.path;
-  const copy = element("button", "button quiet", "");
-  copy.type = "button";
-  copy.setAttribute("aria-label", "复制记忆路径");
-  copy.append(icon("copy"), document.createTextNode("复制路径"));
-  copy.addEventListener("click", () => copyPath(detail.path || result.path));
-  head.append(icon("folder"), path, copy);
-  box.appendChild(head);
-
-  const parsed = parseFrontmatter(detail.raw || "");
-  let values = parsed.values;
-  if (!values.length) {
-    values = [
-      ["name", detail.name || result.name],
-      ["description", detail.description || result.description],
-      ["project", detail.project || result.project],
-      ["type", detail.type || result.type],
-      ["updated", detail.updated || result.updated],
-    ].filter(([, value]) => value);
+  const meta = element("div", "expanded-meta");
+  const type = detail.type || result.type || "memory";
+  const typePill = element("span", `pill type-pill type-${type}`, typeLabel(type));
+  typePill.title = type;
+  meta.appendChild(typePill);
+  if (detail.project || result.project) {
+    const project = element("span", "expanded-project", projectLabel(detail.project || result.project));
+    project.title = detail.project || result.project;
+    meta.appendChild(project);
   }
+  meta.appendChild(element("span", "expanded-time", relativeDate(detail.updated || result.updated)));
+  const copy = element("button", "icon copy-path", "");
+  copy.type = "button";
+  copy.title = detail.path || result.path;
+  copy.setAttribute("aria-label", "复制记忆路径");
+  copy.append(icon("copy"));
+  copy.addEventListener("click", () => copyPath(detail.path || result.path));
+  meta.appendChild(copy);
+  box.appendChild(meta);
 
-  const grid = element("div", "detail-grid");
-  const frontmatter = element("section", "detail-section");
-  frontmatter.append(element("h3", "", "frontmatter"), renderFrontmatter(values));
-  const markdown = element("section", "detail-section");
-  markdown.appendChild(element("h3", "", "正文"));
   const body = element("div", "markdown-body");
-  renderMarkdown(body, detail.body || parsed.body || "");
-  markdown.appendChild(body);
-  grid.append(frontmatter, markdown);
-  box.appendChild(grid);
+  renderMarkdown(body, detail.body || "");
+  if (!body.textContent.trim()) body.appendChild(element("p", "muted", "没有正文。"));
+  box.appendChild(body);
   return box;
 }
 
@@ -548,45 +540,6 @@ async function selectMemory(path, force = false) {
       renderMemories();
     }
   }
-}
-
-function parseFrontmatter(raw) {
-  const text = String(raw || "").replace(/\r\n?/g, "\n");
-  if (!text.startsWith("---\n")) return { values: [], body: text };
-  const close = text.indexOf("\n---", 4);
-  if (close < 0) return { values: [], body: text };
-  const header = text.slice(4, close).trim();
-  const body = text.slice(close + 4).replace(/^\n/, "");
-  const values = [];
-  header.split("\n").forEach((line) => {
-    const match = line.match(/^([A-Za-z0-9_-]+)\s*:\s*(.*)$/);
-    if (match) values.push([match[1], stripYamlQuotes(match[2])]);
-  });
-  return { values, body };
-}
-
-function stripYamlQuotes(value) {
-  const trimmed = String(value || "").trim();
-  if (
-    (trimmed.startsWith("\"") && trimmed.endsWith("\"")) ||
-    (trimmed.startsWith("'") && trimmed.endsWith("'"))
-  ) {
-    return trimmed.slice(1, -1);
-  }
-  return trimmed;
-}
-
-function renderFrontmatter(values) {
-  if (!values.length) return element("div", "frontmatter-empty", "没有 frontmatter");
-  const table = element("table", "frontmatter-table");
-  const body = document.createElement("tbody");
-  values.forEach(([key, value]) => {
-    const row = document.createElement("tr");
-    row.append(element("th", "", key), element("td", "", String(value).replace(/^\[|\]$/g, "")));
-    body.appendChild(row);
-  });
-  table.appendChild(body);
-  return table;
 }
 
 function renderMarkdown(container, markdown) {
@@ -755,51 +708,24 @@ async function loadAdapters() {
 
 function renderAdapters() {
   clear(els.adapterRegion);
-  els.adapterCount.textContent = `${state.adapters.length} 个`;
+  els.adapterCount.textContent = String(state.adapters.length);
   if (!state.adapters.length) {
     const list = element("div", "list");
-    list.appendChild(emptyState("还没有适配器", "当前 hub 没有报告可用的 Agent 适配器。"));
+    list.appendChild(emptyState("没有适配器", "本地 hub 没有报告可用的 Agent。"));
     els.adapterRegion.appendChild(list);
     return;
   }
-
   const list = element("div", "list");
   state.adapters.forEach((adapter) => {
     const entry = element("article", "adapter-entry");
     const row = element("div", "row adapter-row");
-    row.appendChild(icon("plug", "ic adapter-icon"));
+    row.append(icon("plug", "ic adapter-icon"));
     const who = element("div", "who");
-    const nameLine = element("div", "adapter-name-line");
-    nameLine.append(
-      element("span", "name", adapter.title || adapter.id || "Adapter"),
-      element("code", "", adapter.id || ""),
+    who.append(
+      element("div", "name", adapter.title || adapter.id || "Adapter"),
+      element("div", "sub", adapter.notes || adapter.id || ""),
     );
-    who.appendChild(nameLine);
-    if (adapter.notes) who.appendChild(element("div", "sub", adapter.notes));
-
-    const capabilities = Array.isArray(adapter.capabilities) ? adapter.capabilities : [];
-    if (capabilities.length) {
-      const caps = element("div", "adapter-caps");
-      capabilities.forEach((capability) => caps.appendChild(element("span", "pill", capability)));
-      who.appendChild(caps);
-    }
-
-    const summary = [];
-    if (adapter.hooks?.events) {
-      const events = Array.isArray(adapter.hooks.events) ? adapter.hooks.events.join(", ") : adapter.hooks.events;
-      summary.push(`hooks ${events}`);
-    }
-    if (adapter.hooks?.install_kind) summary.push(adapter.hooks.install_kind);
-    if (adapter.hooks?.injection) summary.push(`inject ${adapter.hooks.injection}`);
-    if (adapter.mcp?.kind || adapter.mcp?.target) {
-      summary.push(`mcp ${[adapter.mcp.kind, adapter.mcp.target].filter(Boolean).join(" → ")}`);
-    }
-    if (summary.length) {
-      const summaryNode = element("div", "adapter-summary");
-      summary.forEach((item) => summaryNode.appendChild(element("span", "", item)));
-      who.appendChild(summaryNode);
-    }
-    row.append(who, element("span", "pill", adapter.tier || "tier"));
+    row.append(who, element("span", "pill", adapter.tier || ""));
     entry.appendChild(row);
     list.appendChild(entry);
   });
@@ -808,9 +734,6 @@ function renderAdapters() {
 
 async function loadHistory() {
   clear(els.historyRegion);
-  els.gitBadge.textContent = "检查中";
-  els.gitBadge.className = "pill git-badge";
-  els.gitSubtitle.textContent = "正在读取仓库提交…";
   const loading = element("div", "list");
   loading.append(element("div", "row loading-row"), element("div", "row loading-row"));
   els.historyRegion.appendChild(loading);
@@ -823,11 +746,8 @@ async function loadHistory() {
     return true;
   } catch (error) {
     clear(els.historyRegion);
-    els.gitBadge.textContent = "不可用";
-    els.gitBadge.className = "pill git-badge is-offline";
-    els.gitSubtitle.textContent = "Git 历史读取失败。";
     const list = element("div", "list");
-    list.appendChild(emptyState("Git 历史加载失败", formatError(error), "重试", loadHistory));
+    list.appendChild(emptyState("Git 历史不可用", formatError(error), "重试", loadHistory));
     els.historyRegion.appendChild(list);
     return false;
   }
@@ -837,26 +757,17 @@ function renderHistory() {
   clear(els.historyRegion);
   const git = state.status?.git;
   if (git?.available === false) {
-    els.gitBadge.textContent = "Git 不可用";
-    els.gitBadge.className = "pill git-badge is-offline";
-    els.gitSubtitle.textContent = "当前目录没有可读取的 Git 仓库。";
-  } else if (git?.clean === false) {
-    els.gitBadge.textContent = `${git.changes ?? 0} 项变更`;
-    els.gitBadge.className = "pill git-badge has-changes";
-    els.gitSubtitle.textContent = "仓库有未提交的变更，记忆可能在下次提交前暂时不同步。";
-  } else {
-    els.gitBadge.textContent = "工作区干净";
-    els.gitBadge.className = "pill git-badge";
-    els.gitSubtitle.textContent = "所有记忆变更都可追溯、可回退。";
-  }
-
-  if (!state.history.length) {
     const list = element("div", "list");
-    list.appendChild(emptyState("还没有提交记录", "第一次保存并提交记忆后，Git 历史会出现在这里。"));
+    list.appendChild(emptyState("Git 不可用", "当前仓库没有可读取的 Git 历史。"));
     els.historyRegion.appendChild(list);
     return;
   }
-
+  if (!state.history.length) {
+    const list = element("div", "list");
+    list.appendChild(emptyState("还没有提交", "保存记忆后会在这里出现。"));
+    els.historyRegion.appendChild(list);
+    return;
+  }
   const list = element("div", "list");
   state.history.forEach((commit) => {
     const entry = element("article", "history-entry");
@@ -864,8 +775,8 @@ function renderHistory() {
     row.append(
       icon("branch"),
       element("code", "history-hash", String(commit.hash || "").slice(0, 8)),
-      element("span", "history-subject", commit.subject || "无提交说明"),
-      element("span", "pill", "提交"),
+      element("span", "history-subject", commitLabel(commit.subject || "无提交说明")),
+      element("span", "history-date", commit.date || ""),
     );
     entry.appendChild(row);
     list.appendChild(entry);
@@ -873,7 +784,7 @@ function renderHistory() {
   els.historyRegion.appendChild(list);
 }
 
-const VIEW_LABELS = { memories: "全部记忆", adapters: "适配器", history: "历史", settings: "设置" };
+const VIEW_LABELS = { memories: "全部记忆", adapters: "适配器", history: "历史" };
 
 function switchView(view) {
   state.view = view;
@@ -883,11 +794,10 @@ function switchView(view) {
     if (active) tab.setAttribute("aria-current", "page");
     else tab.removeAttribute("aria-current");
   });
-  const crumb = document.getElementById("breadcrumb-current");
-  if (crumb) crumb.textContent = VIEW_LABELS[view] || "全部记忆";
   document.querySelectorAll(".view-panel").forEach((panel) => {
     panel.hidden = panel.id !== `view-${view}`;
   });
+  updateBreadcrumb();
   positionSegThumb();
   if (view === "adapters" && !state.adapters.length) loadAdapters();
   if (view === "history") loadHistory();
@@ -929,7 +839,6 @@ function clearFilters() {
   els.typeFilter.value = "";
   renderProjects(state.status?.projects || []);
   $("all-memories").classList.add("is-active");
-  $("recent-memories").classList.remove("is-active");
   loadMemories({ preserveSelection: false });
 }
 
@@ -1081,22 +990,6 @@ function bindEvents() {
     els.typeFilter.value = "";
     selectProject("");
   });
-  $("recent-memories").addEventListener("click", () => {
-    state.project = "";
-    state.query = "";
-    state.type = "";
-    state.sort = "updated";
-    els.search.value = "";
-    els.searchClear.hidden = true;
-    els.typeFilter.value = "";
-    els.projectFilter.value = "";
-    renderProjects(state.status?.projects || []);
-    $("all-memories").classList.remove("is-active");
-    $("recent-memories").classList.add("is-active");
-    switchView("memories");
-    loadMemories({ preserveSelection: false });
-  });
-
   els.projectFilter.addEventListener("change", () => {
     state.project = els.projectFilter.value;
     renderProjects(state.status?.projects || []);
@@ -1116,7 +1009,6 @@ function bindEvents() {
   });
 
   $("new-memory-top").addEventListener("click", openDialog);
-  $("open-adapters").addEventListener("click", () => switchView("adapters"));
   $("refresh-view").addEventListener("click", refreshCurrent);
   $("retry-hub").addEventListener("click", retryAll);
   $("close-dialog").addEventListener("click", closeDialog);

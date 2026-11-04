@@ -6,14 +6,15 @@
   <meta name="color-scheme" content="light dark" />
   <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f4f6" />
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1a1a1e" />
-  <title>MarkToast · 马克吐司</title>
+  <title>MarkToast</title>
+  <link rel="icon" href="logo.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <svg class="icon-sprite" aria-hidden="true">
     <symbol id="icon-logo" viewBox="0 0 20 20">
-      <path d="M5.2 4.6c.75-.9 1.8-1.35 3.1-1.35h3.4c1.3 0 2.35.45 3.1 1.35.72.86.95 1.92.95 3v7.9c0 .65-.4 1.05-1.05 1.05H5.3c-.65 0-1.05-.4-1.05-1.05V7.6c0-1.08.23-2.14.95-3Z" />
-      <path d="M8 5.5h4M7.5 8.5h5M7.5 11.25h3.5M7.5 14h5" />
+      <path d="M6 3.5h8a2 2 0 0 1 2 2v11a1 1 0 0 1-1.6.8L10 14l-4.4 3.3A1 1 0 0 1 4 16.5v-11a2 2 0 0 1 2-2Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <circle cx="10" cy="9" r="1.3" fill="currentColor" stroke="none"/>
     </symbol>
     <symbol id="icon-search" viewBox="0 0 20 20">
       <circle cx="8.7" cy="8.7" r="5.2"></circle>
@@ -77,42 +78,17 @@
 
   <aside class="sidebar" id="sidebar" aria-label="记忆仓库导航">
     <div class="side-top">
-      <span class="drag-grip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
       <svg class="logo" viewBox="0 0 20 20" aria-hidden="true"><use href="#icon-logo"></use></svg>
       <span class="side-brand-name">MarkToast</span>
     </div>
     <div class="side-scroll">
       <section class="side-group" aria-labelledby="library-label">
-        <div class="side-label" id="library-label">记忆库</div>
+        <div class="side-label" id="library-label">记忆</div>
         <button class="side-row is-active" id="all-memories" type="button">
           <svg class="ic"><use href="#icon-stack"></use></svg>
           <span class="side-name">全部记忆</span>
           <span class="side-count" id="all-count">—</span>
         </button>
-        <button class="side-row" id="recent-memories" type="button">
-          <svg class="ic"><use href="#icon-clock"></use></svg>
-          <span class="side-name">最近更新</span>
-          <span class="side-count">20</span>
-        </button>
-        <div class="project-list" id="project-list">
-          <div class="skeleton side-skeleton"></div>
-          <div class="skeleton side-skeleton short"></div>
-        </div>
-      </section>
-
-      <section class="side-group" aria-labelledby="adapters-label">
-        <div class="side-label-row">
-          <div class="side-label" id="adapters-label">适配器</div>
-          <button class="side-link" id="open-adapters" type="button" aria-label="查看全部适配器">全部</button>
-        </div>
-        <div class="adapter-mini-list" id="adapter-mini-list">
-          <div class="skeleton side-skeleton"></div>
-          <div class="skeleton side-skeleton short"></div>
-        </div>
-      </section>
-
-      <section class="side-group" aria-labelledby="views-label">
-        <div class="side-label" id="views-label">视图</div>
         <button class="side-row" type="button" data-view="adapters">
           <svg class="ic"><use href="#icon-plug"></use></svg>
           <span class="side-name">适配器</span>
@@ -121,26 +97,22 @@
           <svg class="ic"><use href="#icon-branch"></use></svg>
           <span class="side-name">历史</span>
         </button>
-        <button class="side-row" type="button" data-view="settings" disabled>
-          <svg class="ic"><use href="#icon-terminal"></use></svg>
-          <span class="side-name">设置</span>
-          <span class="side-count">soon</span>
-        </button>
       </section>
 
+      <section class="side-group" aria-labelledby="projects-label">
+        <div class="side-label" id="projects-label">项目</div>
+        <div class="project-list" id="project-list">
+          <div class="skeleton side-skeleton"></div>
+          <div class="skeleton side-skeleton short"></div>
+        </div>
+      </section>
     </div>
     <div class="side-foot">
-      <div class="side-foot-row">
-        <svg class="ic"><use href="#icon-terminal"></use></svg>
-        <span>仓库根目录</span>
-        <span class="connection-state" id="repo-meta-state">连接中</span>
-      </div>
-      <p class="repo-root code" id="repo-root">—</p>
-      <div class="side-health">
+      <div class="side-foot-row" id="repo-status" title="">
         <span class="status-dot" id="side-status-dot"></span>
-        <span id="hub-state-text">正在连接本地 hub</span>
+        <span id="hub-state-text">连接中</span>
+        <span class="side-count" id="repo-count"></span>
       </div>
-      <div class="side-version" id="repo-version">MarkToast</div>
     </div>
   </aside>
 
@@ -160,21 +132,21 @@
       <button class="on" type="button" data-view="memories" aria-current="page">记忆</button>
       <button type="button" data-view="adapters">适配器</button>
       <button type="button" data-view="history">历史</button>
-      <button type="button" data-view="settings" disabled>设置</button>
     </nav>
 
+    <div class="search-shell">
+      <svg class="ic"><use href="#icon-search"></use></svg>
+      <input id="global-search" type="search" placeholder="搜索" autocomplete="off" spellcheck="false" aria-label="搜索记忆" />
+      <kbd class="shortcut" id="search-shortcut">⌘K</kbd>
+      <button class="search-clear" id="search-clear" type="button" aria-label="清空搜索" hidden>
+        <svg class="ic"><use href="#icon-close"></use></svg>
+      </button>
+    </div>
+
     <div class="top-actions">
-      <div class="search-shell">
-        <svg class="ic"><use href="#icon-search"></use></svg>
-        <input id="global-search" type="search" placeholder="搜索记忆" autocomplete="off" spellcheck="false" aria-label="搜索记忆" />
-        <kbd class="shortcut" id="search-shortcut">⌘K</kbd>
-        <button class="search-clear" id="search-clear" type="button" aria-label="清空搜索" hidden>
-          <svg class="ic"><use href="#icon-close"></use></svg>
-        </button>
-      </div>
       <button class="button primary top-new" id="new-memory-top" type="button">
         <svg class="ic"><use href="#icon-plus"></use></svg>
-        <span>新建记忆</span>
+        <span>新建</span>
       </button>
       <button class="icon" id="refresh-view" type="button" aria-label="刷新当前视图" title="刷新">
         <svg class="ic"><use href="#icon-refresh"></use></svg>
@@ -192,36 +164,29 @@
 
       <section class="view-panel" id="view-memories" role="tabpanel" aria-label="记忆">
         <div class="view-head">
-          <div>
-            <h1 id="memory-heading">全部记忆</h1>
-            <p id="memory-subtitle">正在读取本地记忆…</p>
-          </div>
+          <h1 id="memory-heading">全部记忆</h1>
           <span class="view-count" id="result-total" aria-live="polite">—</span>
         </div>
 
         <div class="filters" aria-label="记忆筛选">
           <label class="filter-control">
-            <span>项目</span>
             <select id="project-filter" aria-label="项目筛选">
               <option value="">全部项目</option>
             </select>
             <svg class="ic"><use href="#icon-chevron-down"></use></svg>
           </label>
           <label class="filter-control">
-            <span>类型</span>
             <select id="type-filter" aria-label="类型筛选">
               <option value="">全部类型</option>
-              <option value="user">user</option>
-              <option value="feedback">feedback</option>
-              <option value="project">project</option>
-              <option value="reference">reference</option>
-              <option value="decision">decision</option>
+              <option value="user">用户</option>
+              <option value="feedback">反馈</option>
+              <option value="project">项目</option>
+              <option value="reference">参考</option>
             </select>
             <svg class="ic"><use href="#icon-chevron-down"></use></svg>
           </label>
           <div class="filter-push"></div>
           <button class="filter-control sort-control" id="sort-button" type="button" aria-label="切换排序">
-            <span>排序</span>
             <b id="sort-label">相关度</b>
             <svg class="ic"><use href="#icon-chevron-down"></use></svg>
           </button>
@@ -238,10 +203,7 @@
 
       <section class="view-panel" id="view-adapters" role="tabpanel" aria-label="适配器" hidden>
         <div class="view-head">
-          <div>
-            <h1>适配器</h1>
-            <p>连接不同 Agent，让同一份记忆在各处流动。</p>
-          </div>
+          <h1>适配器</h1>
           <span class="view-count" id="adapter-count">—</span>
         </div>
         <div id="adapter-results" aria-live="polite"></div>
@@ -249,39 +211,11 @@
 
       <section class="view-panel" id="view-history" role="tabpanel" aria-label="历史" hidden>
         <div class="view-head">
-          <div>
-            <h1>历史</h1>
-            <p id="git-subtitle">正在读取仓库提交…</p>
-          </div>
-          <span class="pill git-badge" id="git-badge">检查中</span>
+          <h1>历史</h1>
         </div>
         <div id="history-results" aria-live="polite"></div>
       </section>
 
-      <section class="view-panel" id="view-settings" role="tabpanel" aria-label="设置" hidden>
-        <div class="view-head">
-          <div>
-            <h1>设置</h1>
-            <p>MarkToast 跟随当前系统的外观设置。</p>
-          </div>
-        </div>
-        <div class="list settings-list">
-          <div class="row">
-            <svg class="ic"><use href="#icon-terminal"></use></svg>
-            <div class="who">
-              <div class="name">当前仓库</div>
-              <div class="sub code" id="settings-root">—</div>
-            </div>
-          </div>
-          <div class="row">
-            <svg class="ic"><use href="#icon-stack"></use></svg>
-            <div class="who">
-              <div class="name">索引状态</div>
-              <div class="sub" id="settings-index">—</div>
-            </div>
-          </div>
-        </div>
-      </section>
     </div>
   </main>
 
@@ -301,40 +235,38 @@
           <div class="form-grid">
             <label class="field">
               <span>项目</span>
-              <input id="memory-project" name="project" required placeholder="例如 marktoast" autocomplete="off" />
+              <input id="memory-project" name="project" required placeholder="feedsieve" autocomplete="off" />
             </label>
             <label class="field">
               <span>类型</span>
               <select id="memory-type" name="type" required>
-                <option value="project">project</option>
-                <option value="user">user</option>
-                <option value="feedback">feedback</option>
-                <option value="reference">reference</option>
-                <option value="decision">decision</option>
+                <option value="project">项目</option>
+                <option value="user">用户</option>
+                <option value="feedback">反馈</option>
+                <option value="reference">参考</option>
               </select>
             </label>
           </div>
           <label class="field">
             <span>名称</span>
-            <input id="memory-name" name="name" required placeholder="一句话说清这条记忆" autocomplete="off" />
+            <input id="memory-name" name="name" required placeholder="fact-name" autocomplete="off" />
           </label>
           <label class="field">
-            <span>描述 <em>可选</em></span>
+            <span>描述</span>
             <input id="memory-description" name="description" placeholder="为搜索补充一点上下文" autocomplete="off" />
           </label>
           <label class="field">
-            <span>正文 <em>支持 Markdown</em></span>
-            <textarea id="memory-body" name="body" required rows="10" placeholder="## 背景&#10;&#10;记录为什么做这个决定，以及后来的人需要知道什么。"></textarea>
+            <span>正文</span>
+            <textarea id="memory-body" name="body" required rows="10" placeholder="写下这条记忆…"></textarea>
           </label>
           <p class="form-error" id="form-error" role="alert" hidden></p>
         </div>
         <footer class="dialog-foot">
-          <span>保存后由本地 hub 写入仓库</span>
           <div class="dialog-actions">
             <button class="button quiet" id="cancel-dialog" type="button">取消</button>
             <button class="button primary" id="submit-memory" type="submit">
               <svg class="ic"><use href="#icon-check"></use></svg>
-              <span>保存记忆</span>
+              <span>保存</span>
             </button>
           </div>
         </footer>
