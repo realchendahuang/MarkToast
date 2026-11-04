@@ -6,6 +6,7 @@
 package main
 
 import (
+	_ "embed"
 	"flag"
 	"fmt"
 	"log"
@@ -19,6 +20,9 @@ import (
 	"github.com/realchendahuang/MarkToast/internal/config"
 	"github.com/realchendahuang/MarkToast/internal/hub"
 )
+
+//go:embed icon.png
+var iconPNG []byte
 
 func main() {
 	root := flag.String("root", "", "memory repository root (defaults to config)")
@@ -52,6 +56,7 @@ func main() {
 	app := application.New(application.Options{
 		Name:        "MarkToast",
 		Description: "Every agent's memory. One place. Yours.",
+		Icon:        iconPNG,
 	})
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:            "MarkToast · 马克吐司",
