@@ -888,9 +888,33 @@ function switchView(view) {
   document.querySelectorAll(".view-panel").forEach((panel) => {
     panel.hidden = panel.id !== `view-${view}`;
   });
+  positionSegThumb();
   if (view === "adapters" && !state.adapters.length) loadAdapters();
   if (view === "history") loadHistory();
   if (view === "memories" && !state.results.length) loadMemories();
+}
+
+// positionSegThumb slides the segmented control's thumb under the picked tab.
+function positionSegThumb() {
+  const seg = document.getElementById("main-nav");
+  const thumb = document.getElementById("seg-thumb");
+  if (!seg || !thumb) return;
+  const active = seg.querySelector("button.on");
+  if (!active || seg.offsetWidth === 0) {
+    thumb.style.opacity = "0";
+    return;
+  }
+  thumb.style.opacity = "";
+  const x = active.offsetLeft;
+  const w = active.offsetWidth;
+  const first = !thumb.style.width;
+  if (first) thumb.classList.add("still");
+  thumb.style.transform = `translateX(${x}px)`;
+  thumb.style.width = `${w}px`;
+  if (first) {
+    void thumb.offsetWidth;
+    thumb.classList.remove("still");
+  }
 }
 
 function clearFilters() {
@@ -918,15 +942,20 @@ function openDialog() {
   $("memory-name").value = "";
   $("memory-description").value = "";
   $("memory-body").value = "";
+  els.modal.classList.remove("closing");
   els.modal.hidden = false;
   document.body.classList.add("modal-open");
   window.setTimeout(() => $("memory-project").focus(), 30);
 }
 
 function closeDialog() {
-  if (els.modal.hidden) return;
-  els.modal.hidden = true;
+  if (els.modal.hidden || els.modal.classList.contains("closing")) return;
+  els.modal.classList.add("closing");
   document.body.classList.remove("modal-open");
+  window.setTimeout(() => {
+    els.modal.hidden = true;
+    els.modal.classList.remove("closing");
+  }, 150);
   if (state.lastFocus && typeof state.lastFocus.focus === "function") state.lastFocus.focus();
 }
 
@@ -1087,7 +1116,7 @@ function bindEvents() {
   });
 
   $("new-memory-top").addEventListener("click", openDialog);
-  $("view-adapters").addEventListener("click", () => switchView("adapters"));
+  $("open-adapters").addEventListener("click", () => switchView("adapters"));
   $("refresh-view").addEventListener("click", refreshCurrent);
   $("retry-hub").addEventListener("click", retryAll);
   $("close-dialog").addEventListener("click", closeDialog);
@@ -1103,6 +1132,8 @@ function bindEvents() {
       focusSearch();
     });
   });
+  window.addEventListener("resize", positionSegThumb);
+  positionSegThumb();
   window.addEventListener("online", () => loadStatus({ announce: true }));
   window.addEventListener("offline", () => {
     setHubState("offline", "浏览器已离线");

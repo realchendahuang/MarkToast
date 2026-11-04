@@ -100,7 +100,8 @@ MarkToast treats memory as what it should be: **a repository you own.**
       MCP server over stdio and streamable HTTP (`memory_search/get/save/list`)
 - [x] Web UI follows Magpie's design language (MIT): its design tokens (light default +
 auto dark, indigo accent), 212px sidebar, breadcrumb header, white list cards and
-rows, inline row expansion, modal, Cmd/Ctrl+K
+rows, **its motion** (view fade-up, segmented thumb glide 280ms, row fold 420ms,
+dialog in/out, skeleton shimmer, reduced-motion), modal, Cmd/Ctrl+K
 - [x] Wails v3.1 desktop shell (`make desktop`; opens the same hub in a native window)
 - [ ] Debounced commits, session ingestion, Hermes memory provider, more adapters
 

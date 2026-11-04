@@ -78,7 +78,8 @@
   <aside class="sidebar" id="sidebar" aria-label="记忆仓库导航">
     <div class="side-top">
       <span class="drag-grip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
-      <span>工作区</span>
+      <svg class="logo" viewBox="0 0 20 20" aria-hidden="true"><use href="#icon-logo"></use></svg>
+      <span class="side-brand-name">MarkToast</span>
     </div>
     <div class="side-scroll">
       <section class="side-group" aria-labelledby="library-label">
@@ -102,12 +103,29 @@
       <section class="side-group" aria-labelledby="adapters-label">
         <div class="side-label-row">
           <div class="side-label" id="adapters-label">适配器</div>
-          <button class="side-link" id="view-adapters" type="button">全部</button>
+          <button class="side-link" id="open-adapters" type="button" aria-label="查看全部适配器">全部</button>
         </div>
         <div class="adapter-mini-list" id="adapter-mini-list">
           <div class="skeleton side-skeleton"></div>
           <div class="skeleton side-skeleton short"></div>
         </div>
+      </section>
+
+      <section class="side-group" aria-labelledby="views-label">
+        <div class="side-label" id="views-label">视图</div>
+        <button class="side-row" type="button" data-view="adapters">
+          <svg class="ic"><use href="#icon-plug"></use></svg>
+          <span class="side-name">适配器</span>
+        </button>
+        <button class="side-row" type="button" data-view="history">
+          <svg class="ic"><use href="#icon-branch"></use></svg>
+          <span class="side-name">历史</span>
+        </button>
+        <button class="side-row" type="button" data-view="settings" disabled>
+          <svg class="ic"><use href="#icon-terminal"></use></svg>
+          <span class="side-name">设置</span>
+          <span class="side-count">soon</span>
+        </button>
       </section>
 
     </div>
@@ -127,15 +145,18 @@
   </aside>
 
   <header class="top">
-    <a class="brand" href="#" aria-label="MarkToast 首页">
+    <a class="brand compact-brand" href="#" aria-label="MarkToast 首页">
       <svg class="logo" viewBox="0 0 20 20" aria-hidden="true"><use href="#icon-logo"></use></svg>
-      <span class="brand-copy">
-        <span class="brand-name">MarkToast</span>
-        <span class="brand-cn">马克吐司</span>
-      </span>
+      <span class="brand-name">MarkToast</span>
     </a>
+    <div class="breadcrumb" id="breadcrumb" aria-label="当前位置">
+      <span>记忆库</span>
+      <i aria-hidden="true">/</i>
+      <b id="breadcrumb-current">全部记忆</b>
+    </div>
 
     <nav class="seg" id="main-nav" aria-label="主导航">
+      <span class="thumb" id="seg-thumb" aria-hidden="true"></span>
       <button class="on" type="button" data-view="memories" aria-current="page">记忆</button>
       <button type="button" data-view="adapters">适配器</button>
       <button type="button" data-view="history">历史</button>

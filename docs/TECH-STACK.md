@@ -13,7 +13,7 @@
 |---|---|---|---|---|
 | 核心语言 | **Go** | 1.26.x | 单二进制、跨平台交叉编译、IO/并发简单；作者已有 Go 经验；与 Wails 同栈 | Rust（学习+编译成本）、TypeScript/Node（分发依赖运行时） |
 | 桌面壳 | **Wails v3**（已实现） | `github.com/wailsapp/wails/v3` **v3.1.0 稳定版** | 系统 WebView、单二进制、Mac/Windows/Linux；Magpie 同款 | Tauri 2（Rust 双语言）、Electron（体积/内存） |
-| 前端 | **原生 HTML/CSS/JS** | 无框架；ES modules | **直接对齐 Magpie 的 design tokens 与布局**（浅色默认 + 暗色自动、212px 侧栏、`.seg` 分段控件、白色 `.list`/`.row` 卡片）；系统 WebView 内足够快 | React / Svelte / Vue（都为复杂状态引入，v1 不需要） |
+| 前端 | **原生 HTML/CSS/JS** | 无框架；ES modules | **直接对齐 Magpie 的 design tokens、布局与动效**（浅色默认 + 暗色自动、212px 侧栏、`.seg` thumb 滑动、白色 `.list`/`.row` 卡片、view/fold/dialog 动画、reduced-motion）；系统 WebView 内足够快 | React / Svelte / Vue（都为复杂状态引入，v1 不需要） |
 | 样式 | **手写 CSS + design tokens** | CSS 变量 + 一套 token（颜色/间距/字号） | 与 Magpie 的克制风格一致；可主题化、中英文自适应 | Tailwind（构建链更重，与"手写精修"路线冲突） |
 | TUI | **Bubble Tea + Lipgloss**（后期） | `charmbracelet/bubbletea` | Magpie 同款；给无 GUI 场景/远程使用 | 不做 TUI（少一个界面，但少一个卖点） |
 | 数据库/索引 | **modernc.org/sqlite**（纯 Go） | 最新稳定版 | 无 CGo、交叉编译简单、内建 FTS5 | mattn/go-sqlite3（CGo）、Tantivy（额外索引层） |

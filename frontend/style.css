@@ -141,6 +141,8 @@ a { color: inherit; text-decoration: none; }
   font-weight: 500;
   letter-spacing: .02em;
 }
+.side-top .logo { width: 16px; height: 16px; color: var(--fg); }
+.side-brand-name { color: var(--fg); font-size: 12.5px; font-weight: 600; }
 .drag-grip {
   display: grid;
   grid-template-columns: repeat(2, 2px);
@@ -231,23 +233,6 @@ a { color: inherit; text-decoration: none; }
   backdrop-filter: blur(16px);
 }
 
-.breadcrumb {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-  padding-left: 2px;
-  color: var(--muted);
-  font-size: 13px;
-  white-space: nowrap;
-}
-.breadcrumb i { color: var(--faint); font-style: normal; }
-.breadcrumb b {
-  overflow: hidden;
-  color: var(--fg);
-  font-weight: 500;
-  text-overflow: ellipsis;
-}
 .brand { display: flex; flex: none; align-items: center; gap: 7px; height: 34px; border-radius: 7px; }
 .brand .logo { color: var(--fg); }
 .brand-copy { display: flex; align-items: baseline; gap: 7px; }
@@ -723,4 +708,64 @@ a { color: inherit; text-decoration: none; }
     animation-iteration-count: 1 !important;
     transition-duration: .01ms !important;
   }
+}
+
+/* ---- Magpie motion ------------------------------------------------------ */
+/* the segmented control's thumb glides to the picked option (280ms, the
+   same curve Magpie uses); the button itself only carries colour */
+.seg .thumb {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  width: 0;
+  height: calc(100% - 4px);
+  border-radius: 6px;
+  background: var(--card);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .12), 0 0 0 .5px rgba(0, 0, 0, .06);
+  pointer-events: none;
+  transition: transform .28s cubic-bezier(.2, .8, .2, 1), width .28s cubic-bezier(.2, .8, .2, 1);
+}
+.seg .thumb.still { transition: none; }
+.seg button.on { background: transparent; box-shadow: none; }
+.seg button:active:not(:disabled) { transform: scale(.96); }
+.icon:active { transform: scale(.9); }
+.icon { transition: background .12s, color .12s, transform .12s var(--ease); }
+
+/* each view fades up when it is shown, like Magpie's .view animation */
+.view-panel { animation: view-in .24s var(--ease); }
+
+/* expanding a memory row: Magpie's fold curve, with a small stagger */
+.memory-expanded { animation: expand-in .42s cubic-bezier(.22, 1, .36, 1); }
+.detail-section { animation: detail-in .34s var(--ease) both; }
+.detail-section:nth-child(2) { animation-delay: 45ms; }
+.detail-section:nth-child(3) { animation-delay: 90ms; }
+
+/* dialogs leave with the same motion they arrive with */
+.modal.closing { animation: fade-out .14s ease-in forwards; }
+.modal.closing .dialog { animation: dialog-out .14s ease-in forwards; }
+@keyframes detail-in { from { opacity: 0; transform: translateY(4px); } }
+@keyframes fade-out { to { opacity: 0; } }
+@keyframes dialog-out { to { opacity: 0; transform: translateY(4px) scale(.995); } }
+
+/* header layout: wide windows use the sidebar like Magpie, narrow ones the
+   compact brand and the segmented control */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.breadcrumb i { color: var(--faint); font-style: normal; }
+.breadcrumb b { overflow: hidden; color: var(--fg); font-weight: 500; text-overflow: ellipsis; }
+.compact-brand { display: none; }
+@media (min-width: 901px) {
+  .top .seg { display: none; }
+  .top .compact-brand { display: none; }
+}
+@media (max-width: 900px) {
+  .top .compact-brand { display: flex; }
+  .top .breadcrumb { display: none; }
 }

@@ -90,7 +90,7 @@ MarkToast 把记忆还原成它本该有的样子：**一个你拥有的仓库�
       DSH / Hermes 已做半自动 staged 安装
 - [x] 本地 hub：status/search/memory/memories/projects/adapters/git-log API；
       MCP server（stdio + streamable HTTP，`memory_search/get/save/list`）
-- [x] Web UI 采用 Magpie 的设计语言（MIT）：同一套 design tokens（浅色默认 + 自动暗色、靛蓝强调色）、212px 侧栏、面包屑头部、白色列表卡片与行、行内展开、弹层、Cmd/Ctrl+K
+- [x] Web UI 采用 Magpie 的设计语言（MIT）：同一套 design tokens（浅色默认 + 自动暗色、靛蓝强调色）、212px 侧栏、面包屑头部、白色列表卡片与行、**Magpie 同款交互动画**（视图淡入、分段控件 thumb 滑动 280ms、行展开折叠 420ms、弹层进出、骨架 shimmer、reduced-motion）、弹层、Cmd/Ctrl+K
 - [x] Wails v3.1 桌面壳（`make desktop`；原生窗口加载同一个 hub）
 - [ ] debounce 提交、会话摄取、Hermes memory provider、更多适配器
 
