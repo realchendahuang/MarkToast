@@ -141,7 +141,7 @@ a { color: inherit; text-decoration: none; }
   font-weight: 500;
   letter-spacing: .02em;
 }
-.side-top .logo { width: 24px; height: 24px; }
+.side-top .logo { width: 28px; height: 28px; }
 .brand .logo, .dialog-title-wrap .logo { width: 20px; height: 20px; }
 .side-brand-name { color: var(--fg); font-size: 12.5px; font-weight: 600; }
 .drag-grip {
