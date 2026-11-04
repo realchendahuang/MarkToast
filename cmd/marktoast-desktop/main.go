@@ -43,7 +43,13 @@ func main() {
 	uiDir := findFrontendDir()
 
 	go func() {
-		if err := hub.Serve(hub.Options{Addr: *addr, Root: cfg.Root, FrontendDir: uiDir}); err != nil {
+		if err := hub.Serve(hub.Options{
+			Addr:        *addr,
+			Root:        cfg.Root,
+			FrontendDir: uiDir,
+			AutoCommit:  cfg.Git.AutoCommit,
+			Debounce:    time.Duration(cfg.Git.DebounceMS) * time.Millisecond,
+		}); err != nil {
 			// A hub may already be running (e.g. `marktoast serve`); the
 			// window can still load it.
 			log.Printf("hub: %v", err)

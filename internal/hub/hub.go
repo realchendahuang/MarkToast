@@ -30,12 +30,19 @@ type Options struct {
 	Addr        string
 	Root        string
 	FrontendDir string
+	AutoCommit  bool
+	Debounce    time.Duration
+	Committer   *committer
 }
 
 // Serve starts the HTTP hub and blocks.
 func Serve(o Options) error {
 	if o.Addr == "" {
 		o.Addr = "127.0.0.1:3777"
+	}
+	if o.AutoCommit {
+		o.Committer = newCommitter(o.Root, o.Debounce)
+		defer o.Committer.Flush()
 	}
 	mcpServer := NewMCPServer(o.Root)
 	token, _ := EnsureToken(o.Root)
@@ -221,11 +228,7 @@ func handleMemory(w http.ResponseWriter, r *http.Request, o Options) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		if gitx.Available() {
-			if _, err := gitx.CommitAll(o.Root, fmt.Sprintf("mem(%s): save %s", args.Project, args.Name)); err != nil {
-				log.Printf("commit failed: %v", err)
-			}
-		}
+		commit(o, fmt.Sprintf("mem(%s): save %s", args.Project, args.Name))
 		writeJSON(w, http.StatusOK, map[string]any{"path": path})
 	default:
 		w.Header().Set("Allow", "GET, POST")

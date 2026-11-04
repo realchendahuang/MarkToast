@@ -20,7 +20,7 @@
 - [x] `marktoast add` / `get` / `log`：写记忆 + 自动索引 + 自动提交
 - [x] `marktoast status`：仓库、索引、Git、适配器状态
 - [x] 测试：store / index / gitx 各一组
-- [ ] debounce 批量提交（当前一次变更一次 commit；UI 已按变更事务写，批量队列待做）
+- [x] debounce 批量提交（2026-11-04，hub 默认 5s 静默后提交，退出前 Flush）
 - [x] `diff` / `rollback` 子命令（2026-11-04）
 
 ## M2 — 适配器（先三家）🟡（骨架完成，端到端待验证）

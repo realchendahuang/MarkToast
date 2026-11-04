@@ -166,12 +166,7 @@ func handleMemoryRestore(w http.ResponseWriter, r *http.Request, o Options) {
 	if fact, err := store.ParseFile(abs); err == nil && fact.Name != "" {
 		name = fact.Name
 	}
-	if gitx.Available() {
-		if _, err := gitx.CommitAll(o.Root, fmt.Sprintf("restore(%s): %s", project, name)); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-	}
+	commit(o, fmt.Sprintf("restore(%s): %s", project, name))
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "path": abs})
 }
 

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -294,7 +295,13 @@ func newServeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return hub.Serve(hub.Options{Addr: addr, Root: cfg.Root, FrontendDir: frontendDir()})
+			return hub.Serve(hub.Options{
+				Addr:        addr,
+				Root:        cfg.Root,
+				FrontendDir: frontendDir(),
+				AutoCommit:  cfg.Git.AutoCommit,
+				Debounce:    time.Duration(cfg.Git.DebounceMS) * time.Millisecond,
+			})
 		},
 	}
 	cmd.Flags().StringVar(&addr, "addr", "127.0.0.1:3777", "listen address (loopback only)")
@@ -312,7 +319,13 @@ func newUICmd() *cobra.Command {
 				return err
 			}
 			fmt.Printf("web UI: http://%s/ (desktop shell ships in M4 — see docs/DESKTOP.md)\n", addr)
-			return hub.Serve(hub.Options{Addr: addr, Root: cfg.Root, FrontendDir: frontendDir()})
+			return hub.Serve(hub.Options{
+				Addr:        addr,
+				Root:        cfg.Root,
+				FrontendDir: frontendDir(),
+				AutoCommit:  cfg.Git.AutoCommit,
+				Debounce:    time.Duration(cfg.Git.DebounceMS) * time.Millisecond,
+			})
 		},
 	}
 	cmd.Flags().StringVar(&addr, "addr", "127.0.0.1:3777", "listen address")
