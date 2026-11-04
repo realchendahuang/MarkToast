@@ -13,7 +13,7 @@ ZCode, Hermes and DSH first — Codex, Claude Code, Pi and the rest next.
 ![Status](https://img.shields.io/badge/status-pre--alpha-d8b26a)
 ![License](https://img.shields.io/badge/license-MIT%20(later)-lightgrey)
 
-[中文](README.zh-CN.md) · [Product](docs/PRODUCT.md) · [Tech stack](docs/TECH-STACK.md) · [Architecture](docs/ARCHITECTURE.md) · [Roadmap](docs/ROADMAP.md) · [Credits](docs/CREDITS.md)
+[中文](README.zh-CN.md) · [Brand](docs/BRAND.md) · [Product](docs/PRODUCT.md) · [Tech stack](docs/TECH-STACK.md) · [Architecture](docs/ARCHITECTURE.md) · [Roadmap](docs/ROADMAP.md) · [Credits](docs/CREDITS.md)
 
 </div>
 
@@ -151,6 +151,7 @@ MarkToast is built in public debt to these projects — see
 
 | Doc | What |
 |---|---|
+| [Brand](docs/BRAND.md) | Logo, colours, type, asset list |
 | [Product](docs/PRODUCT.md) | Positioning, users, non-goals, success metrics |
 | [Tech stack](docs/TECH-STACK.md) | Every decision, with alternatives and risks |
 | [Architecture](docs/ARCHITECTURE.md) | Components, storage layout, adapters, failure modes |
