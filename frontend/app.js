@@ -59,6 +59,9 @@ const els = {
   adapterCount: $("adapter-count"),
   historyRegion: $("history-results"),
   modal: $("memory-modal"),
+  detailModal: $("memory-detail-modal"),
+  detailContent: $("detail-content"),
+  detailTitle: $("detail-title"),
   form: $("memory-form"),
   formError: $("form-error"),
   submit: $("submit-memory"),
@@ -110,6 +113,7 @@ function setTheme(preference) {
   }
   document.documentElement.classList.add("theming");
   applyTheme(preference);
+  requestAnimationFrame(positionSetThumbs);
   window.setTimeout(() => document.documentElement.classList.remove("theming"), 380);
 }
 
@@ -478,6 +482,7 @@ async function loadMemories({ preserveSelection = true, silent = false } = {}) {
     if (!preserveSelection || !state.results.some((item) => item.path === state.selectedPath)) {
       state.selectedPath = "";
       state.detailLoading = false;
+      hideMemoryDetail();
     }
     renderMemories();
     els.resultRegion.setAttribute("aria-busy", "false");
@@ -504,6 +509,7 @@ function sortResults(results) {
 function renderMemories() {
   clear(els.resultRegion);
   els.resultTotal.textContent = String(state.results.length);
+  if (!state.selectedPath) hideMemoryDetail();
   if (!state.results.length) {
     const list = element("div", "list");
     list.appendChild(emptyState(
@@ -516,46 +522,93 @@ function renderMemories() {
     return;
   }
 
-  const list = element("div", "list");
+  const grid = element("div", "memory-grid");
   state.results.forEach((result) => {
-    const entry = element("article", "memory-entry");
     const open = result.path === state.selectedPath;
-    const row = element("button", `row memory-row${open ? " is-open" : ""}`);
-    row.type = "button";
-    row.dataset.path = result.path;
-    row.setAttribute("aria-expanded", String(open));
-    row.setAttribute("aria-label", `${open ? "收起" : "展开"}记忆：${result.name || fileName(result.path)}`);
-    row.append(icon("file", "ic memory-icon"));
-
-    const who = element("div", "who");
-    who.dataset.noI18n = "true";
-    who.append(
-      element("div", "name", result.name || fileName(result.path)),
-      element("div", "sub", result.description || cleanSnippet(result.snippet) || shortPath(result.path)),
-    );
-    row.appendChild(who);
-
-    const meta = element("div", "memory-meta");
     const type = result.type || "memory";
+    const card = element("button", `memory-card type-${type}${open ? " is-open" : ""}`);
+    card.type = "button";
+    card.dataset.path = result.path;
+    card.setAttribute("aria-expanded", String(open));
+    card.setAttribute("aria-label", `${open ? "收起" : "打开"}记忆：${result.name || fileName(result.path)}`);
+
+    const head = element("div", "card-head");
     const typePill = element("span", `pill type-pill type-${type}`, typeLabel(type));
     typePill.title = type;
-    meta.appendChild(typePill);
-    if (!state.project && result.project) {
-      const project = element("span", "memory-project", projectLabel(result.project));
-      project.title = result.project;
-      meta.appendChild(project);
-    }
-    meta.appendChild(element("span", "memory-time", relativeDate(result.updated)));
-    const chevron = element("span", "chev");
-    chevron.appendChild(icon("chevron-right"));
-    meta.appendChild(chevron);
-    row.appendChild(meta);
-    row.addEventListener("click", () => selectMemory(result.path));
-    entry.appendChild(row);
-    if (open) entry.appendChild(renderExpandedMemory(result));
-    list.appendChild(entry);
+    head.append(typePill, element("span", "card-time", relativeDate(result.updated)));
+    card.appendChild(head);
+
+    const title = element("div", "card-title", result.name || fileName(result.path));
+    title.dataset.noI18n = "true";
+    card.appendChild(title);
+
+    const snippet = element("div", "card-snippet", result.description || cleanSnippet(result.snippet) || shortPath(result.path));
+    snippet.dataset.noI18n = "true";
+    card.appendChild(snippet);
+
+    const foot = element("div", "card-foot");
+    const project = element("span", "card-project", result.project ? projectLabel(result.project) : "未归类");
+    project.dataset.noI18n = result.project ? "true" : "false";
+    if (result.project) project.title = result.project;
+    const openIcon = element("span", "card-open");
+    openIcon.appendChild(icon("chevron-right"));
+    foot.append(project, openIcon);
+    card.appendChild(foot);
+
+    card.addEventListener("click", () => selectMemory(result.path));
+    grid.appendChild(card);
   });
-  els.resultRegion.appendChild(list);
+  els.resultRegion.appendChild(grid);
+  if (memoryDetailOpen()) renderMemoryDetail();
+}
+
+function memoryDetailOpen() {
+  return Boolean(els.detailModal && !els.detailModal.hidden);
+}
+
+function hideMemoryDetail() {
+  if (els.detailModal && !els.detailModal.hidden) els.detailModal.hidden = true;
+  state.detailLoading = false;
+}
+
+function renderMemoryDetail() {
+  if (!els.detailModal || els.detailModal.hidden) return;
+  const path = state.selectedPath;
+  const result = state.results.find((item) => item.path === path) || state.details.get(path);
+  if (!result) {
+    hideMemoryDetail();
+    return;
+  }
+  const detail = state.details.get(path);
+  const title = (detail && detail.name) || result.name || fileName(path);
+  if (els.detailTitle) {
+    els.detailTitle.textContent = title;
+    els.detailTitle.title = path || title;
+  }
+  clear(els.detailContent);
+  els.detailContent.appendChild(renderExpandedMemory(result));
+}
+
+function openMemoryDetail() {
+  if (!els.detailModal) return;
+  els.detailModal.hidden = false;
+  renderMemoryDetail();
+  requestAnimationFrame(() => {
+    $("close-detail")?.focus({ preventScroll: true });
+  });
+}
+
+function closeMemoryDetail() {
+  const path = state.selectedPath;
+  hideMemoryDetail();
+  state.selectedPath = "";
+  renderMemories();
+  if (path) {
+    requestAnimationFrame(() => {
+      const card = [...document.querySelectorAll(".memory-card")].find((node) => node.dataset.path === path);
+      card?.focus({ preventScroll: true });
+    });
+  }
 }
 
 function cleanSnippet(snippet) {
@@ -641,16 +694,15 @@ function renderExpandedMemory(result) {
 
 async function selectMemory(path, force = false) {
   if (!path) return;
-  if (path === state.selectedPath && !force) {
-    state.selectedPath = "";
-    state.detailLoading = false;
-    renderMemories();
+  if (path === state.selectedPath && !force && memoryDetailOpen()) {
+    closeMemoryDetail();
     return;
   }
   state.selectedPath = path;
   state.detailErrors.delete(path);
   state.detailLoading = !state.details.has(path);
   renderMemories();
+  openMemoryDetail();
   if (state.details.has(path) && !force) return;
 
   try {
@@ -660,12 +712,14 @@ async function selectMemory(path, force = false) {
     if (state.selectedPath === path && state.view === "memories") {
       state.detailLoading = false;
       renderMemories();
+      renderMemoryDetail();
     }
   } catch (error) {
     if (state.selectedPath === path && state.view === "memories") {
       state.detailLoading = false;
       state.detailErrors.set(path, error);
       renderMemories();
+      renderMemoryDetail();
     }
   }
 }
@@ -1070,8 +1124,81 @@ function renderHistory() {
 
 const VIEW_LABELS = { memories: "全部记忆", inbox: "收件箱", adapters: "适配器", history: "历史", settings: "设置" };
 
+// Settings copy Magpie's preference pages: tabs at the top, one card of
+// .row.pref rows under them. The tab strip and the search stay put while the
+// page scrolls, and typing in the search shows each page's matching rows.
+function positionSetThumb(box) {
+  if (!box) return;
+  const thumb = box.querySelector(":scope > .thumb");
+  const active = box.querySelector(":scope > .opt.on");
+  if (!thumb) return;
+  if (!active || !box.offsetParent) {
+    thumb.style.opacity = "0";
+    return;
+  }
+  thumb.style.opacity = "1";
+  thumb.style.width = `${active.offsetWidth}px`;
+  thumb.style.height = `${active.offsetHeight}px`;
+  thumb.style.transform = `translate(${active.offsetLeft - 2}px, 0)`;
+}
+
+function positionSetThumbs() {
+  document.querySelectorAll("#view-settings .segs").forEach(positionSetThumb);
+}
+
+function showSettingsPage(name) {
+  const tabs = [...document.querySelectorAll("#set-tabs [data-set]")];
+  const known = tabs.some((tab) => tab.dataset.set === name);
+  const target = known ? name : "general";
+  tabs.forEach((tab) => {
+    const on = tab.dataset.set === target;
+    tab.classList.toggle("on", on);
+    tab.setAttribute("aria-selected", String(on));
+  });
+  document.querySelectorAll("#view-settings .set-page").forEach((page) => {
+    page.hidden = page.id !== `setPage-${target}`;
+  });
+  requestAnimationFrame(positionSetThumbs);
+}
+
+function applySettingsSearch(raw) {
+  const view = $("view-settings");
+  if (!view) return;
+  const query = String(raw || "").trim().toLowerCase();
+  view.classList.toggle("set-searching", Boolean(query));
+  let total = 0;
+  document.querySelectorAll("#view-settings .set-page").forEach((page) => {
+    let hits = 0;
+    page.querySelectorAll(".row.pref").forEach((row) => {
+      const match = !query || row.textContent.toLowerCase().includes(query);
+      row.hidden = Boolean(query) && !match;
+      if (match) hits += 1;
+    });
+    if (query) page.hidden = hits === 0;
+    total += hits;
+  });
+  const none = $("set-none");
+  if (none) none.hidden = !query || total > 0;
+  if (!query) {
+    const active = document.querySelector("#set-tabs .on")?.dataset.set || "general";
+    showSettingsPage(active);
+  }
+}
+
+function resetSettingsSearch() {
+  const input = $("set-q");
+  if (!input || !input.value) return;
+  input.value = "";
+  applySettingsSearch("");
+}
+
 function switchView(view) {
   state.view = view;
+  document.body.classList.toggle("view-settings", view === "settings");
+  if (view !== "memories") {
+    state.selectedPath = "";
+    hideMemoryDetail();
+  }
   document.querySelectorAll("[data-view]").forEach((tab) => {
     const active = tab.dataset.view === view;
     tab.classList.toggle("on", active);
@@ -1096,7 +1223,12 @@ function switchView(view) {
   if (view === "inbox") loadInbox();
   if (view === "adapters" && !state.adapters.length) loadAdapters();
   if (view === "history") loadHistory();
-  if (view === "settings") loadSettings();
+  if (view === "settings") {
+    loadSettings();
+    requestAnimationFrame(positionSetThumbs);
+  } else {
+    resetSettingsSearch();
+  }
   if (view === "memories" && !state.results.length) loadMemories();
 }
 
@@ -1402,9 +1534,16 @@ function bindEvents() {
       event.preventDefault();
       focusSearch();
     }
-    if (event.key === "Escape" && !els.modal.hidden) {
-      event.preventDefault();
-      closeDialog();
+    if (event.key === "Escape") {
+      if (!els.modal.hidden) {
+        event.preventDefault();
+        closeDialog();
+        return;
+      }
+      if (memoryDetailOpen()) {
+        event.preventDefault();
+        closeMemoryDetail();
+      }
     }
   });
 
@@ -1445,12 +1584,48 @@ function bindEvents() {
   $("reindex").addEventListener("click", rebuildIndex);
   $("backup-now").addEventListener("click", backupNow);
   $("save-aliases").addEventListener("click", saveAliases);
+  document.querySelectorAll("#set-tabs [data-set]").forEach((tab) => {
+    tab.addEventListener("click", () => showSettingsPage(tab.dataset.set));
+  });
+  $("set-q").addEventListener("input", () => applySettingsSearch($("set-q").value));
+  $("set-q").addEventListener("search", () => applySettingsSearch($("set-q").value));
+  document.querySelectorAll("[data-lang]").forEach((button) => {
+    button.addEventListener("click", () => window.setTimeout(positionSetThumbs, 30));
+  });
+  window.addEventListener("resize", positionSetThumbs);
+  const settingsViewport = document.querySelector(".view");
+  if (settingsViewport) {
+    settingsViewport.addEventListener("scroll", () => {
+      const head = document.querySelector("#view-settings .set-head");
+      if (head) head.classList.toggle("stuck", settingsViewport.scrollTop > 4);
+    });
+  }
   document.querySelectorAll("[data-import]").forEach((button) => {
     button.addEventListener("click", () => importSource(button.dataset.import, button));
   });
   $("retry-hub").addEventListener("click", retryAll);
   $("close-dialog").addEventListener("click", closeDialog);
   $("cancel-dialog").addEventListener("click", closeDialog);
+  $("close-detail")?.addEventListener("click", closeMemoryDetail);
+  els.detailModal?.addEventListener("click", (event) => {
+    if (event.target === els.detailModal) closeMemoryDetail();
+  });
+  els.detailModal?.addEventListener("keydown", (event) => {
+    if (event.key !== "Tab") return;
+    const focusables = [...els.detailModal.querySelectorAll(
+      'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href]',
+    )].filter((node) => node.offsetParent !== null);
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
   els.form.addEventListener("submit", submitMemory);
   els.modal.addEventListener("click", (event) => {
     if (event.target === els.modal) closeDialog();
@@ -1504,6 +1679,7 @@ function bindEvents() {
   });
   window.addEventListener("resize", positionSegThumb);
   positionSegThumb();
+  requestAnimationFrame(positionSetThumbs);
   window.addEventListener("online", () => loadStatus({ announce: true }));
   window.addEventListener("offline", () => {
     setHubState("offline", "浏览器已离线");
@@ -1544,28 +1720,39 @@ function renderSettings() {
   $("settings-token").textContent = settings.token || "—";
   renderAliasList(settings);
   applyTheme();
+  requestAnimationFrame(positionSetThumbs);
 }
 
 function renderAliasList(settings) {
   const list = $("alias-list");
   clear(list);
-  const projects = state.status?.projects || [];
+  const projects = (state.status?.projects || []).slice().sort(
+    (a, b) => (Number(b.facts) || 0) - (Number(a.facts) || 0) || projectLabel(a.key).localeCompare(projectLabel(b.key), "zh-CN"),
+  );
   if (!projects.length) {
-    list.appendChild(element("p", "muted", "还没有项目"));
+    list.hidden = true;
     return;
   }
+  list.hidden = false;
   const aliases = settings?.aliases || state.aliases || {};
   projects.forEach((project) => {
-    const row = element("div", "alias-row");
+    const row = element("div", "row pref alias-row");
     row.dataset.key = project.key;
-    row.appendChild(element("code", "alias-key", project.key));
-    const input = element("input", "");
+    const who = element("div", "who");
+    who.appendChild(element("div", "name alias-key", project.key));
+    who.appendChild(element("div", "sub", `${Number(project.facts) || 0} 条记忆`));
+    row.appendChild(who);
+    const val = element("div", "val");
+    const input = element("input", "set-field");
     input.type = "text";
     input.maxLength = 80;
     input.value = aliases[project.key] || "";
-    input.placeholder = projectLabel(project.key);
+    input.placeholder = "显示名";
+    input.autocomplete = "off";
+    input.spellcheck = false;
     input.setAttribute("aria-label", `项目 ${project.key} 的显示名`);
-    row.appendChild(input);
+    val.appendChild(input);
+    row.appendChild(val);
     list.appendChild(row);
   });
 }

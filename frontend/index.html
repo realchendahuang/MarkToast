@@ -294,87 +294,133 @@
       </section>
 
       <section class="view-panel" id="view-settings" role="tabpanel" aria-label="设置" hidden>
-        <div class="view-head">
-          <h1>设置</h1>
+        <div class="row-head set-head">
+          <div class="warm-tabs set-tabs" id="set-tabs" role="tablist" aria-label="设置">
+            <button type="button" role="tab" id="setTab-general" data-set="general" aria-controls="setPage-general" aria-selected="true" class="on">常规</button>
+            <button type="button" role="tab" id="setTab-repo" data-set="repo" aria-controls="setPage-repo" aria-selected="false">仓库</button>
+            <button type="button" role="tab" id="setTab-mcp" data-set="mcp" aria-controls="setPage-mcp" aria-selected="false">MCP</button>
+            <button type="button" role="tab" id="setTab-import" data-set="import" aria-controls="setPage-import" aria-selected="false">导入</button>
+            <button type="button" role="tab" id="setTab-aliases" data-set="aliases" aria-controls="setPage-aliases" aria-selected="false">项目别名</button>
+          </div>
+          <input class="set-q" id="set-q" type="search" spellcheck="false" autocomplete="off" placeholder="查找设置" aria-label="查找设置" />
         </div>
-        <div class="settings-stack">
-          <section class="settings-card">
-            <h2>外观</h2>
-            <div class="settings-row">
-              <span class="settings-label">主题</span>
-              <div class="theme-switch" id="theme-switch" role="group" aria-label="主题">
-                <button type="button" data-theme-choice="auto">跟随系统</button>
-                <button type="button" data-theme-choice="light">浅色</button>
-                <button type="button" data-theme-choice="dark">深色</button>
+        <p class="set-none" id="set-none" role="status" hidden>没有匹配的设置</p>
+        <section class="set-page" id="setPage-general" role="tabpanel" aria-labelledby="setTab-general" data-part="常规">
+          <div class="list prefs">
+            <div class="row pref">
+              <div class="who">
+                <div class="name">外观</div>
+                <div class="sub">跟随系统时，随 macOS 的浅色或深色自动切换</div>
+              </div>
+              <div class="segs" id="theme-switch" role="group" aria-label="主题">
+                <span class="thumb" aria-hidden="true"></span>
+                <button type="button" class="opt" data-theme-choice="auto">跟随系统</button>
+                <button type="button" class="opt" data-theme-choice="light">浅色</button>
+                <button type="button" class="opt" data-theme-choice="dark">深色</button>
               </div>
             </div>
-            <div class="settings-row language-row">
-              <span class="settings-label">语言</span>
-              <div class="theme-switch" role="group" aria-label="语言">
-                <button type="button" data-lang="zh">中文</button>
-                <button type="button" data-lang="en">English</button>
+            <div class="row pref">
+              <div class="who">
+                <div class="name">语言</div>
+                <div class="sub">界面文案的语言，不影响记忆内容</div>
+              </div>
+              <div class="segs" id="lang-switch" role="group" aria-label="语言">
+                <span class="thumb" aria-hidden="true"></span>
+                <button type="button" class="opt" data-lang="zh">中文</button>
+                <button type="button" class="opt" data-lang="en">English</button>
               </div>
             </div>
-          </section>
-
-          <section class="settings-card">
-            <h2>仓库</h2>
-            <div class="settings-row">
-              <span class="settings-label">根目录</span>
-              <code class="settings-value" id="settings-root" data-no-i18n>—</code>
-              <button class="icon" id="copy-root" type="button" aria-label="复制根目录" title="复制">
-                <svg class="ic"><use href="#icon-copy"></use></svg>
-              </button>
+          </div>
+        </section>
+        <section class="set-page" id="setPage-repo" role="tabpanel" aria-labelledby="setTab-repo" data-part="仓库" hidden>
+          <div class="list prefs">
+            <div class="row pref">
+              <div class="who">
+                <div class="name">根目录</div>
+                <div class="sub">记忆仓库所在的文件夹</div>
+              </div>
+              <div class="val">
+                <code id="settings-root" data-no-i18n>—</code>
+                <button class="icon" id="copy-root" type="button" aria-label="复制根目录" title="复制">
+                  <svg class="ic"><use href="#icon-copy"></use></svg>
+                </button>
+              </div>
             </div>
-            <div class="settings-row">
-              <span class="settings-label">记忆</span>
-              <span class="settings-value" id="settings-facts">—</span>
+            <div class="row pref">
+              <div class="who">
+                <div class="name">记忆</div>
+                <div class="sub">仓库里的记忆总数</div>
+              </div>
+              <div class="val"><code id="settings-facts">—</code></div>
             </div>
-            <div class="settings-row">
-              <span class="settings-label">索引</span>
-              <span class="settings-value" id="settings-index">—</span>
-              <button class="button quiet" id="reindex" type="button">重建索引</button>
+            <div class="row pref">
+              <div class="who">
+                <div class="name">索引</div>
+                <div class="sub">用于全文搜索，重建不会改动记忆</div>
+              </div>
+              <div class="val">
+                <code id="settings-index">—</code>
+                <button class="button quiet" id="reindex" type="button">重建索引</button>
+              </div>
             </div>
-            <div class="settings-row">
-              <span class="settings-label">备份</span>
-              <span class="settings-value" id="settings-backup" data-no-i18n>—</span>
-              <button class="button quiet" id="backup-now" type="button">备份</button>
+            <div class="row pref">
+              <div class="who">
+                <div class="name">备份</div>
+                <div class="sub">把仓库打包成一份 zip，留在本机</div>
+              </div>
+              <div class="val">
+                <code id="settings-backup" data-no-i18n>—</code>
+                <button class="button quiet" id="backup-now" type="button">备份</button>
+              </div>
             </div>
-          </section>
-
-          <section class="settings-card">
-            <h2>MCP</h2>
-            <div class="settings-row">
-              <span class="settings-label">Token</span>
-              <code class="settings-value" id="settings-token" data-no-i18n>—</code>
-              <button class="icon" id="copy-token" type="button" aria-label="复制 MCP token" title="复制">
-                <svg class="ic"><use href="#icon-copy"></use></svg>
-              </button>
+          </div>
+        </section>
+        <section class="set-page" id="setPage-mcp" role="tabpanel" aria-labelledby="setTab-mcp" data-part="MCP" hidden>
+          <div class="list prefs">
+            <div class="row pref">
+              <div class="who">
+                <div class="name">Token</div>
+                <div class="sub">给 MCP 客户端连接本地记忆库用的令牌</div>
+              </div>
+              <div class="val">
+                <code id="settings-token" data-no-i18n>—</code>
+                <button class="icon" id="copy-token" type="button" aria-label="复制 MCP token" title="复制">
+                  <svg class="ic"><use href="#icon-copy"></use></svg>
+                </button>
+              </div>
             </div>
-          </section>
-
-          <section class="settings-card">
-            <h2>导入</h2>
-            <div class="settings-row">
-              <span class="settings-label">ZCode</span>
-              <code class="settings-value">~/.zcode/cli/memories</code>
-              <button class="button quiet" type="button" data-import="zcode">导入</button>
+          </div>
+        </section>
+        <section class="set-page" id="setPage-import" role="tabpanel" aria-labelledby="setTab-import" data-part="导入" hidden>
+          <div class="list prefs">
+            <div class="row pref">
+              <div class="who">
+                <div class="name">ZCode</div>
+                <div class="sub">从 ~/.zcode/cli/memories 导入</div>
+              </div>
+              <div class="val"><button class="button quiet" type="button" data-import="zcode">导入</button></div>
             </div>
-            <div class="settings-row">
-              <span class="settings-label">Hermes</span>
-              <code class="settings-value">~/.hermes</code>
-              <button class="button quiet" type="button" data-import="hermes">导入</button>
+            <div class="row pref">
+              <div class="who">
+                <div class="name">Hermes</div>
+                <div class="sub">从 ~/.hermes 导入</div>
+              </div>
+              <div class="val"><button class="button quiet" type="button" data-import="hermes">导入</button></div>
             </div>
-          </section>
-
-          <section class="settings-card">
-            <h2>项目别名</h2>
-            <div class="alias-list" id="alias-list"></div>
-            <div class="settings-foot">
-              <button class="button primary" id="save-aliases" type="button">保存</button>
+          </div>
+        </section>
+        <section class="set-page" id="setPage-aliases" role="tabpanel" aria-labelledby="setTab-aliases" data-part="项目别名" hidden>
+          <div class="list prefs">
+            <div class="row pref">
+              <div class="who">
+                <div class="name">项目别名</div>
+                <div class="sub">给项目起一个更好记的显示名，保存后侧栏和列表都会用它</div>
+              </div>
+              <div class="val"><button class="button quiet" id="save-aliases" type="button">保存</button></div>
             </div>
-          </section>
-        </div>
+          </div>
+          <div class="list prefs alias-list" id="alias-list"></div>
+        </section>
       </section>
 
     </div>
@@ -432,6 +478,21 @@
           </div>
         </footer>
       </form>
+    </div>
+  </div>
+
+  <div class="modal" id="memory-detail-modal" hidden>
+    <div class="dialog detail-dialog" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+      <header class="dialog-head">
+        <div class="dialog-title-wrap">
+          <svg class="logo"><use href="#icon-file"></use></svg>
+          <h2 id="detail-title">记忆</h2>
+        </div>
+        <button class="icon" id="close-detail" type="button" aria-label="关闭记忆详情">
+          <svg class="ic"><use href="#icon-close"></use></svg>
+        </button>
+      </header>
+      <div class="dialog-body detail-body" id="detail-content"></div>
     </div>
   </div>
 
