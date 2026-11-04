@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/realchendahuang/MarkToast/internal/adapter"
+	"github.com/realchendahuang/MarkToast/internal/backup"
 	"github.com/realchendahuang/MarkToast/internal/gitx"
 	"github.com/realchendahuang/MarkToast/internal/harness"
 	"github.com/realchendahuang/MarkToast/internal/index"
@@ -46,6 +47,11 @@ func Serve(o Options) error {
 	}
 	mcpServer := NewMCPServer(o.Root)
 	token, _ := EnsureToken(o.Root)
+	if path, created, err := backup.EnsureDaily(o.Root); err != nil {
+		log.Printf("marktoast: daily backup failed: %v", err)
+	} else if created {
+		log.Printf("marktoast: daily backup written to %s", path)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

@@ -166,5 +166,5 @@ MarkToast is built in public debt to these projects — see
 
 ## License
 
-Private during development; **MIT** when open-sourced. See the decision record
+MIT (see [LICENSE](LICENSE)). The project stays private during development.
 in [docs/TECH-STACK.md](docs/TECH-STACK.md).

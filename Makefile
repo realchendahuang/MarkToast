@@ -2,7 +2,7 @@ BINARY  := marktoast
 VERSION ?= 0.0.1-dev
 LDFLAGS := -s -w -X github.com/realchendahuang/MarkToast/internal/version.Version=$(VERSION)
 
-.PHONY: all build desktop run run-desktop test fmt vet tidy check serve clean
+.PHONY: all build desktop run run-desktop test fmt vet tidy check serve install clean
 
 all: build
 
@@ -19,6 +19,10 @@ run-desktop: desktop
 
 run:
 	go run ./cmd/marktoast $(ARGS)
+
+# Install the CLI and the native macOS bundle.
+install: build desktop
+	./scripts/install.sh
 
 # Local hub + web UI preview (frontend/ served by the hub).
 serve:

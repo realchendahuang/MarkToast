@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -76,4 +77,24 @@ func Create(root string) (string, error) {
 		return "", fmt.Errorf("backup archive is empty")
 	}
 	return name, nil
+}
+
+// EnsureDaily creates at most one backup per local calendar day.
+func EnsureDaily(root string) (string, bool, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", false, err
+	}
+	dir := filepath.Join(home, ".marktoast", "backups")
+	entries, err := os.ReadDir(dir)
+	if err == nil {
+		today := time.Now().Format("20060102")
+		for _, entry := range entries {
+			if !entry.IsDir() && strings.HasPrefix(entry.Name(), "marktoast-"+today) {
+				return filepath.Join(dir, entry.Name()), false, nil
+			}
+		}
+	}
+	path, err := Create(root)
+	return path, true, err
 }

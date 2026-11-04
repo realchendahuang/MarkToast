@@ -149,4 +149,4 @@ MarkToast 站在这些项目肩上——具体借鉴了什么见 [docs/CREDITS.m
 
 ## 许可证
 
-开发期私有；开源时采用 **MIT**（决策记录见 [docs/TECH-STACK.md](docs/TECH-STACK.md)）。
+采用 **MIT**（见 [LICENSE](LICENSE)）；开发期仓库保持私有。

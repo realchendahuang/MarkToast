@@ -57,3 +57,20 @@ func TestCreateArchive(t *testing.T) {
 		t.Fatal("a.md missing from archive")
 	}
 }
+
+func TestEnsureDailyIsIdempotent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.md"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	first, created, err := EnsureDaily(root)
+	if err != nil || !created {
+		t.Fatalf("first backup: %q %v %v", first, created, err)
+	}
+	second, created, err := EnsureDaily(root)
+	if err != nil || created || second != first {
+		t.Fatalf("second backup: %q %v %v", second, created, err)
+	}
+}
