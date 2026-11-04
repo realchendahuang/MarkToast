@@ -45,6 +45,8 @@ const els = {
   hubStateText: $("hub-state-text"),
   statusDot: $("side-status-dot"),
   search: $("global-search"),
+  searchShell: $("search-shell"),
+  searchToggle: $("search-toggle"),
   searchClear: $("search-clear"),
   projectList: $("project-list"),
   projectFilter: $("project-filter"),
@@ -62,7 +64,6 @@ const els = {
 };
 
 if (/Mac|iPhone|iPad/.test(navigator.platform)) document.body.classList.add("mac");
-if (!/Mac|iPhone|iPad/.test(navigator.platform)) $("search-shortcut").textContent = "Ctrl K";
 
 const THEME_KEY = "marktoast-theme";
 const themeMedia = matchMedia("(prefers-color-scheme: dark)");
@@ -1024,9 +1025,36 @@ async function refreshCurrent() {
   else toast("刷新失败，请确认本地 hub 正在运行", "error");
 }
 
+function openSearch(focus = true) {
+  els.searchShell.classList.add("is-open");
+  els.searchToggle.setAttribute("aria-expanded", "true");
+  els.search.tabIndex = 0;
+  if (focus) {
+    requestAnimationFrame(() => {
+      els.search.focus();
+      els.search.select();
+    });
+  }
+}
+
+function closeSearch() {
+  if (els.search.value.trim()) return;
+  els.searchShell.classList.remove("is-open");
+  els.searchToggle.setAttribute("aria-expanded", "false");
+  els.search.tabIndex = -1;
+}
+
+function toggleSearch() {
+  if (els.searchShell.classList.contains("is-open")) {
+    if (els.search.value.trim()) els.search.focus();
+    else closeSearch();
+    return;
+  }
+  openSearch();
+}
+
 function focusSearch() {
-  els.search.focus();
-  els.search.select();
+  openSearch();
 }
 
 function bindEvents() {
@@ -1035,7 +1063,6 @@ function bindEvents() {
     state.query = query;
     state.selectedPath = "";
     els.searchClear.hidden = !query;
-    $("search-shortcut").hidden = Boolean(query);
     window.clearTimeout(state.searchTimer);
     state.searchTimer = window.setTimeout(() => {
       if (state.view !== "memories") switchView("memories");
@@ -1048,9 +1075,30 @@ function bindEvents() {
     state.query = "";
     state.selectedPath = "";
     els.searchClear.hidden = true;
-    $("search-shortcut").hidden = false;
     els.search.focus();
     loadMemories({ preserveSelection: false });
+  });
+
+  els.searchToggle.setAttribute("aria-expanded", "false");
+  els.searchToggle.addEventListener("click", toggleSearch);
+  els.search.addEventListener("blur", () => {
+    window.setTimeout(() => {
+      if (!els.search.value.trim()) closeSearch();
+    }, 140);
+  });
+  els.search.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (els.search.value.trim()) {
+      event.preventDefault();
+      els.search.value = "";
+      state.query = "";
+      state.selectedPath = "";
+      els.searchClear.hidden = true;
+      loadMemories({ preserveSelection: false });
+      return;
+    }
+    els.search.blur();
+    closeSearch();
   });
 
   document.addEventListener("keydown", (event) => {
@@ -1100,6 +1148,9 @@ function bindEvents() {
   $("copy-token").addEventListener("click", () => copyText($("settings-token").textContent, "Token"));
   $("reindex").addEventListener("click", rebuildIndex);
   $("save-aliases").addEventListener("click", saveAliases);
+  document.querySelectorAll("[data-import]").forEach((button) => {
+    button.addEventListener("click", () => importSource(button.dataset.import, button));
+  });
   $("retry-hub").addEventListener("click", retryAll);
   $("close-dialog").addEventListener("click", closeDialog);
   $("cancel-dialog").addEventListener("click", closeDialog);
@@ -1203,6 +1254,30 @@ async function saveAliases() {
     toast("已保存");
   } catch (error) {
     toast(formatError(error), "error");
+  }
+}
+
+async function importSource(from, button) {
+  const label = button.textContent;
+  button.disabled = true;
+  button.textContent = "导入中…";
+  try {
+    const data = await api("/api/import", {
+      method: "POST",
+      body: JSON.stringify({ from }),
+    });
+    const fresh = data.facts || 0;
+    const skipped = data.skipped || 0;
+    toast(fresh ? `已导入 ${fresh} 条` : skipped ? `没有新记忆（跳过 ${skipped} 条）` : "没有可导入的记忆");
+    await loadStatus();
+    if (state.view === "memories") await loadMemories({ preserveSelection: true });
+    await loadSettings();
+  } catch (error) {
+    toast(formatError(error), "error");
+    if (button.isConnected) {
+      button.disabled = false;
+      button.textContent = label;
+    }
   }
 }
 

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/realchendahuang/MarkToast/internal/gitx"
+	"github.com/realchendahuang/MarkToast/internal/importer"
 	"github.com/realchendahuang/MarkToast/internal/index"
 	"github.com/realchendahuang/MarkToast/internal/store"
 	"github.com/realchendahuang/MarkToast/internal/version"
@@ -195,4 +196,54 @@ func memoryRelPath(root, path string) (string, error) {
 		return "", fmt.Errorf("invalid path")
 	}
 	return filepath.ToSlash(rel), nil
+}
+
+func handleImport(w http.ResponseWriter, r *http.Request, o Options) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+	var payload struct {
+		From   string `json:"from"`
+		Source string `json:"source"`
+		DryRun bool   `json:"dryRun"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	home, _ := os.UserHomeDir()
+	source := payload.Source
+	if source == "" {
+		switch payload.From {
+		case "zcode":
+			source = filepath.Join(home, ".zcode", "cli", "memories")
+		case "hermes":
+			source = filepath.Join(home, ".hermes")
+		default:
+			writeError(w, http.StatusBadRequest, fmt.Errorf("unknown source %q (want zcode or hermes)", payload.From))
+			return
+		}
+	}
+	var result importer.Result
+	var err error
+	switch payload.From {
+	case "zcode":
+		result, err = importer.ZCode(o.Root, source, payload.DryRun)
+	case "hermes":
+		result, err = importer.Hermes(o.Root, source, payload.DryRun)
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"from":     payload.From,
+		"source":   source,
+		"facts":    result.Facts,
+		"projects": result.Projects,
+		"skipped":  result.Skipped,
+		"dryRun":   result.DryRun,
+	})
 }

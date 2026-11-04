@@ -117,6 +117,28 @@ func SanitizeSlug(value string) string {
 	return slug
 }
 
+// factFileName keeps ASCII names human-readable, and adds a short hash for
+// names that would otherwise collide (Chinese names all sanitise to "project").
+func factFileName(name string) string {
+	slug := SanitizeSlug(name)
+	ascii := true
+	for _, r := range name {
+		if r > 127 {
+			ascii = false
+			break
+		}
+	}
+	if slug == "project" || !ascii {
+		sum := sha256.Sum256([]byte(name))
+		suffix := hex.EncodeToString(sum[:])[:8]
+		if slug == "project" {
+			return "fact-" + suffix + ".md"
+		}
+		return slug + "-" + suffix + ".md"
+	}
+	return slug + ".md"
+}
+
 // Parse splits a markdown file into frontmatter and body.
 func Parse(text string) (frontmatter, string) {
 	var meta frontmatter
@@ -194,7 +216,7 @@ func WriteFact(root, project string, f Fact) (string, error) {
 	body := strings.TrimLeft(f.Body, "\r\n")
 	content := "---\n" + string(head) + "---\n\n" + body + "\n"
 
-	path := filepath.Join(dir, SanitizeSlug(f.Name)+".md")
+	path := filepath.Join(dir, factFileName(f.Name))
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(content), 0o600); err != nil {
 		return "", err
