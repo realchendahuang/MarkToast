@@ -7,7 +7,7 @@
 Local-first, Git-versioned Markdown memory for every coding agent.<br>
 ZCode, Hermes and DSH first — Codex, Claude Code, Pi and the rest next.
 
-[中文](README.zh-CN.md) · [Architecture](docs/ARCHITECTURE.md) · [Roadmap](docs/ROADMAP.md)
+[中文](README.zh-CN.md) · [Product](docs/PRODUCT.md) · [Tech stack](docs/TECH-STACK.md) · [Architecture](docs/ARCHITECTURE.md) · [Roadmap](docs/ROADMAP.md)
 
 </div>
 

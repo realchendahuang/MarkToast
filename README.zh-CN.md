@@ -7,7 +7,7 @@
 本地优先、Git 版本化的 Markdown 记忆中枢，适配所有 coding agent。<br>
 先接 ZCode、Hermes、DSH，再扩到 Codex、Claude Code、Pi 等。
 
-[English](README.md) · [架构设计](docs/ARCHITECTURE.md) · [路线图](docs/ROADMAP.md)
+[English](README.md) · [产品定位](docs/PRODUCT.md) · [技术栈](docs/TECH-STACK.md) · [架构设计](docs/ARCHITECTURE.md) · [路线图](docs/ROADMAP.md)
 
 </div>
 

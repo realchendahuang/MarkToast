@@ -141,9 +141,11 @@ tier: native
 | 核心 / CLI | **Go 1.26** | 单二进制、跨平台、并发与 IO 友好；团队已有 Go 经验 |
 | 桌面壳 | **Wails v3**（系统 WebView） | 与 Magpie 同路：单二进制、无 Electron 体积 |
 | SQLite | **modernc.org/sqlite**（纯 Go） | 无 CGo，交叉编译简单，FTS5 可用 |
-| Git | **go-git**（或 CLI 兜底） | 进程内提交；复杂操作走 `git` 命令 |
+| Git | **调用 `git` CLI**（exec）+ 批量提交 | 行为可预期、覆盖边界操作；开发者本机已有 git |
 | 插件引擎（后续） | **moejs**（Apache-2.0，Magpie 同款） | 适配器可做成 JS 插件，社区可扩展 |
-| 前端 | Vite + TypeScript（框架待定） | 轻量、可嵌入 Wails |
+| 前端 | **原生 HTML/CSS/JS**（Vite 构建、无框架） | 对齐 Magpie：系统 WebView 内足够快、无框架负担 |
+| TUI（后期） | **Bubble Tea + Lipgloss** | 与 Magpie 同款；给无 GUI/远程场景 |
+| 平台 | **macOS 优先**，架构保持可移植 | 先在两台 mac 上做深，Windows/Linux 后续 |
 
 参考实现（架构与工程纪律借鉴，不直接 fork）：`yetone/magpie`（MIT，Go+Wails 本地 hub
 与配置写入器）、`akitaonrails/ai-memory`（MIT，Markdown+Git-backed 记忆引擎）。

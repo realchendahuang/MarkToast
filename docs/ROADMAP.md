@@ -16,6 +16,7 @@
 - [ ] 索引生成器：从事实文件重建 `MEMORY.md`
 - [ ] SQLite FTS5 索引：`reindex` / 增量更新 / CJK 分词
 - [ ] `marktoast search "<query>" [--project] [--type]`
+- [ ] **Spike：modernc FTS5 + trigram/jieba 中文检索验证**（两字词/中英混排）
 - [ ] Git：debounce 批量提交、`log` / `diff` / `rollback`
 - [ ] `marktoast status`：仓库、索引、Git 积压、适配器状态
 - [ ] 测试：store / index / git 各一组
@@ -40,6 +41,8 @@
 ## M4 — 桌面 UI（Wails v3）
 
 - [ ] Wails 壳 + 菜单栏常驻
+- [ ] 前端：**原生 HTML/CSS/JS + Vite（对齐 Magpie，无框架）**
+- [ ] 先做浏览器 Web UI 兜底（`marktoast ui --web`），再接 Wails（把壳当风险，不当前提）
 - [ ] 记忆浏览器（项目 / 类型 / 搜索）
 - [ ] Git 历史与 diff、回滚
 - [ ] 适配器状态页（每家 harness 的接入健康度）
@@ -49,6 +52,7 @@
 
 - [ ] 导入器：ai-memory / ZCode / Hermes / EverOS 格式
 - [ ] 插件宿主（moejs）与 adapter 贡献文档
+- [ ] TUI（Bubble Tea）作为无 GUI/远程场景的第二界面
 - [ ] 自动备份 / 更新器 / 安装脚本
 - [ ] 安全审计：脱敏、token、公开仓库前的数据清理
 - [ ] 公开仓库 + 选许可证（MIT 倾向）+ 文档站 + 发布首版
