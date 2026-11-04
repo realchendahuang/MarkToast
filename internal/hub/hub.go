@@ -299,22 +299,14 @@ func handleGitLog(w http.ResponseWriter, r *http.Request, o Options) {
 		writeError(w, http.StatusServiceUnavailable, fmt.Errorf("git not available"))
 		return
 	}
-	out, err := gitx.Log(o.Root, n)
+	entries, err := gitx.LogEntries(o.Root, n)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	commits := []map[string]string{}
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		if line == "" {
-			continue
-		}
-		parts := strings.SplitN(line, " ", 2)
-		commit := map[string]string{"hash": parts[0]}
-		if len(parts) > 1 {
-			commit["subject"] = parts[1]
-		}
-		commits = append(commits, commit)
+	commits := make([]map[string]string, 0, len(entries))
+	for _, c := range entries {
+		commits = append(commits, map[string]string{"hash": c.Hash, "subject": c.Subject, "date": c.Date})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"commits": commits})
 }

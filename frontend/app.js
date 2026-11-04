@@ -1,4 +1,4 @@
-// MarkToast desktop UI — dependency-free and served directly by the Go hub.
+// MarkToast web UI — dependency-free and served directly by the local hub.
 
 "use strict";
 
@@ -14,17 +14,23 @@ const state = {
   sort: "relevance",
   results: [],
   selectedPath: "",
-  detail: null,
+  details: new Map(),
+  detailErrors: new Map(),
+  detailLoading: false,
   adapters: [],
   history: [],
   searchController: null,
   searchTimer: 0,
   requestId: 0,
+  lastFocus: null,
 };
 
 const els = {
-  hubState: $("hub-state"),
+  hubAlert: $("hub-alert"),
+  hubAlertText: $("hub-alert-text"),
   hubStateText: $("hub-state-text"),
+  statusDot: $("side-status-dot"),
+  metaState: $("repo-meta-state"),
   search: $("global-search"),
   searchClear: $("search-clear"),
   projectList: $("project-list"),
@@ -34,21 +40,21 @@ const els = {
   resultTotal: $("result-total"),
   memoryHeading: $("memory-heading"),
   memorySubtitle: $("memory-subtitle"),
-  detail: $("detail-content"),
-  sidebarToggle: $("sidebar-toggle"),
-  sidebarScrim: $("sidebar-scrim"),
-  dialog: $("memory-dialog"),
-  form: $("memory-form"),
-  formError: $("form-error"),
-  submit: $("submit-memory"),
   adapterRegion: $("adapter-results"),
   adapterCount: $("adapter-count"),
   historyRegion: $("history-results"),
   gitSubtitle: $("git-subtitle"),
   gitBadge: $("git-badge"),
+  modal: $("memory-modal"),
+  form: $("memory-form"),
+  formError: $("form-error"),
+  submit: $("submit-memory"),
 };
 
-function icon(name, className = "icon") {
+if (/Mac|iPhone|iPad/.test(navigator.platform)) document.body.classList.add("mac");
+if (!/Mac|iPhone|iPad/.test(navigator.platform)) $("search-shortcut").textContent = "Ctrl K";
+
+function icon(name, className = "ic") {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("class", className);
   svg.setAttribute("aria-hidden", "true");
@@ -58,7 +64,7 @@ function icon(name, className = "icon") {
   return svg;
 }
 
-function element(tag, className, text) {
+function element(tag, className = "", text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
   if (text !== undefined && text !== null) node.textContent = String(text);
@@ -71,28 +77,31 @@ function clear(node) {
 
 function shortPath(path) {
   if (!path) return "—";
-  const root = state.root || "";
-  if (root && path.startsWith(root + "/")) return path.slice(root.length + 1);
-  return path;
+  const root = state.root.replace(/\/+$/, "");
+  if (root && path === root) return ".";
+  if (root && path.startsWith(`${root}/`)) return path.slice(root.length + 1);
+  return String(path).replace(/^\/+/, "");
+}
+
+function fileName(path) {
+  return String(path || "未命名记忆").split("/").pop().replace(/\.md$/i, "");
 }
 
 function formatError(error, fallback = "请求失败，请稍后重试。") {
   if (error instanceof TypeError && /fetch|network|load/i.test(error.message)) {
     return "无法连接本地 hub。请确认 `marktoast serve` 正在运行。";
   }
-  const message = error && error.message ? String(error.message) : "";
-  return message || fallback;
+  return error?.message ? String(error.message) : fallback;
 }
 
-function formatDate(value) {
+function formatDate(value, withTime = false) {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(date).replaceAll("/", "-");
+  const options = withTime
+    ? { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }
+    : { year: "numeric", month: "2-digit", day: "2-digit" };
+  return new Intl.DateTimeFormat("zh-CN", options).format(date).replaceAll("/", "-");
 }
 
 function relativeDate(value) {
@@ -116,14 +125,13 @@ async function api(path, options = {}) {
     },
     ...options,
   });
-
   if (!response.ok) {
     let detail = "";
     try {
       const payload = await response.json();
       detail = payload.error || payload.message || "";
     } catch {
-      // Some hub errors have no JSON body.
+      // The hub sometimes returns a plain HTTP error.
     }
     throw new Error(detail || `HTTP ${response.status} ${response.statusText}`.trim());
   }
@@ -131,12 +139,20 @@ async function api(path, options = {}) {
 }
 
 function setHubState(kind, text) {
-  els.hubState.classList.remove("is-online", "is-offline");
-  if (kind) els.hubState.classList.add(`is-${kind}`);
+  els.statusDot.classList.remove("is-online", "is-offline");
+  if (kind) els.statusDot.classList.add(`is-${kind}`);
   els.hubStateText.textContent = text;
-  const metaState = $("repo-meta-state");
-  metaState.textContent = kind === "online" ? "已连接" : kind === "offline" ? "离线" : "检查中";
-  metaState.classList.toggle("is-offline", kind === "offline");
+  els.metaState.classList.toggle("is-offline", kind === "offline");
+  els.metaState.textContent = kind === "online" ? "已连接" : kind === "offline" ? "离线" : "连接中";
+}
+
+function showHubAlert(message) {
+  els.hubAlertText.textContent = message;
+  els.hubAlert.hidden = false;
+}
+
+function hideHubAlert() {
+  els.hubAlert.hidden = true;
 }
 
 function toast(message, kind = "success") {
@@ -148,94 +164,36 @@ function toast(message, kind = "success") {
     node.style.opacity = "0";
     node.style.transform = "translateY(5px)";
     window.setTimeout(() => node.remove(), 180);
-  }, 3600);
+  }, 3400);
 }
 
 function setButtonLoading(button, loading, loadingText = "处理中…") {
   if (!button) return;
+  const label = button.querySelector("span");
   if (loading) {
-    const label = button.querySelector("span");
     button.dataset.original = label ? label.textContent : button.textContent.trim();
     button.disabled = true;
     if (label) label.textContent = loadingText;
     else button.textContent = loadingText;
-  } else {
-    button.disabled = false;
-    const label = button.querySelector("span");
-    if (button.dataset.original) {
-      if (label) label.textContent = button.dataset.original;
-      else button.textContent = button.dataset.original;
-    }
+    return;
+  }
+  button.disabled = false;
+  if (button.dataset.original) {
+    if (label) label.textContent = button.dataset.original;
+    else button.textContent = button.dataset.original;
   }
 }
 
-function makeStatePanel({ kind = "empty", title, message, actionLabel, onAction, command }) {
-  const panel = element("div", `state-panel${kind === "error" ? " is-error" : ""}`);
-  const inner = element("div", "state-inner");
-  const visual = element("div", "state-visual");
-  visual.setAttribute("aria-hidden", "true");
-  visual.append(
-    element("span", "state-ring one"),
-    element("span", "state-ring two"),
-    element("span", "state-ring three"),
-    element("span", "state-axis"),
-  );
-  inner.appendChild(visual);
-  inner.appendChild(element("h2", "", title));
-
-  const paragraph = element("p");
-  if (command) {
-    const parts = String(message).split("`");
-    parts.forEach((part, index) => {
-      paragraph.appendChild(index % 2 ? element("code", "", part) : document.createTextNode(part));
-    });
-  } else {
-    paragraph.textContent = message;
-  }
-  inner.appendChild(paragraph);
-
+function emptyState(title, message, actionLabel, onAction) {
+  const empty = element("div", "empty-state");
+  empty.append(element("b", "", title), element("span", "", message));
   if (actionLabel && onAction) {
-    const actions = element("div", "state-actions");
-    const button = element("button", "button button-quiet", actionLabel);
+    const button = element("button", "button quiet", actionLabel);
     button.type = "button";
     button.addEventListener("click", onAction);
-    actions.appendChild(button);
-    inner.appendChild(actions);
+    empty.appendChild(button);
   }
-  panel.appendChild(inner);
-  return panel;
-}
-
-function renderSkeleton(count = 7) {
-  clear(els.resultRegion);
-  const list = element("div", "skeleton-list");
-  for (let index = 0; index < count; index += 1) {
-    const row = element("div", "skeleton-row");
-    row.append(
-      element("div", "skeleton-line title"),
-      element("div", "skeleton-line path"),
-      element("div", "skeleton-line body"),
-      element("div", "skeleton-line short"),
-    );
-    list.appendChild(row);
-  }
-  els.resultRegion.appendChild(list);
-  els.resultRegion.setAttribute("aria-busy", "true");
-}
-
-function renderDetailSkeleton() {
-  clear(els.detail);
-  const wrapper = element("div", "detail-skeleton");
-  wrapper.append(
-    element("div", "skeleton-line detail-loading-title"),
-    element("div", "skeleton-line detail-loading-line"),
-    element("div", "skeleton-line detail-loading-line"),
-    element("div", "detail-loading-box"),
-    element("div", "skeleton-line detail-loading-line"),
-    element("div", "skeleton-line short"),
-  );
-  els.detail.className = "";
-  els.detail.appendChild(wrapper);
+  return empty;
 }
 
 async function loadStatus({ announce = false } = {}) {
@@ -244,12 +202,15 @@ async function loadStatus({ announce = false } = {}) {
     const data = await api("/api/status");
     state.status = data;
     state.root = data.root || "";
-    setHubState("online", `本地 hub 在线 · ${Number(data.facts) || 0} 条记忆`);
+    hideHubAlert();
+    setHubState("online", `在线 · ${Number(data.facts) || 0} 条记忆`);
     $("all-count").textContent = String(data.facts ?? 0);
-    $("project-total").textContent = String(data.projects?.length ?? 0);
     $("repo-root").textContent = data.root || "—";
     $("repo-root").title = data.root || "";
-    $("repo-version").textContent = `${data.version || "MarkToast"} · index ${formatDate(data.index?.builtAt)}`;
+    $("repo-version").textContent = `MarkToast · v${data.version || "dev"}`;
+    $("settings-root").textContent = shortPath(data.root || "");
+    $("settings-root").title = data.root || "";
+    $("settings-index").textContent = `${Number(data.index?.facts) || 0} 条 · ${formatDate(data.index?.builtAt, true)}`;
     renderProjects(data.projects || []);
     renderProjectOptions(data.projects || []);
     renderAdapterMiniatures(data.adapters || []);
@@ -257,12 +218,16 @@ async function loadStatus({ announce = false } = {}) {
     return data;
   } catch (error) {
     state.status = null;
-    setHubState("offline", "hub 未连接 · 运行 marktoast serve");
+    setHubState("offline", "本地 hub 离线");
+    showHubAlert(formatError(error));
     $("repo-root").textContent = "尚未连接本地仓库";
     $("repo-version").textContent = "MarkToast · offline";
-    renderProjectsOffline();
+    $("settings-root").textContent = "—";
+    $("settings-index").textContent = "等待本地 hub";
+    renderProjects([]);
+    renderProjectOptions([]);
     renderAdapterMiniatures([]);
-    if (state.view === "memories") renderMemoryError(error);
+    if (state.view === "memories" && !state.results.length) renderMemoryError(error);
     if (announce) toast(formatError(error), "error");
     return null;
   }
@@ -271,34 +236,26 @@ async function loadStatus({ announce = false } = {}) {
 function renderProjects(projects) {
   clear(els.projectList);
   if (!projects.length) {
-    els.projectList.appendChild(element("p", "repo-root", "暂无项目"));
+    els.projectList.appendChild(element("div", "side-label", state.status ? "暂无项目" : "等待本地 hub"));
     return;
   }
   projects
     .slice()
     .sort((a, b) => String(a.key).localeCompare(String(b.key), "zh-CN"))
     .forEach((project) => {
-      const button = element("button", `project-row${state.project === project.key ? " is-selected" : ""}`);
+      const button = element("button", `side-row project-row${state.project === project.key ? " is-active" : ""}`);
       button.type = "button";
       button.dataset.project = project.key;
       button.title = project.key;
+      button.setAttribute("aria-pressed", String(state.project === project.key));
       button.append(
         icon("folder"),
-        element("span", "project-name", project.key),
-        element("span", "project-facts", String(project.facts ?? 0)),
+        element("span", "side-name", project.key),
+        element("span", "side-count", project.facts ?? 0),
       );
       button.addEventListener("click", () => selectProject(project.key));
       els.projectList.appendChild(button);
     });
-}
-
-function renderProjectsOffline() {
-  clear(els.projectList);
-  const button = element("button", "project-row");
-  button.type = "button";
-  button.append(icon("folder"), element("span", "project-name", "等待本地 hub"));
-  button.addEventListener("click", () => loadStatus({ announce: true }));
-  els.projectList.appendChild(button);
 }
 
 function renderProjectOptions(projects) {
@@ -319,15 +276,15 @@ function renderAdapterMiniatures(adapters) {
   const list = $("adapter-mini-list");
   clear(list);
   if (!adapters.length) {
-    list.appendChild(element("p", "repo-root", "无可用适配器"));
+    list.appendChild(element("div", "side-label", state.status ? "暂无适配器" : "等待本地 hub"));
     return;
   }
   adapters.slice(0, 5).forEach((adapter) => {
     const item = element("div", "adapter-mini");
-    item.title = adapter.title || adapter.id;
+    item.title = `${adapter.title || adapter.id} · ${adapter.tier || ""}`;
     item.append(
       element("span", "adapter-dot"),
-      element("span", "adapter-mini-name", adapter.title || adapter.id),
+      element("span", "adapter-mini-name", adapter.id || adapter.title),
       element("span", "tier-label", adapter.tier || ""),
     );
     list.appendChild(item);
@@ -336,15 +293,15 @@ function renderAdapterMiniatures(adapters) {
 
 function selectProject(project) {
   state.project = project;
+  state.query = "";
+  els.search.value = "";
+  els.searchClear.hidden = true;
   els.projectFilter.value = project;
-  document.querySelectorAll(".project-row").forEach((row) => {
-    row.classList.toggle("is-selected", row.dataset.project === project);
-  });
+  renderProjects(state.status?.projects || []);
   $("all-memories").classList.toggle("is-active", !project);
   $("recent-memories").classList.remove("is-active");
-  closeSidebar();
   switchView("memories");
-  loadMemories();
+  loadMemories({ preserveSelection: false });
 }
 
 function updateHeading() {
@@ -359,6 +316,26 @@ function updateHeading() {
     els.memoryHeading.textContent = "全部记忆";
     els.memorySubtitle.textContent = "来自本地仓库，随时可读、可搜索。";
   }
+  $("sort-label").textContent = state.sort === "updated" ? "最近更新" : state.sort === "title" ? "标题" : "相关度";
+}
+
+function renderMemoryLoading(count = 5) {
+  clear(els.resultRegion);
+  const list = element("div", "list");
+  for (let index = 0; index < count; index += 1) {
+    const row = element("div", "row loading-row");
+    row.append(
+      icon("file"),
+      (() => {
+        const who = element("div", "who");
+        who.append(element("span", "skeleton title"), element("span", "skeleton line"));
+        return who;
+      })(),
+    );
+    list.appendChild(row);
+  }
+  els.resultRegion.setAttribute("aria-busy", "true");
+  els.resultRegion.appendChild(list);
 }
 
 async function loadMemories({ preserveSelection = true, silent = false } = {}) {
@@ -366,7 +343,7 @@ async function loadMemories({ preserveSelection = true, silent = false } = {}) {
   if (state.searchController) state.searchController.abort();
   state.searchController = new AbortController();
   updateHeading();
-  if (!silent) renderSkeleton();
+  if (!silent) renderMemoryLoading();
   els.resultRegion.setAttribute("aria-busy", "true");
 
   const params = new URLSearchParams();
@@ -388,15 +365,12 @@ async function loadMemories({ preserveSelection = true, silent = false } = {}) {
     let results = Array.isArray(data.results) ? data.results : Array.isArray(data.memories) ? data.memories : [];
     if (state.type) results = results.filter((item) => String(item.type || "").toLowerCase() === state.type);
     state.results = sortResults(results);
-    renderResults();
-    els.resultRegion.setAttribute("aria-busy", "false");
-
-    const stillExists = state.selectedPath && state.results.some((item) => item.path === state.selectedPath);
-    if (!preserveSelection || !stillExists) {
+    if (!preserveSelection || !state.results.some((item) => item.path === state.selectedPath)) {
       state.selectedPath = "";
-      state.detail = null;
-      renderDetailPlaceholder();
+      state.detailLoading = false;
     }
+    renderMemories();
+    els.resultRegion.setAttribute("aria-busy", "false");
   } catch (error) {
     if (error.name === "AbortError" || requestId !== state.requestId) return;
     state.results = [];
@@ -407,208 +381,184 @@ async function loadMemories({ preserveSelection = true, silent = false } = {}) {
 
 function sortResults(results) {
   const copy = results.slice();
-  if (state.sort === "updated") {
+  if (state.sort === "title") {
+    copy.sort((a, b) => String(a.name || fileName(a.path)).localeCompare(String(b.name || fileName(b.path)), "zh-CN"));
+  } else if (state.sort === "updated" || !state.query) {
     copy.sort((a, b) => new Date(b.updated || 0).getTime() - new Date(a.updated || 0).getTime());
-  } else if (state.query) {
-    copy.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
   } else {
-    copy.sort((a, b) => new Date(b.updated || 0).getTime() - new Date(a.updated || 0).getTime());
+    copy.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
   }
   return copy;
 }
 
-function renderResults() {
+function renderMemories() {
   clear(els.resultRegion);
   els.resultTotal.textContent = state.results.length ? `共 ${state.results.length} 条` : "0 条";
   if (!state.results.length) {
-    const title = state.query ? "没有找到匹配的记忆" : state.project ? "这个项目还没有记忆" : "仓库还是空的";
-    const message = state.query
-      ? "换一个更短的关键词，或清除项目与类型筛选后再试。"
-      : "写下第一条记忆，让不同的 Agent 从这里接上上下文。";
-    els.resultRegion.appendChild(makeStatePanel({
-      title,
-      message,
-      actionLabel: state.query ? "清除筛选" : "写一条记忆",
-      onAction: state.query ? clearFilters : openDialog,
-    }));
+    const list = element("div", "list");
+    list.appendChild(emptyState(
+      state.query ? "没有找到匹配的记忆" : "仓库还是空的",
+      state.query ? "换一个更短的关键词，或清除项目与类型筛选后再试。" : "写下第一条记忆，让不同的 Agent 从这里接上上下文。",
+      state.query ? "清除筛选" : "新建记忆",
+      state.query ? clearFilters : openDialog,
+    ));
+    els.resultRegion.appendChild(list);
     return;
   }
 
-  const list = element("div", "result-list");
+  const list = element("div", "list");
   state.results.forEach((result) => {
-    const item = element("button", `result-item${result.path === state.selectedPath ? " is-selected" : ""}`);
-    item.type = "button";
-    item.dataset.path = result.path;
-    item.setAttribute("aria-label", `查看记忆：${result.name || result.path}`);
+    const entry = element("article", "memory-entry");
+    const open = result.path === state.selectedPath;
+    const row = element("button", `row memory-row${open ? " is-open" : ""}`);
+    row.type = "button";
+    row.dataset.path = result.path;
+    row.setAttribute("aria-expanded", String(open));
+    row.setAttribute("aria-label", `${open ? "收起" : "展开"}记忆：${result.name || fileName(result.path)}`);
+    row.append(icon("file", "ic memory-icon"));
 
-    const top = element("div", "result-topline");
-    top.append(
-      element("span", "result-name", result.name || fileName(result.path)),
-      element("span", "result-date", relativeDate(result.updated)),
+    const who = element("div", "who");
+    who.append(
+      element("div", "name", result.name || fileName(result.path)),
+      element("div", "sub", result.description || cleanSnippet(result.snippet) || shortPath(result.path)),
     );
-    item.appendChild(top);
-    item.appendChild(element("p", "result-path mono", shortPath(result.path)));
+    row.appendChild(who);
 
-    if (result.description || result.snippet) {
-      item.appendChild(element("p", "result-description", result.description || cleanSnippet(result.snippet)));
-    }
-
-    const meta = element("div", "result-meta");
-    meta.appendChild(element("span", "type-tag", result.type || "memory"));
-    if (result.project) meta.appendChild(element("span", "", result.project));
-    if (state.query && result.score !== undefined && result.score !== null) {
-      meta.appendChild(element("span", "score", `相关度 ${Number(result.score).toFixed(2)}`));
-    }
-    item.appendChild(meta);
-    item.addEventListener("click", () => selectMemory(result.path));
-    list.appendChild(item);
+    const meta = element("div", "memory-meta");
+    meta.append(
+      element("span", "pill type-pill", result.type || "memory"),
+      element("span", "memory-project", result.project || "—"),
+      element("span", "memory-time", relativeDate(result.updated)),
+    );
+    const chevron = element("span", "chev");
+    chevron.appendChild(icon("chevron-right"));
+    meta.appendChild(chevron);
+    row.appendChild(meta);
+    row.addEventListener("click", () => selectMemory(result.path));
+    entry.appendChild(row);
+    if (open) entry.appendChild(renderExpandedMemory(result));
+    list.appendChild(entry);
   });
   els.resultRegion.appendChild(list);
-}
-
-function fileName(path) {
-  return String(path || "未命名记忆").split("/").pop().replace(/\.md$/i, "");
 }
 
 function cleanSnippet(snippet) {
   return String(snippet || "").replace(/\s+/g, " ").trim();
 }
 
-function renderMemoryError(error) {
-  clear(els.resultRegion);
-  els.resultTotal.textContent = "不可用";
-  els.resultRegion.appendChild(makeStatePanel({
-    kind: "error",
-    title: state.status ? "记忆加载失败" : "本地 hub 未连接",
-    message: formatError(error),
-    command: !state.status,
-    actionLabel: "重新连接",
-    onAction: async () => {
-      const status = await loadStatus({ announce: true });
-      if (status) loadMemories();
-    },
-  }));
+function renderExpandedMemory(result) {
+  const box = element("div", "memory-expanded");
+  if (state.detailLoading) {
+    box.classList.add("loading");
+    const loading = element("div", "detail-loading");
+    loading.append(
+      element("span", "skeleton"),
+      element("span", "skeleton"),
+      element("span", "skeleton"),
+    );
+    box.appendChild(loading);
+    return box;
+  }
+
+  if (state.detailErrors.has(result.path)) {
+    const error = element("div", "expanded-error");
+    error.append(
+      icon("warning"),
+      element("span", "", formatError(state.detailErrors.get(result.path))),
+      (() => {
+        const retry = element("button", "text-button", "重试");
+        retry.type = "button";
+        retry.addEventListener("click", () => selectMemory(result.path, true));
+        return retry;
+      })(),
+    );
+    box.appendChild(error);
+    return box;
+  }
+
+  const detail = state.details.get(result.path);
+  if (!detail) {
+    box.classList.add("loading");
+    box.appendChild(element("div", "detail-loading"));
+    return box;
+  }
+
+  const head = element("div", "expanded-head");
+  const path = element("span", "path", shortPath(detail.path || result.path));
+  path.title = detail.path || result.path;
+  const copy = element("button", "button quiet", "");
+  copy.type = "button";
+  copy.setAttribute("aria-label", "复制记忆路径");
+  copy.append(icon("copy"), document.createTextNode("复制路径"));
+  copy.addEventListener("click", () => copyPath(detail.path || result.path));
+  head.append(icon("folder"), path, copy);
+  box.appendChild(head);
+
+  const parsed = parseFrontmatter(detail.raw || "");
+  let values = parsed.values;
+  if (!values.length) {
+    values = [
+      ["name", detail.name || result.name],
+      ["description", detail.description || result.description],
+      ["project", detail.project || result.project],
+      ["type", detail.type || result.type],
+      ["updated", detail.updated || result.updated],
+    ].filter(([, value]) => value);
+  }
+
+  const grid = element("div", "detail-grid");
+  const frontmatter = element("section", "detail-section");
+  frontmatter.append(element("h3", "", "frontmatter"), renderFrontmatter(values));
+  const markdown = element("section", "detail-section");
+  markdown.appendChild(element("h3", "", "正文"));
+  const body = element("div", "markdown-body");
+  renderMarkdown(body, detail.body || parsed.body || "");
+  markdown.appendChild(body);
+  grid.append(frontmatter, markdown);
+  box.appendChild(grid);
+  return box;
 }
 
-async function selectMemory(path) {
+async function selectMemory(path, force = false) {
   if (!path) return;
+  if (path === state.selectedPath && !force) {
+    state.selectedPath = "";
+    state.detailLoading = false;
+    renderMemories();
+    return;
+  }
   state.selectedPath = path;
-  document.querySelectorAll(".result-item").forEach((item) => {
-    item.classList.toggle("is-selected", item.dataset.path === path);
-  });
-  renderDetailSkeleton();
+  state.detailErrors.delete(path);
+  state.detailLoading = !state.details.has(path);
+  renderMemories();
+  if (state.details.has(path) && !force) return;
+
   try {
     const detail = await api(`/api/memory?path=${encodeURIComponent(path)}`);
-    if (state.selectedPath !== path || state.view !== "memories") return;
-    state.detail = detail;
-    renderDetail(detail);
-    if (window.innerWidth <= 1040) {
-      $("detail-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+    state.details.set(path, detail);
+    state.detailErrors.delete(path);
+    if (state.selectedPath === path && state.view === "memories") {
+      state.detailLoading = false;
+      renderMemories();
     }
   } catch (error) {
-    if (state.selectedPath !== path) return;
-    renderDetailError(error, path);
+    if (state.selectedPath === path && state.view === "memories") {
+      state.detailLoading = false;
+      state.detailErrors.set(path, error);
+      renderMemories();
+    }
   }
 }
 
-function renderDetailPlaceholder() {
-  clear(els.detail);
-  els.detail.className = "detail-placeholder";
-  const mark = element("div", "detail-empty-mark");
-  mark.setAttribute("aria-hidden", "true");
-  mark.appendChild(element("span", "", "◍"));
-  els.detail.append(
-    mark,
-    element("h2", "", "选择一条记忆"),
-    element("p", "", "从结果列表中选择记忆，在这里阅读正文、frontmatter、路径与仓库历史。"),
-  );
-  const hint = element("div", "keyboard-hint");
-  hint.append(element("kbd", "", "⌘"), element("kbd", "", "K"), element("span", "", "快速搜索"));
-  els.detail.appendChild(hint);
-}
-
-function renderDetail(detail) {
-  clear(els.detail);
-  els.detail.className = "detail-view";
-
-  const topbar = element("div", "detail-topbar");
-  const breadcrumb = element("div", "detail-breadcrumb");
-  breadcrumb.title = detail.path || "";
-  breadcrumb.append(icon("folder"), element("span", "", shortPath(detail.path)));
-  const copyButton = element("button", "icon-button");
-  copyButton.type = "button";
-  copyButton.title = "复制路径";
-  copyButton.setAttribute("aria-label", "复制记忆路径");
-  copyButton.appendChild(icon("copy"));
-  copyButton.addEventListener("click", () => copyPath(detail.path, copyButton));
-  topbar.append(breadcrumb, copyButton);
-
-  const scroller = element("div", "detail-scroll");
-  const titleRow = element("div", "detail-title-row");
-  const titleIcon = element("span", "detail-title-icon");
-  titleIcon.appendChild(icon("file"));
-  titleRow.append(titleIcon, element("h1", "detail-title", detail.name || fileName(detail.path)));
-  scroller.appendChild(titleRow);
-  if (detail.description) scroller.appendChild(element("p", "detail-description", detail.description));
-
-  const tags = element("div", "detail-tags");
-  [detail.type, detail.project].filter(Boolean).forEach((value) => {
-    tags.appendChild(element("span", "detail-tag", value));
-  });
-  if (detail.updated) tags.appendChild(element("span", "detail-tag", formatDate(detail.updated)));
-  scroller.appendChild(tags);
-
-  const parsed = parseFrontmatter(detail.raw || "");
-  const fmSection = element("section", "detail-section");
-  const fmTitle = element("h2", "detail-section-title");
-  const fmChevron = icon("chevron-down");
-  fmChevron.style.width = "12px";
-  fmChevron.style.height = "12px";
-  fmTitle.append(fmChevron, document.createTextNode("frontmatter"));
-  fmSection.appendChild(fmTitle);
-  fmSection.appendChild(renderFrontmatter(parsed.values));
-  scroller.appendChild(fmSection);
-
-  const bodySection = element("section", "detail-section");
-  const bodyTitle = element("h2", "detail-section-title");
-  bodyTitle.append(icon("file"), document.createTextNode("正文"));
-  const markdown = element("div", "markdown-body");
-  renderMarkdown(markdown, parsed.body || detail.body || "");
-  bodySection.append(bodyTitle, markdown);
-  scroller.appendChild(bodySection);
-
-  const pathSection = element("section", "detail-section");
-  const pathTitle = element("h2", "detail-section-title");
-  pathTitle.append(icon("folder"), document.createTextNode("路径"));
-  const pathBox = element("div", "path-box");
-  pathBox.appendChild(element("code", "", shortPath(detail.path)));
-  const inlineCopy = element("button", "icon-button");
-  inlineCopy.type = "button";
-  inlineCopy.title = "复制路径";
-  inlineCopy.setAttribute("aria-label", "复制路径");
-  inlineCopy.appendChild(icon("copy"));
-  inlineCopy.addEventListener("click", () => copyPath(detail.path, inlineCopy));
-  pathBox.appendChild(inlineCopy);
-  pathSection.append(pathTitle, pathBox);
-  scroller.appendChild(pathSection);
-
-  const historySection = element("section", "detail-section");
-  const historyTitle = element("h2", "detail-section-title");
-  historyTitle.append(icon("branch"), document.createTextNode("Git 历史"));
-  historySection.append(historyTitle, renderCompactHistory());
-  scroller.appendChild(historySection);
-  els.detail.append(topbar, scroller);
-}
-
 function parseFrontmatter(raw) {
-  const text = String(raw || "");
-  if (!text.startsWith("---")) return { values: [], body: text };
-  const close = text.indexOf("\n---", 3);
+  const text = String(raw || "").replace(/\r\n?/g, "\n");
+  if (!text.startsWith("---\n")) return { values: [], body: text };
+  const close = text.indexOf("\n---", 4);
   if (close < 0) return { values: [], body: text };
-  const header = text.slice(3, close).trim();
-  const body = text.slice(close + 4).replace(/^\r?\n/, "");
+  const header = text.slice(4, close).trim();
+  const body = text.slice(close + 4).replace(/^\n/, "");
   const values = [];
-  header.split(/\r?\n/).forEach((line) => {
+  header.split("\n").forEach((line) => {
     const match = line.match(/^([A-Za-z0-9_-]+)\s*:\s*(.*)$/);
     if (match) values.push([match[1], stripYamlQuotes(match[2])]);
   });
@@ -627,12 +577,12 @@ function stripYamlQuotes(value) {
 }
 
 function renderFrontmatter(values) {
-  if (!values.length) return element("div", "frontmatter-empty", "这条记忆没有 frontmatter");
+  if (!values.length) return element("div", "frontmatter-empty", "没有 frontmatter");
   const table = element("table", "frontmatter-table");
   const body = document.createElement("tbody");
   values.forEach(([key, value]) => {
     const row = document.createElement("tr");
-    row.append(element("th", "", key), element("td", "", value.replace(/^\[|\]$/g, "")));
+    row.append(element("th", "", key), element("td", "", String(value).replace(/^\[|\]$/g, "")));
     body.appendChild(row);
   });
   table.appendChild(body);
@@ -649,8 +599,7 @@ function renderMarkdown(container, markdown) {
       continue;
     }
 
-    const fence = line.match(/^```(.*)$/);
-    if (fence) {
+    if (/^```/.test(line)) {
       const codeLines = [];
       index += 1;
       while (index < lines.length && !/^```/.test(lines[index])) {
@@ -668,10 +617,9 @@ function renderMarkdown(container, markdown) {
 
     const heading = line.match(/^(#{1,6})\s+(.+)$/);
     if (heading) {
-      const level = Math.min(heading[1].length, 6);
-      const h = document.createElement(`h${level}`);
-      appendInline(h, heading[2]);
-      container.appendChild(h);
+      const node = document.createElement(`h${heading[1].length}`);
+      appendInline(node, heading[2]);
+      container.appendChild(node);
       index += 1;
       continue;
     }
@@ -681,14 +629,13 @@ function renderMarkdown(container, markdown) {
     if (unordered || ordered) {
       const list = document.createElement(ordered ? "ol" : "ul");
       while (index < lines.length) {
-        const current = lines[index];
         const match = ordered
-          ? current.match(/^\s*\d+[.)]\s+(.+)$/)
-          : current.match(/^\s*[-*+]\s+(.+)$/);
+          ? lines[index].match(/^\s*\d+[.)]\s+(.+)$/)
+          : lines[index].match(/^\s*[-*+]\s+(.+)$/);
         if (!match) break;
-        const li = document.createElement("li");
-        appendInline(li, match[1]);
-        list.appendChild(li);
+        const item = document.createElement("li");
+        appendInline(item, match[1]);
+        list.appendChild(item);
         index += 1;
       }
       container.appendChild(list);
@@ -727,34 +674,26 @@ function appendInline(parent, source) {
     }
     const token = match[0];
     if (token.startsWith("**")) {
-      const strong = document.createElement("strong");
-      strong.textContent = token.slice(2, -2);
-      parent.appendChild(strong);
+      parent.appendChild(element("strong", "", token.slice(2, -2)));
     } else if (token.startsWith("`")) {
-      const code = document.createElement("code");
-      code.textContent = token.slice(1, -1);
-      parent.appendChild(code);
+      parent.appendChild(element("code", "", token.slice(1, -1)));
     } else {
       const linkMatch = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-      if (linkMatch) {
-        const href = safeUrl(linkMatch[2]);
-        if (href) {
-          const link = document.createElement("a");
-          link.href = href;
-          link.textContent = linkMatch[1];
-          link.target = "_blank";
-          link.rel = "noreferrer noopener";
-          parent.appendChild(link);
-        } else {
-          parent.appendChild(document.createTextNode(linkMatch[1]));
-        }
+      const href = linkMatch ? safeUrl(linkMatch[2]) : "";
+      if (href) {
+        const anchor = document.createElement("a");
+        anchor.href = href;
+        anchor.textContent = linkMatch[1];
+        anchor.target = "_blank";
+        anchor.rel = "noreferrer noopener";
+        parent.appendChild(anchor);
+      } else if (linkMatch) {
+        parent.appendChild(document.createTextNode(linkMatch[1]));
       }
     }
     lastIndex = pattern.lastIndex;
   }
-  if (lastIndex < source.length) {
-    parent.appendChild(document.createTextNode(source.slice(lastIndex)));
-  }
+  if (lastIndex < source.length) parent.appendChild(document.createTextNode(source.slice(lastIndex)));
 }
 
 function safeUrl(raw) {
@@ -767,66 +706,38 @@ function safeUrl(raw) {
   return "";
 }
 
-function renderCompactHistory() {
-  if (!state.history.length) {
-    return element("div", "frontmatter-empty", "Git 历史尚未加载，打开“历史”标签查看。");
-  }
-  const wrapper = element("div", "commit-list");
-  state.history.slice(0, 3).forEach((commit) => {
-    const item = element("article", "commit-item");
-    item.appendChild(element("p", "commit-subject", commit.subject || "无提交说明"));
-    const meta = element("div", "commit-meta");
-    meta.append(
-      element("span", "", String(commit.hash || "").slice(0, 7)),
-      element("span", "", formatDate(commit.date)),
-    );
-    item.appendChild(meta);
-    wrapper.appendChild(item);
-  });
-  return wrapper;
-}
-
-async function copyPath(path, button) {
+async function copyPath(path) {
   if (!path) return;
   try {
     await navigator.clipboard.writeText(path);
-    button.title = "已复制";
     toast("路径已复制到剪贴板");
-    window.setTimeout(() => {
-      button.title = "复制路径";
-    }, 1400);
   } catch {
     toast("复制失败，请手动选择路径", "error");
   }
 }
 
-function renderDetailError(error, path) {
-  clear(els.detail);
-  els.detail.className = "";
-  const wrapper = element("div", "detail-error");
-  const visual = element("div", "state-visual");
-  visual.setAttribute("aria-hidden", "true");
-  visual.append(
-    element("span", "state-ring one"),
-    element("span", "state-ring two"),
-    element("span", "state-ring three"),
-    element("span", "state-axis"),
-  );
-  const title = element("h2", "", "无法读取这条记忆");
-  const message = element("p", "", formatError(error));
-  const retry = element("button", "button button-quiet", "重试");
-  retry.type = "button";
-  retry.addEventListener("click", () => selectMemory(path));
-  wrapper.append(visual, title, message, retry);
-  els.detail.appendChild(wrapper);
+function renderMemoryError(error) {
+  clear(els.resultRegion);
+  els.resultTotal.textContent = "不可用";
+  const list = element("div", "list");
+  list.appendChild(emptyState(
+    state.status ? "记忆加载失败" : "本地 hub 未连接",
+    formatError(error),
+    "重新连接",
+    retryAll,
+  ));
+  els.resultRegion.appendChild(list);
 }
 
 async function loadAdapters() {
   clear(els.adapterRegion);
-  els.adapterRegion.appendChild(makeStatePanel({
-    title: "正在读取适配器",
-    message: "检查本机可用的 Agent 连接方式…",
-  }));
+  const list = element("div", "list");
+  list.append(
+    element("div", "row loading-row"),
+    element("div", "row loading-row"),
+    element("div", "row loading-row"),
+  );
+  els.adapterRegion.appendChild(list);
   try {
     const data = await api("/api/adapters");
     state.adapters = Array.isArray(data.adapters) ? data.adapters : [];
@@ -835,13 +746,9 @@ async function loadAdapters() {
   } catch (error) {
     clear(els.adapterRegion);
     els.adapterCount.textContent = "不可用";
-    els.adapterRegion.appendChild(makeStatePanel({
-      kind: "error",
-      title: "适配器加载失败",
-      message: formatError(error),
-      actionLabel: "重试",
-      onAction: loadAdapters,
-    }));
+    const list = element("div", "list");
+    list.appendChild(emptyState("适配器加载失败", formatError(error), "重试", loadAdapters));
+    els.adapterRegion.appendChild(list);
     return false;
   }
 }
@@ -850,138 +757,136 @@ function renderAdapters() {
   clear(els.adapterRegion);
   els.adapterCount.textContent = `${state.adapters.length} 个`;
   if (!state.adapters.length) {
-    els.adapterRegion.appendChild(makeStatePanel({
-      title: "还没有适配器",
-      message: "当前 hub 没有报告可用的 Agent 适配器。",
-    }));
+    const list = element("div", "list");
+    list.appendChild(emptyState("还没有适配器", "当前 hub 没有报告可用的 Agent 适配器。"));
+    els.adapterRegion.appendChild(list);
     return;
   }
 
+  const list = element("div", "list");
   state.adapters.forEach((adapter) => {
-    const card = element("article", "adapter-card");
-    const head = element("div", "adapter-card-head");
-    const identity = element("div", "adapter-title-wrap");
-    const iconBox = element("span", "adapter-icon");
-    iconBox.appendChild(icon("plug"));
-    const copy = element("div");
-    copy.append(
-      element("h2", "adapter-title", adapter.title || adapter.id),
-      element("p", "adapter-id", adapter.id || "adapter"),
+    const entry = element("article", "adapter-entry");
+    const row = element("div", "row adapter-row");
+    row.appendChild(icon("plug", "ic adapter-icon"));
+    const who = element("div", "who");
+    const nameLine = element("div", "adapter-name-line");
+    nameLine.append(
+      element("span", "name", adapter.title || adapter.id || "Adapter"),
+      element("code", "", adapter.id || ""),
     );
-    identity.append(iconBox, copy);
-    head.append(identity, element("span", "tier-badge", adapter.tier || "tier"));
-    card.appendChild(head);
-    if (adapter.notes) card.appendChild(element("p", "adapter-notes", adapter.notes));
+    who.appendChild(nameLine);
+    if (adapter.notes) who.appendChild(element("div", "sub", adapter.notes));
 
     const capabilities = Array.isArray(adapter.capabilities) ? adapter.capabilities : [];
     if (capabilities.length) {
-      const capabilityList = element("div", "capability-list");
-      capabilities.forEach((capability) => capabilityList.appendChild(element("span", "capability", capability)));
-      card.appendChild(capabilityList);
+      const caps = element("div", "adapter-caps");
+      capabilities.forEach((capability) => caps.appendChild(element("span", "pill", capability)));
+      who.appendChild(caps);
     }
 
-    const metadata = [
-      ["hooks", adapter.hooks?.events?.join?.(", ") || adapter.hooks?.events || adapter.hooks?.install_kind],
-      ["injection", adapter.hooks?.injection],
-      ["mcp", adapter.mcp?.kind],
-      ["target", adapter.mcp?.target],
-      ["detect", Array.isArray(adapter.detect) ? adapter.detect.join(", ") : adapter.detect],
-    ].filter(([, value]) => value);
-    if (metadata.length) {
-      const grid = element("div", "adapter-meta-grid");
-      metadata.slice(0, 4).forEach(([label, value]) => {
-        const meta = element("div", "adapter-meta");
-        meta.append(element("span", "", label), element("code", "", value));
-        grid.appendChild(meta);
-      });
-      card.appendChild(grid);
+    const summary = [];
+    if (adapter.hooks?.events) {
+      const events = Array.isArray(adapter.hooks.events) ? adapter.hooks.events.join(", ") : adapter.hooks.events;
+      summary.push(`hooks ${events}`);
     }
-    els.adapterRegion.appendChild(card);
+    if (adapter.hooks?.install_kind) summary.push(adapter.hooks.install_kind);
+    if (adapter.hooks?.injection) summary.push(`inject ${adapter.hooks.injection}`);
+    if (adapter.mcp?.kind || adapter.mcp?.target) {
+      summary.push(`mcp ${[adapter.mcp.kind, adapter.mcp.target].filter(Boolean).join(" → ")}`);
+    }
+    if (summary.length) {
+      const summaryNode = element("div", "adapter-summary");
+      summary.forEach((item) => summaryNode.appendChild(element("span", "", item)));
+      who.appendChild(summaryNode);
+    }
+    row.append(who, element("span", "pill", adapter.tier || "tier"));
+    entry.appendChild(row);
+    list.appendChild(entry);
   });
+  els.adapterRegion.appendChild(list);
 }
 
 async function loadHistory() {
   clear(els.historyRegion);
   els.gitBadge.textContent = "检查中";
-  els.gitBadge.className = "git-badge";
+  els.gitBadge.className = "pill git-badge";
   els.gitSubtitle.textContent = "正在读取仓库提交…";
-  els.historyRegion.appendChild(makeStatePanel({
-    title: "正在读取 Git 历史",
-    message: "检查本地仓库的提交记录…",
-  }));
+  const loading = element("div", "list");
+  loading.append(element("div", "row loading-row"), element("div", "row loading-row"));
+  els.historyRegion.appendChild(loading);
 
-  const status = state.status || await loadStatus();
+  if (!state.status) await loadStatus();
   try {
     const data = await api("/api/git/log?n=20");
     state.history = Array.isArray(data.commits) ? data.commits : [];
-    renderHistory(status);
+    renderHistory();
     return true;
   } catch (error) {
     clear(els.historyRegion);
     els.gitBadge.textContent = "不可用";
-    els.gitBadge.className = "git-badge is-offline";
+    els.gitBadge.className = "pill git-badge is-offline";
     els.gitSubtitle.textContent = "Git 历史读取失败。";
-    els.historyRegion.appendChild(makeStatePanel({
-      kind: "error",
-      title: "Git 历史加载失败",
-      message: formatError(error),
-      actionLabel: "重试",
-      onAction: loadHistory,
-    }));
+    const list = element("div", "list");
+    list.appendChild(emptyState("Git 历史加载失败", formatError(error), "重试", loadHistory));
+    els.historyRegion.appendChild(list);
     return false;
   }
 }
 
-function renderHistory(status) {
+function renderHistory() {
   clear(els.historyRegion);
-  const git = status?.git;
+  const git = state.status?.git;
   if (git?.available === false) {
     els.gitBadge.textContent = "Git 不可用";
-    els.gitBadge.className = "git-badge is-offline";
+    els.gitBadge.className = "pill git-badge is-offline";
     els.gitSubtitle.textContent = "当前目录没有可读取的 Git 仓库。";
   } else if (git?.clean === false) {
     els.gitBadge.textContent = `${git.changes ?? 0} 项变更`;
-    els.gitBadge.className = "git-badge has-changes";
+    els.gitBadge.className = "pill git-badge has-changes";
     els.gitSubtitle.textContent = "仓库有未提交的变更，记忆可能在下次提交前暂时不同步。";
   } else {
     els.gitBadge.textContent = "工作区干净";
-    els.gitBadge.className = "git-badge";
+    els.gitBadge.className = "pill git-badge";
     els.gitSubtitle.textContent = "所有记忆变更都可追溯、可回退。";
   }
 
   if (!state.history.length) {
-    els.historyRegion.appendChild(makeStatePanel({
-      title: "还没有提交记录",
-      message: "第一次保存并提交记忆后，Git 历史会出现在这里。",
-    }));
+    const list = element("div", "list");
+    list.appendChild(emptyState("还没有提交记录", "第一次保存并提交记忆后，Git 历史会出现在这里。"));
+    els.historyRegion.appendChild(list);
     return;
   }
-  const list = element("div", "commit-list");
+
+  const list = element("div", "list");
   state.history.forEach((commit) => {
-    const item = element("article", "commit-item");
-    item.appendChild(element("p", "commit-subject", commit.subject || "无提交说明"));
-    const meta = element("div", "commit-meta");
-    meta.append(
-      element("span", "", String(commit.hash || "").slice(0, 8)),
-      element("span", "", formatDate(commit.date)),
+    const entry = element("article", "history-entry");
+    const row = element("div", "row history-row");
+    row.append(
+      icon("branch"),
+      element("code", "history-hash", String(commit.hash || "").slice(0, 8)),
+      element("span", "history-subject", commit.subject || "无提交说明"),
+      element("span", "pill", "提交"),
     );
-    item.appendChild(meta);
-    list.appendChild(item);
+    entry.appendChild(row);
+    list.appendChild(entry);
   });
   els.historyRegion.appendChild(list);
 }
+
+const VIEW_LABELS = { memories: "全部记忆", adapters: "适配器", history: "历史", settings: "设置" };
 
 function switchView(view) {
   state.view = view;
   document.querySelectorAll("[data-view]").forEach((tab) => {
     const active = tab.dataset.view === view;
-    tab.classList.toggle("is-active", active);
-    tab.setAttribute("aria-selected", String(active));
+    tab.classList.toggle("on", active);
+    if (active) tab.setAttribute("aria-current", "page");
+    else tab.removeAttribute("aria-current");
   });
-  document.querySelectorAll(".view").forEach((panel) => {
-    const active = panel.id === `view-${view}`;
-    panel.classList.toggle("is-active", active);
-    panel.hidden = !active;
+  const crumb = document.getElementById("breadcrumb-current");
+  if (crumb) crumb.textContent = VIEW_LABELS[view] || "全部记忆";
+  document.querySelectorAll(".view-panel").forEach((panel) => {
+    panel.hidden = panel.id !== `view-${view}`;
   });
   if (view === "adapters" && !state.adapters.length) loadAdapters();
   if (view === "history") loadHistory();
@@ -993,18 +898,19 @@ function clearFilters() {
   state.project = "";
   state.type = "";
   state.selectedPath = "";
-  state.detail = null;
+  state.detailLoading = false;
   els.search.value = "";
   els.searchClear.hidden = true;
   els.projectFilter.value = "";
   els.typeFilter.value = "";
-  document.querySelectorAll(".project-row").forEach((row) => row.classList.remove("is-selected"));
+  renderProjects(state.status?.projects || []);
   $("all-memories").classList.add("is-active");
-  renderDetailPlaceholder();
+  $("recent-memories").classList.remove("is-active");
   loadMemories({ preserveSelection: false });
 }
 
 function openDialog() {
+  state.lastFocus = document.activeElement;
   clear(els.formError);
   els.formError.hidden = true;
   $("memory-project").value = state.project || "";
@@ -1012,12 +918,16 @@ function openDialog() {
   $("memory-name").value = "";
   $("memory-description").value = "";
   $("memory-body").value = "";
-  els.dialog.showModal();
-  window.setTimeout(() => $("memory-project").focus(), 40);
+  els.modal.hidden = false;
+  document.body.classList.add("modal-open");
+  window.setTimeout(() => $("memory-project").focus(), 30);
 }
 
 function closeDialog() {
-  if (els.dialog.open) els.dialog.close();
+  if (els.modal.hidden) return;
+  els.modal.hidden = true;
+  document.body.classList.remove("modal-open");
+  if (state.lastFocus && typeof state.lastFocus.focus === "function") state.lastFocus.focus();
 }
 
 async function submitMemory(event) {
@@ -1042,11 +952,13 @@ async function submitMemory(event) {
     toast("记忆已保存");
     await loadStatus();
     state.project = payload.project;
-    els.projectFilter.value = payload.project;
+    state.type = "";
     state.query = "";
+    els.typeFilter.value = "";
     els.search.value = "";
+    els.searchClear.hidden = true;
+    els.projectFilter.value = payload.project;
     switchView("memories");
-    state.selectedPath = result.path || "";
     await loadMemories({ preserveSelection: false });
     if (result.path) await selectMemory(result.path);
   } catch (error) {
@@ -1058,18 +970,37 @@ async function submitMemory(event) {
   }
 }
 
-function openSidebar() {
-  if (window.innerWidth > 760) return;
-  document.body.classList.add("sidebar-open");
-  els.sidebarToggle.setAttribute("aria-expanded", "true");
-  els.sidebarScrim.hidden = false;
-  window.setTimeout(() => $("all-memories").focus(), 220);
+async function retryAll() {
+  const status = await loadStatus({ announce: true });
+  if (!status) return;
+  if (state.view === "adapters") await loadAdapters();
+  else if (state.view === "history") await loadHistory();
+  else await loadMemories({ preserveSelection: false });
 }
 
-function closeSidebar() {
-  document.body.classList.remove("sidebar-open");
-  els.sidebarToggle.setAttribute("aria-expanded", "false");
-  els.sidebarScrim.hidden = true;
+async function refreshCurrent() {
+  const button = $("refresh-view");
+  button.disabled = true;
+  let refreshed = false;
+  if (state.view === "memories") {
+    const status = await loadStatus();
+    if (status) {
+      await loadMemories({ preserveSelection: false });
+      refreshed = true;
+    }
+  } else if (state.view === "adapters") {
+    await loadStatus();
+    state.adapters = [];
+    refreshed = await loadAdapters();
+  } else if (state.view === "history") {
+    await loadStatus();
+    refreshed = await loadHistory();
+  } else {
+    refreshed = Boolean(await loadStatus());
+  }
+  button.disabled = false;
+  if (refreshed) toast("已刷新");
+  else toast("刷新失败，请确认本地 hub 正在运行", "error");
 }
 
 function focusSearch() {
@@ -1081,17 +1012,22 @@ function bindEvents() {
   els.search.addEventListener("input", () => {
     const query = els.search.value.trim();
     state.query = query;
+    state.selectedPath = "";
     els.searchClear.hidden = !query;
+    $("search-shortcut").hidden = Boolean(query);
     window.clearTimeout(state.searchTimer);
     state.searchTimer = window.setTimeout(() => {
+      if (state.view !== "memories") switchView("memories");
       loadMemories({ preserveSelection: false });
-    }, 250);
+    }, 240);
   });
 
   els.searchClear.addEventListener("click", () => {
     els.search.value = "";
     state.query = "";
+    state.selectedPath = "";
     els.searchClear.hidden = true;
+    $("search-shortcut").hidden = false;
     els.search.focus();
     loadMemories({ preserveSelection: false });
   });
@@ -1101,32 +1037,33 @@ function bindEvents() {
       event.preventDefault();
       focusSearch();
     }
-    if (event.key === "Escape") {
-      closeSidebar();
-      if (document.activeElement === els.search) els.search.blur();
+    if (event.key === "Escape" && !els.modal.hidden) {
+      event.preventDefault();
+      closeDialog();
     }
   });
 
+  document.querySelectorAll("[data-view]").forEach((tab) => {
+    tab.addEventListener("click", () => switchView(tab.dataset.view));
+  });
+
   $("all-memories").addEventListener("click", () => {
-    state.query = "";
     state.type = "";
-    els.search.value = "";
-    els.searchClear.hidden = true;
     els.typeFilter.value = "";
     selectProject("");
   });
   $("recent-memories").addEventListener("click", () => {
     state.project = "";
     state.query = "";
+    state.type = "";
     state.sort = "updated";
-    $("sort-label").textContent = "最近更新";
     els.search.value = "";
     els.searchClear.hidden = true;
+    els.typeFilter.value = "";
     els.projectFilter.value = "";
-    document.querySelectorAll(".project-row").forEach((row) => row.classList.remove("is-selected"));
+    renderProjects(state.status?.projects || []);
     $("all-memories").classList.remove("is-active");
     $("recent-memories").classList.add("is-active");
-    closeSidebar();
     switchView("memories");
     loadMemories({ preserveSelection: false });
   });
@@ -1135,79 +1072,51 @@ function bindEvents() {
     state.project = els.projectFilter.value;
     renderProjects(state.status?.projects || []);
     $("all-memories").classList.toggle("is-active", !state.project);
-    $("recent-memories").classList.remove("is-active");
     loadMemories({ preserveSelection: false });
   });
-
   els.typeFilter.addEventListener("change", () => {
     state.type = els.typeFilter.value;
     loadMemories({ preserveSelection: false });
   });
 
   $("sort-button").addEventListener("click", () => {
-    state.sort = state.sort === "relevance" ? "updated" : "relevance";
-    $("sort-label").textContent = state.sort === "relevance" ? "相关度" : "最近更新";
+    state.sort = state.sort === "relevance" ? "updated" : state.sort === "updated" ? "title" : "relevance";
+    updateHeading();
     state.results = sortResults(state.results);
-    renderResults();
+    renderMemories();
   });
 
-  document.querySelectorAll("[data-view]").forEach((tab) => {
-    tab.addEventListener("click", () => switchView(tab.dataset.view));
-  });
-
-  $("refresh-view").addEventListener("click", async () => {
-    const button = $("refresh-view");
-    button.disabled = true;
-    let refreshed = false;
-    if (state.view === "memories") {
-      const status = await loadStatus();
-      if (status) {
-        await loadMemories();
-        refreshed = true;
-      }
-    } else if (state.view === "adapters") {
-      state.adapters = [];
-      refreshed = await loadAdapters();
-    } else {
-      await loadStatus();
-      refreshed = await loadHistory();
-    }
-    button.disabled = false;
-    if (refreshed) toast("已刷新");
-    else toast("刷新失败，请确认本地 hub 正在运行", "error");
-  });
-
-  $("view-adapters").addEventListener("click", () => switchView("adapters"));
   $("new-memory-top").addEventListener("click", openDialog);
+  $("view-adapters").addEventListener("click", () => switchView("adapters"));
+  $("refresh-view").addEventListener("click", refreshCurrent);
+  $("retry-hub").addEventListener("click", retryAll);
   $("close-dialog").addEventListener("click", closeDialog);
   $("cancel-dialog").addEventListener("click", closeDialog);
   els.form.addEventListener("submit", submitMemory);
-  els.dialog.addEventListener("click", (event) => {
-    if (event.target === els.dialog) closeDialog();
+  els.modal.addEventListener("click", (event) => {
+    if (event.target === els.modal) closeDialog();
   });
-
-  els.sidebarToggle.addEventListener("click", () => {
-    if (document.body.classList.contains("sidebar-open")) closeSidebar();
-    else openSidebar();
-  });
-  els.sidebarScrim.addEventListener("click", closeSidebar);
-  window.addEventListener("resize", () => {
-    if (window.innerWidth > 760) closeSidebar();
+  document.querySelectorAll(".brand").forEach((brand) => {
+    brand.addEventListener("click", (event) => {
+      event.preventDefault();
+      switchView("memories");
+      focusSearch();
+    });
   });
   window.addEventListener("online", () => loadStatus({ announce: true }));
-  window.addEventListener("offline", () => setHubState("offline", "浏览器已离线"));
+  window.addEventListener("offline", () => {
+    setHubState("offline", "浏览器已离线");
+    showHubAlert("浏览器已离线。重新联网后可继续刷新本地记忆。");
+  });
 }
 
 async function init() {
   bindEvents();
-  renderDetailPlaceholder();
+  renderMemoryLoading();
   const status = await loadStatus();
-  if (status) {
-    await loadMemories();
-    loadHistory();
-  } else {
-    renderMemoryError(new Error("无法连接本地 hub。请运行 `marktoast serve` 后重试。"));
-  }
+  if (status) await loadMemories();
+  else renderMemoryError(new Error("无法连接本地 hub。请运行 `marktoast serve` 后重试。"));
+  window.appReady = true;
 }
 
 init();

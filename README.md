@@ -17,7 +17,8 @@ ZCode, Hermes and DSH first — Codex, Claude Code, Pi and the rest next.
 
 </div>
 
-![MarkToast UI](docs/assets/ui-search.png)
+![MarkToast UI](docs/assets/ui-light.png)
+![MarkToast UI · detail](docs/assets/ui-detail.png)
 
 ---
 
@@ -97,8 +98,9 @@ MarkToast treats memory as what it should be: **a repository you own.**
       installer (hooks + MCP, preserves third-party entries); DSH/Hermes staged
 - [x] Local hub: status/search/memory/memories/projects/adapters/git-log API;
       MCP server over stdio and streamable HTTP (`memory_search/get/save/list`)
-- [x] Vanilla web UI inspired by Magpie: search, detail, frontmatter, Git
-      history, adapters, save form (Cmd/Ctrl+K)
+- [x] Web UI follows Magpie's design language (MIT): its design tokens (light default +
+auto dark, indigo accent), 212px sidebar, breadcrumb header, white list cards and
+rows, inline row expansion, modal, Cmd/Ctrl+K
 - [x] Wails v3.1 desktop shell (`make desktop`; opens the same hub in a native window)
 - [ ] Debounced commits, session ingestion, Hermes memory provider, more adapters
 

@@ -10,7 +10,7 @@ MarkToast 不是从石头里蹦出来的。它的产品形态、存储格式和�
 
 | 项目 | 许可 | 我们借鉴了什么 |
 |---|---|---|
-| [magpie](https://github.com/yetone/magpie)（yetone，**29k★**） | MIT | 桌面产品的整体形态：Go + Wails v3 单二进制、系统 WebView、原生 HTML/CSS/JS 无框架、菜单栏 + TUI 多界面、插件引擎（moejs）、配置写入器（"只改每个 agent 最关键的那一个键"）、备份/更新/i18n 等产品化细节。MarkToast 只做记忆，不做模型网关。 |
+| [magpie](https://github.com/yetone/magpie)（yetone，**29k★**） | MIT | 桌面产品的整体形态：Go + Wails v3 单二进制、系统 WebView、原生 HTML/CSS/JS 无框架、菜单栏 + TUI 多界面、插件引擎（moejs）、配置写入器（"只改每个 agent 最关键的那一个键"）、备份/更新/i18n 等产品化细节。**Web UI 的 design tokens 与布局（浅色/暗色、212px 侧栏、46–50px 顶部栏、分段控件、白色 `.list` 卡片与 `.row` 行、26px 图标按钮）直接对齐 Magpie（MIT）**。MarkToast 只做记忆，不做模型网关。 |
 | [ai-memory](https://github.com/akitaonrails/ai-memory)（**15k★**） | MIT | "Markdown 是源、索引是派生、Git 是版本"的记忆引擎思路；批量提交/降级/零云端等工程取舍；**跨 harness 支持矩阵、hook 脚本模板与 managed-harness 协议**（`docs/support-matrix.md`、`hooks/`、`docs/managed-harness-contributions.md`）是 MarkToast 适配层的首要参考。 |
 | [deja-vu](https://github.com/vshulcz/deja-vu) | MIT | Go 写的会话读取器（43 agents，含 ZCode/Hermes/DSH）、`cjkfold` 繁简折叠、`atomicfile` 原子写——会话摄取与 CJK 细节的重要参考。 |
 | [dsh-memory-manager](https://www.npmjs.com/package/@duke-dsh-plugins/dsh-memory-manager) | MIT | ZCode 风格项目记忆的 scan/frontmatter/dedupe/index 参考实现。 |

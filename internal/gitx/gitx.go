@@ -77,3 +77,34 @@ func Log(root string, n int) (string, error) {
 	}
 	return strings.TrimSpace(out), nil
 }
+
+// Commit is one entry of the memory history.
+type Commit struct {
+	Hash    string
+	Subject string
+	Date    string
+}
+
+// LogEntries returns structured commits (hash, subject, date).
+func LogEntries(root string, n int) ([]Commit, error) {
+	out, err := Run(root, "log", "--format=%h%x1f%s%x1f%ad", "--date=short", "-n", strconv.Itoa(n))
+	if err != nil {
+		return nil, errors.New(strings.TrimSpace(out))
+	}
+	commits := make([]Commit, 0)
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, "\x1f")
+		if len(parts) < 2 {
+			continue
+		}
+		commit := Commit{Hash: parts[0], Subject: parts[1]}
+		if len(parts) > 2 {
+			commit.Date = parts[2]
+		}
+		commits = append(commits, commit)
+	}
+	return commits, nil
+}

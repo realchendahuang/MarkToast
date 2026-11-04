@@ -17,7 +17,8 @@
 
 </div>
 
-![MarkToast UI](docs/assets/ui-search.png)
+![MarkToast UI](docs/assets/ui-light.png)
+![MarkToast UI · 详情](docs/assets/ui-detail.png)
 
 ---
 
@@ -89,7 +90,7 @@ MarkToast 把记忆还原成它本该有的样子：**一个你拥有的仓库�
       DSH / Hermes 已做半自动 staged 安装
 - [x] 本地 hub：status/search/memory/memories/projects/adapters/git-log API；
       MCP server（stdio + streamable HTTP，`memory_search/get/save/list`）
-- [x] 原生 Web UI（参考 Magpie）：搜索、详情、frontmatter、Git 历史、适配器、新建记忆（Cmd/Ctrl+K）
+- [x] Web UI 采用 Magpie 的设计语言（MIT）：同一套 design tokens（浅色默认 + 自动暗色、靛蓝强调色）、212px 侧栏、面包屑头部、白色列表卡片与行、行内展开、弹层、Cmd/Ctrl+K
 - [x] Wails v3.1 桌面壳（`make desktop`；原生窗口加载同一个 hub）
 - [ ] debounce 提交、会话摄取、Hermes memory provider、更多适配器
 
