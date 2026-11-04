@@ -277,14 +277,18 @@ function typeLabel(type) {
 
 function commitLabel(subject) {
   const value = String(subject || "");
-  const match = value.match(/^mem\(([^)]+)\):\s*(.*)$/);
-  if (!match) return value;
-  const project = projectLabel(match[1]);
-  const action = match[2]
-    .replace(/^add\s+/, "新增 ")
-    .replace(/^save\s+/, "保存 ")
-    .replace(/^reindex$/, "重建索引");
-  return `${project} · ${action}`;
+  const mem = value.match(/^mem\(([^)]+)\):\s*(.*)$/);
+  if (mem) {
+    const project = projectLabel(mem[1]);
+    const action = mem[2]
+      .replace(/^add\s+/, "新增 ")
+      .replace(/^save\s+/, "保存 ")
+      .replace(/^reindex$/, "重建索引");
+    return `${project} · ${action}`;
+  }
+  const restore = value.match(/^restore\(([^)]+)\):\s*(.*)$/);
+  if (restore) return `${projectLabel(restore[1])} · 恢复 ${restore[2]}`;
+  return value;
 }
 
 function projectLabel(key) {
@@ -1347,7 +1351,7 @@ async function restoreMemoryVersion(path, hash) {
     history.patch = "";
     history.patchError = null;
     await loadStatus();
-    renderMemories();
+    await loadMemories({ preserveSelection: true });
   } catch (error) {
     toast(formatError(error), "error");
   } finally {

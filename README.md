@@ -19,6 +19,7 @@ ZCode, Hermes and DSH first — Codex, Claude Code, Pi and the rest next.
 
 ![MarkToast UI](docs/assets/ui-light.png)
 ![MarkToast UI · detail](docs/assets/ui-detail.png)
+![MarkToast settings](docs/assets/ui-settings.png)
 
 ---
 
@@ -34,7 +35,8 @@ MarkToast treats memory as what it should be: **a repository you own.**
 - **One Markdown repository is the source of truth.** Readable, greppable,
   diffable, editable in Obsidian.
 - **Git is the workflow.** Every memory change is a diff. Branches are memory
-  experiments. History is an audit trail. Rollback is `git revert`.
+  experiments. History is an audit trail, and any memory can be rolled back
+  from its own version history in the desktop UI.
 - **A local hub serves every harness.** Instruction-file projection where the
   harness reads files, MCP where it speaks MCP, native plugins where it allows
   one.
