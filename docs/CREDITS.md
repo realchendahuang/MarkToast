@@ -34,6 +34,10 @@ MarkToast 不是从石头里蹦出来的。它的产品形态、存储格式和�
 | [mark3labs/mcp-go](https://github.com/mark3labs/mcp-go) | MIT | MCP server 的 Go 实现（stdio + streamable HTTP）。 |
 | [gitleaks](https://github.com/gitleaks/gitleaks) | MIT | 写入记忆前的密钥/隐私脱敏规则集。 |
 
+## 字体
+
+- **Fredoka**（SIL Open Font License 1.1，Google Fonts）—— 品牌字标 "MarkToast" 使用；许可证原文在 `frontend/fonts/OFL.txt`。
+
 ## 依赖
 
 Go 依赖的许可证以各自仓库为准：`spf13/cobra`（Apache-2.0）、`BurntSushi/toml`（MIT）、

@@ -1,3 +1,11 @@
+@font-face {
+  font-family: "Fredoka";
+  src: url("fonts/fredoka-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --bg: #f4f4f6;
   --card: #fff;
@@ -50,7 +58,8 @@
     --muted: #8b8b94;
     --faint: #56565f;
     --ctl-fg: #a1a1aa;
-    --accent: #a5b4fc;
+    --brand-toast: #F1B747;
+  --accent: #a5b4fc;
     --accent-soft: #2b2c47;
     --accent-fg: #14142a;
     --sel: #33345a;
@@ -143,7 +152,14 @@ a { color: inherit; text-decoration: none; }
 }
 .side-top .logo { width: 28px; height: 28px; }
 .brand .logo, .dialog-title-wrap .logo { width: 20px; height: 20px; }
-.side-brand-name { color: var(--fg); font-size: 12.5px; font-weight: 600; }
+.side-brand-name {
+  color: var(--fg);
+  font-family: "Fredoka", var(--sans, -apple-system), sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: .005em;
+}
+.side-brand-name b, .brand-name b { color: var(--brand-toast, #B87A26); font-weight: 600; }
 .drag-grip {
   display: grid;
   grid-template-columns: repeat(2, 2px);
@@ -237,7 +253,13 @@ a { color: inherit; text-decoration: none; }
 .brand { display: flex; flex: none; align-items: center; gap: 7px; height: 34px; border-radius: 7px; }
 .brand .logo { color: var(--fg); }
 .brand-copy { display: flex; align-items: baseline; gap: 7px; }
-.brand-name { color: var(--fg); font-size: 13.5px; font-weight: 600; letter-spacing: .01em; }
+.brand-name {
+  color: var(--fg);
+  font-family: "Fredoka", var(--font);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: .005em;
+}
 .brand-cn { color: var(--muted); font-size: 10.5px; }
 .seg {
   position: absolute;
