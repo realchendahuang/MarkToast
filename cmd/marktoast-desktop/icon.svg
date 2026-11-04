@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFAF0"/><stop offset="1" stop-color="#F5E0B5"/></linearGradient>
+    <linearGradient id="toast" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFE29B"/><stop offset=".55" stop-color="#F8C65C"/><stop offset="1" stop-color="#EFB247"/></linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+  <path d="M272 390C272 332 316 296 372 296C420 296 452 318 480 350C508 318 540 296 588 296C644 296 688 332 688 390L688 674C688 724 648 752 600 752L360 752C312 752 272 724 272 674Z" fill="url(#toast)" stroke="#C98B2E" stroke-width="22" stroke-linejoin="round" transform="translate(32 24)"/>
+  <path d="M326 690C366 718 404 728 436 728L538 728C578 728 612 716 640 690" fill="none" stroke="#D89A3C" stroke-width="16" stroke-linecap="round" opacity=".6" transform="translate(32 24)"/>
+  <g transform="translate(332 300) scale(20)" fill="none" stroke="#5A3A12" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M5 13.1V8.9l2.5 2.8 2.5-2.8v4.2" stroke-width="1.65"/>
+    <path d="M13.8 9.2v3.1m0 0 1.2-1.2m-1.2 1.2-1.2-1.2" stroke-width="1.5"/>
+  </g>
+</svg>

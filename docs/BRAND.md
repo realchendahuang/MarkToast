@@ -38,7 +38,8 @@
 | --- | --- |
 | `frontend/index.html` 的 `#icon-logo` symbol | 侧栏 30px、弹层/窄屏 20px |
 | `frontend/logo.svg` | favicon（16/32px） |
-| `cmd/marktoast-desktop/icon.png` | 1024px Wails / Dock 图标（深棕圆角底） |
+| `cmd/marktoast-desktop/icon.svg` | 应用图标源文件（奶油底 + 吐司切片 + M↓） |
+| `cmd/marktoast-desktop/icon.png` | 1024px Wails / Dock 图标（透明圆角，无白边） |
 | `docs/assets/logo.png` | README / 对外预览 |
 
 ## 用法
