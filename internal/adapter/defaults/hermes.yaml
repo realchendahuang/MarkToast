@@ -1,0 +1,17 @@
+id: hermes
+title: Hermes Agent
+detect:
+  - ~/.hermes
+instruction_file:
+  global: ~/.hermes/SOUL.md
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ~/.hermes/memories
+  index: MEMORY.md
+session_logs: ~/.hermes/state.db
+tier: native
+capabilities:
+  - read
+  - write
+notes: "Built-in MEMORY.md/USER.md are §-delimited with 2200/1375-char budgets; a memory provider plugin is the long-term path."

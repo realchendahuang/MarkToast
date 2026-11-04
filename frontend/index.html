@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MarkToast · 马克吐司</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">◍</span>
+      <span class="brand-name">MarkToast</span>
+      <span class="brand-sub">马克吐司</span>
+    </div>
+    <div class="status" id="hub-status">connecting…</div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <input id="search" class="search" type="search" placeholder="搜索记忆…" autocomplete="off" />
+      <div class="section-title">记忆仓库</div>
+      <ul id="projects" class="list muted"></ul>
+      <div class="section-title">适配器</div>
+      <ul id="adapters" class="list muted"></ul>
+    </aside>
+
+    <section class="content">
+      <div class="card">
+        <h1>你的记忆，一个仓库。</h1>
+        <p class="lede">
+          所有 coding agent 共用同一份 Markdown 记忆，Git 管版本，本地跑。
+          这是 v0 的 Web UI 预览（桌面壳 M4）。
+        </p>
+        <dl class="facts">
+          <div><dt>版本</dt><dd id="version">—</dd></div>
+          <div><dt>记忆条数</dt><dd id="fact-count">—</dd></div>
+          <div><dt>仓库根</dt><dd id="root" class="mono">—</dd></div>
+        </dl>
+      </div>
+
+      <div class="card">
+        <h2>下一步</h2>
+        <pre class="code">marktoast status
+marktoast search "发版"
+marktoast adapters list</pre>
+        <p class="muted">记忆浏览、Git diff 与回滚在 M2–M4 落地。</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

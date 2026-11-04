@@ -1,0 +1,17 @@
+id: claude-code
+title: Claude Code
+detect:
+  - ~/.claude
+instruction_file:
+  global: ~/.claude/CLAUDE.md
+  project: "{workspace}/CLAUDE.md"
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+session_logs: ~/.claude/projects
+tier: projection
+capabilities:
+  - read
+  - inject
+notes: "CLAUDE.md projection; MCP tools available for recall."

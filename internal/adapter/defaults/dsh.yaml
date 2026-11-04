@@ -1,0 +1,18 @@
+id: dsh
+title: DeepSeek Harness
+detect:
+  - ~/.dsh
+instruction_file:
+  global: ~/.agents/AGENTS.md
+  project: "{workspace}/AGENTS.md"
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+session_logs: ~/.dsh/sessions
+tier: projection
+capabilities:
+  - read
+  - inject
+  - mcp
+notes: "MCP via @deepseek-ai/dsh-mcp-client; hooks can bridge through dsh-hooks-claude-code."

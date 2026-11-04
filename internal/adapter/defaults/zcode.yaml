@@ -1,0 +1,18 @@
+id: zcode
+title: ZCode
+detect:
+  - ~/.zcode
+instruction_file:
+  global: ~/.zcode/AGENTS.md
+  project: "{workspace}/AGENTS.md"
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ~/.zcode/cli/memories/projects/{projectKey}/memory
+  index: MEMORY.md
+session_logs: ~/.zcode/v2/sessions
+tier: native
+capabilities:
+  - read
+  - write
+  - inject
+notes: "Project memory: MEMORY.md index + one Markdown file per fact (frontmatter)."

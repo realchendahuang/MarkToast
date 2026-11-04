@@ -1,0 +1,17 @@
+id: codex
+title: Codex
+detect:
+  - ~/.codex
+instruction_file:
+  global: ~/.codex/AGENTS.md
+  project: "{workspace}/AGENTS.md"
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+session_logs: ~/.codex/sessions
+tier: projection
+capabilities:
+  - read
+  - inject
+notes: "Instruction projection now; hooks integration later."

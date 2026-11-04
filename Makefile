@@ -2,15 +2,19 @@ BINARY  := marktoast
 VERSION ?= 0.0.1-dev
 LDFLAGS := -s -w -X github.com/realchendahuang/MarkToast/internal/version.Version=$(VERSION)
 
-.PHONY: all build run test fmt vet tidy clean
+.PHONY: all build run test fmt vet tidy check serve clean
 
 all: build
 
 build:
-	go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY) .
+	go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/marktoast
 
 run:
-	go run . $(ARGS)
+	go run ./cmd/marktoast $(ARGS)
+
+# Local hub + web UI preview (frontend/ served by the hub).
+serve:
+	go run ./cmd/marktoast serve
 
 test:
 	go test ./...
@@ -20,6 +24,8 @@ fmt:
 
 vet:
 	go vet ./...
+
+check: fmt vet test
 
 tidy:
 	go mod tidy
