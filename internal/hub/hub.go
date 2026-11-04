@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/realchendahuang/MarkToast/internal/adapter"
 	"github.com/realchendahuang/MarkToast/internal/gitx"
+	"github.com/realchendahuang/MarkToast/internal/harness"
 	"github.com/realchendahuang/MarkToast/internal/index"
 	"github.com/realchendahuang/MarkToast/internal/store"
 	"github.com/realchendahuang/MarkToast/internal/version"
@@ -48,6 +50,7 @@ func Serve(o Options) error {
 	mux.HandleFunc("/api/memories", func(w http.ResponseWriter, r *http.Request) { handleMemories(w, r, o) })
 	mux.HandleFunc("/api/projects", func(w http.ResponseWriter, r *http.Request) { handleProjects(w, r, o) })
 	mux.HandleFunc("/api/adapters", func(w http.ResponseWriter, r *http.Request) { handleAdapters(w, r) })
+	mux.HandleFunc("/api/adapters/action", func(w http.ResponseWriter, r *http.Request) { handleAdapterAction(w, r, o) })
 	mux.HandleFunc("/api/git/log", func(w http.ResponseWriter, r *http.Request) { handleGitLog(w, r, o) })
 	mux.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) { handleSettings(w, r, o) })
 	mux.HandleFunc("/api/reindex", func(w http.ResponseWriter, r *http.Request) { handleReindex(w, r, o) })
@@ -281,6 +284,8 @@ func handleAdapters(w http.ResponseWriter, r *http.Request) {
 	out := make([]map[string]any, 0, len(adapters))
 	for _, a := range adapters {
 		detected := adapter.Detect(a)
+		home, _ := os.UserHomeDir()
+		installed := a.ID == "zcode" && harness.ZCodeInstalled(home)
 		out = append(out, map[string]any{
 			"id":            a.ID,
 			"title":         a.Title,
@@ -288,6 +293,8 @@ func handleAdapters(w http.ResponseWriter, r *http.Request) {
 			"capabilities":  a.Capabilities,
 			"detect":        a.Detect,
 			"detected":      len(detected) > 0,
+			"installed":     installed,
+			"installable":   a.ID == "zcode",
 			"detected_path": strings.Join(detected, ", "),
 			"notes":         a.Notes,
 			"hooks": map[string]any{
@@ -331,4 +338,67 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeError(w http.ResponseWriter, status int, err error) {
 	writeJSON(w, status, map[string]string{"error": err.Error()})
+}
+
+func handleAdapterAction(w http.ResponseWriter, r *http.Request, o Options) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+	var payload struct {
+		ID     string `json:"id"`
+		Action string `json:"action"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if payload.ID != "zcode" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("adapter %q is not automatically installable; use the staged snippets", payload.ID))
+		return
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	token, err := EnsureToken(o.Root)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	var report harness.ZCodeReport
+	switch payload.Action {
+	case "install":
+		binary := marktoastCLI()
+		report, err = harness.InstallZCode(home, o.Root, token, binary, true)
+	case "uninstall":
+		report, err = harness.UninstallZCode(home, true)
+	default:
+		err = fmt.Errorf("unknown action %q", payload.Action)
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
+// marktoastCLI locates the CLI used by harness hooks.
+func marktoastCLI() string {
+	if path, err := exec.LookPath("marktoast"); err == nil {
+		return path
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	for _, name := range []string{"marktoast", "marktoast-cli"} {
+		candidate := filepath.Join(filepath.Dir(exe), name)
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+	return ""
 }

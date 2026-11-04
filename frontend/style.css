@@ -1091,3 +1091,6 @@ body.mac { --top-h: 54px; }
 .adapter-state::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--faint); }
 .adapter-state.is-on { color: var(--fg-2); }
 .adapter-state.is-on::before { background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+.adapter-state.is-pending { color: var(--amber); }
+.adapter-state.is-pending::before { background: var(--amber); box-shadow: 0 0 0 3px var(--amber-soft); }
+.adapter-action { height: 24px; min-height: 24px; padding: 0 9px; border-radius: 6px; font-size: 10.5px; }

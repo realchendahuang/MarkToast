@@ -763,6 +763,22 @@ function renderMemoryError(error) {
   els.resultRegion.appendChild(list);
 }
 
+async function runAdapterAction(adapter) {
+  const verb = adapter.installed ? "重新写入" : "写入";
+  if (!window.confirm(`${verb} ZCode 配置？会先备份原文件。`)) return;
+  try {
+    const data = await api("/api/adapters/action", {
+      method: "POST",
+      body: JSON.stringify({ id: adapter.id, action: "install" }),
+    });
+    toast(data.installed ? "ZCode 已接入" : "配置已更新");
+    await loadAdapters();
+    await loadStatus();
+  } catch (error) {
+    toast(formatError(error), "error");
+  }
+}
+
 async function loadAdapters() {
   clear(els.adapterRegion);
   const list = element("div", "list");
@@ -809,12 +825,26 @@ function renderAdapters() {
         element("div", "name", adapter.title || adapter.id || "Adapter"),
         element("div", "sub", adapter.notes || adapter.id || ""),
       );
-      const state = element("span", `adapter-state${adapter.detected ? " is-on" : ""}`, adapter.detected ? "已接入" : "未接入");
+      const installed = Boolean(adapter.installed);
+      const installable = Boolean(adapter.installable) && Boolean(adapter.detected);
+      const pending = installable && !installed;
+      const state = element(
+        "span",
+        `adapter-state${installed ? " is-on" : pending ? " is-pending" : ""}`,
+        installed ? "已接入" : pending ? "待接入" : adapter.detected ? "已检测" : "未检测",
+      );
       if (adapter.detected_path) state.title = adapter.detected_path;
       const tierLabel = { native: "原生", projection: "投影", readonly: "只读" }[adapter.tier] || adapter.tier || "";
       const tier = element("span", "pill", tierLabel);
       tier.title = adapter.tier || "";
-      row.append(who, state, tier);
+      row.append(who, state);
+      if (adapter.installable && adapter.detected) {
+        const action = element("button", "button quiet adapter-action", installed ? "修复" : "接入");
+        action.type = "button";
+        action.addEventListener("click", () => runAdapterAction(adapter));
+        row.appendChild(action);
+      }
+      row.appendChild(tier);
       entry.appendChild(row);
       list.appendChild(entry);
     });
