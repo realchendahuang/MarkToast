@@ -34,7 +34,8 @@ make desktop
 
 ## 待办（M4 剩余）
 
-- [ ] 签名与公证
+- [ ] 签名与公证（脚本已支持 `CODESIGN_IDENTITY` / `NOTARY_PROFILE`，需要证书）
 - [ ] 自动更新（Wails updater）
+- [x] `make release` / `scripts/release.sh`（dist zip + SHA256）
 - [ ] 菜单里的"打开记忆仓库 / 重新索引"
 - [ ] About 面板

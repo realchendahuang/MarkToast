@@ -54,7 +54,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
+IDENTITY="${CODESIGN_IDENTITY:--}"
+codesign --force --deep --sign "$IDENTITY" "$APP" >/dev/null 2>&1 || true
 echo "✔ installed $APP"
 echo "✔ CLI at $CLI_DIR/marktoast"
 echo

@@ -117,6 +117,7 @@ make build
 ./bin/marktoast init                         # creates ~/Memory + git repo
 ./bin/marktoast import zcode                  # import existing harness memories
 ./bin/marktoast backup                       # tar.gz snapshot
+./bin/marktoast doctor                       # diagnose the installation
 ./bin/marktoast inbox list                   # review session candidates
 ./bin/marktoast add --name release-rollback \
   --description "2026-09 发版回滚原因" --type project --body "发版后首页闪屏，决定回滚。"
