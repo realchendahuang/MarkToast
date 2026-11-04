@@ -1234,3 +1234,28 @@ body.side-collapsed #side-toggle-top { display: inline-flex; }
   .top .top-actions { margin-left: auto; }
   .view { padding-right: 12px; padding-left: 12px; }
 }
+
+/* ---- Magpie quiet pages and sidebar metrics ----------------------------- */
+.view-head { display: none !important; }
+.view-inner { max-width: 1200px; }
+.view { padding: 2px max(0px, calc(16px - var(--bar, 0px))) 8px 16px; animation: fade-in .18s var(--ease); }
+.view-panel:not(#view-memories) { padding-top: 8px; }
+.filters { padding: 8px 2px 8px; }
+
+.top-new { height: 28px; margin-right: 4px; border-radius: 7px; }
+.top-new .ic { width: 13px; height: 13px; }
+body.desktop .side-top { padding-left: 96px; }
+.side-top .brand-name { font-size: 12.5px; }
+
+.side-group + .side-group { margin-top: 0; padding-top: 0; border-top: 0; }
+.side-group .side-label { padding: 14px 8px 4px; font-size: 11px; font-weight: 500; letter-spacing: .04em; }
+.side-group:first-of-type .side-label { padding-top: 2px; }
+.side-row { font-size: 13px; }
+.side-row.project-row { height: 26px; padding: 0 10px; border-radius: 6px; font-size: 12.5px; }
+.project-list { margin-left: 16px; padding-left: 8px; border-left: 1px solid var(--line); }
+.side-foot { padding: 8px 10px 10px; gap: 1px; border-top: .5px solid var(--line-2); }
+
+@media (max-width: 900px) {
+  .view { padding: 8px 12px 8px; }
+  .filters { padding-top: 2px; }
+}

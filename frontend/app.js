@@ -55,7 +55,6 @@ const els = {
   typeFilter: $("type-filter"),
   resultRegion: $("memory-results"),
   resultTotal: $("result-total"),
-  memoryHeading: $("memory-heading"),
   adapterRegion: $("adapter-results"),
   adapterCount: $("adapter-count"),
   historyRegion: $("history-results"),
@@ -386,13 +385,6 @@ function updateBreadcrumb() {
 }
 
 function updateHeading() {
-  if (state.query) {
-    els.memoryHeading.textContent = "搜索结果";
-  } else if (state.project) {
-    els.memoryHeading.textContent = projectLabel(state.project);
-  } else {
-    els.memoryHeading.textContent = "全部记忆";
-  }
   $("sort-label").textContent = state.sort === "updated" ? "最近更新" : state.sort === "title" ? "标题" : "相关度";
   updateBreadcrumb();
 }
@@ -1045,6 +1037,8 @@ function switchView(view) {
   });
   updateBreadcrumb();
   positionSegThumb();
+  const newButton = $("new-memory-top");
+  if (newButton) newButton.hidden = view !== "memories";
   if (view === "inbox") loadInbox();
   if (view === "adapters" && !state.adapters.length) loadAdapters();
   if (view === "history") loadHistory();
