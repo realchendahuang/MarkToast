@@ -1122,6 +1122,42 @@ function animateTopNavFromSidebar(fromRect) {
   });
 }
 
+// animateTopNavToSidebar is the reverse: the top tabs fold back down into the
+// sidebar's first navigation row instead of blinking away.
+function animateTopNavToSidebar(fromRect) {
+  const seg = document.getElementById("main-nav");
+  if (!seg || !fromRect) return;
+  requestAnimationFrame(() => {
+    seg.classList.add("nav-return");
+    const base = seg.getBoundingClientRect();
+    const row = document.querySelector(".side-scroll .side-row");
+    const sidebar = document.querySelector(".sidebar");
+    if (!row || !sidebar || !base.width) {
+      seg.classList.remove("nav-return");
+      return;
+    }
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      seg.classList.remove("nav-return");
+      return;
+    }
+    const rowRect = row.getBoundingClientRect();
+    const sidebarRect = sidebar.getBoundingClientRect();
+    const targetX = rowRect.left - sidebarRect.left + rowRect.width / 2;
+    const targetY = rowRect.top + rowRect.height / 2;
+    const dx = targetX - (base.left + base.width / 2);
+    const dy = targetY - (base.top + base.height / 2);
+    seg.getAnimations().forEach((animation) => animation.cancel());
+    const animation = seg.animate(
+      [
+        { transform: "translate(-50%, -50%)", opacity: 1 },
+        { transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px) scale(.35)`, opacity: 0 },
+      ],
+      { duration: 260, easing: "cubic-bezier(.2, .8, .2, 1)" },
+    );
+    animation.finished.then(() => seg.classList.remove("nav-return")).catch(() => {});
+  });
+}
+
 // positionSegThumb slides the segmented control's thumb under the picked tab.
 function positionSegThumb() {
   const seg = document.getElementById("main-nav");
@@ -1415,9 +1451,13 @@ function bindEvents() {
   });
   document.querySelectorAll("#side-toggle, #side-toggle-top").forEach((button) => {
     button.addEventListener("click", () => {
-      const sideRect = document.body.classList.contains("side-collapsed")
+      const wasCollapsed = document.body.classList.contains("side-collapsed");
+      const sideRect = wasCollapsed
         ? null
         : document.querySelector(".side-scroll")?.getBoundingClientRect();
+      const topRect = wasCollapsed
+        ? document.getElementById("main-nav")?.getBoundingClientRect()
+        : null;
       const collapsed = document.body.classList.toggle("side-collapsed");
       try {
         localStorage.setItem("marktoast-sidebar", collapsed ? "collapsed" : "open");
@@ -1426,6 +1466,7 @@ function bindEvents() {
       if (topToggle) topToggle.hidden = !collapsed;
       updateSidebarIcons();
       if (collapsed) animateTopNavFromSidebar(sideRect);
+      if (!collapsed && wasCollapsed) animateTopNavToSidebar(topRect);
       window.setTimeout(positionSideHighlight, 0);
       button.setAttribute("aria-label", collapsed ? "展开侧栏" : "收起侧栏");
       button.title = collapsed ? "展开侧栏" : "收起侧栏";

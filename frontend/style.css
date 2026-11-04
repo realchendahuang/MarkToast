@@ -1480,3 +1480,4 @@ html.theming *::after {
 }
 body.side-collapsed .top .seg .thumb { display: none; }
 body.side-collapsed .top .seg button.on { color: var(--fg); background: var(--seg-thumb); box-shadow: var(--seg-edge); }
+.top .seg.nav-return { display: inline-flex; pointer-events: none; }
