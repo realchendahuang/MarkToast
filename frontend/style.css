@@ -1815,3 +1815,19 @@ body.side-collapsed .top .seg button.on { color: var(--fg); font-weight: 600; }
 .top .seg button.on { color: var(--fg); }
 .sort-control { color: var(--fg-2); font-weight: 500; }
 .sort-control b { font-weight: 600; }
+
+/* The sidebar's own edge: the brand must stay clear of the traffic lights
+   and the divider begins under the title bar rather than cutting the bar in
+   two (the desktop gutter is 78px, the width the three lights need). */
+body.desktop .side-top { padding-left: 78px; padding-right: 10px; gap: 8px; }
+.sidebar { border-right: 0; }
+.sidebar::after {
+  content: "";
+  position: absolute;
+  top: var(--top-h);
+  right: 0;
+  bottom: 0;
+  width: .5px;
+  background: var(--line);
+  pointer-events: none;
+}
