@@ -1,0 +1,37 @@
+id: swival-cli
+title: Swival CLI
+detect: []
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events: []
+  install_kind: none
+  schema: none
+  scope: global
+  target: ""
+  injection: none
+  needs_trust: false
+  notes: "Swival 只有共享的 startup/exit 回调，不暴露稳定 session id，无法安全关联并发会话 → 不装生命周期 hooks。依据：docs/mcp-install.md#Swival CLI；docs/support-matrix.md: Swival CLI（MCP-only）。"
+mcp:
+  kind: http
+  target: .swival/mcp.json
+  shape: mcpServers
+  notes: "默认项目级 .swival/mcp.json（从最近 .git 或 swival.toml 祖先目录解析，与 Swival 自己的 project-root 发现一致）；条目 type:http + url + headers。因为是仓库内文件，按 staged 处理。依据：docs/mcp-install.md#Swival CLI。"
+session:
+  roots: []
+  format: unknown
+  notes: "无 hooks/稳定会话身份，无 transcript 契约。依据：docs/mcp-install.md#Swival CLI。"
+tier: readonly
+capabilities:
+  - read
+  - mcp
+install_mode: staged
+docs:
+  - ai-memory/docs/support-matrix.md#Swival CLI
+  - ai-memory/docs/mcp-install.md#Swival CLI
+notes: "MCP-only，且配置在项目 checkout 内，故 staged 而非 mcp_only 自动写。"

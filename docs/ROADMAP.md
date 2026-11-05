@@ -23,17 +23,48 @@
 - [x] debounce 批量提交（2026-11-04，hub 默认 5s 静默后提交，退出前 Flush）
 - [x] `diff` / `rollback` 子命令（2026-11-04）
 
-## M2 — 适配器（先三家）🟡（骨架完成，端到端待验证）
+## M2 — 适配器（全量 40 家）✅（通用安装引擎完成；端到端逐家验证进行中）
 
-- [x] descriptor YAML schema（instruction / native memory / hooks / mcp / session）
-- [x] **ZCode**：幂等安装器（插件优先说明 + config.json hooks 合并 + MCP 合并 + 备份 + 卸载；UI 一键接入/修复）
-- [x] **DSH**：staged hooks.json + cordis patch 说明（半自动；UI「片段」一键生成）
-- [x] **Hermes**：staged hooks/mcp 片段 + 说明（半自动；UI「片段」一键生成）
-- [x] `marktoast adapters list|install|uninstall|status` + 适配器检测状态 / UI 接入
+目标从"先接三家"升级为 ai-memory 支持矩阵全量：**40 家 = 19 auto + 12 staged +
+9 mcp_only**（tier：native 2 / projection 26 / readonly 12），一家一个
+`internal/adapter/defaults/<id>.yaml`。
+
+- [x] descriptor YAML schema 扩展：`install_mode`、`hooks.install_kind/schema/scope`、
+      `mcp.kind/shape`、`docs`
+- [x] 40 家内置描述符（40 个 YAML；`internal/adapter/adapter_test.go` 校验数量、id 唯一、
+      `Validate()` 与字段不变量）
+- [x] 通用安装引擎 `internal/harness`（替换 ZCode/DSH/Hermes 硬编码）：
+  - [x] auto：按 schema 合并 hooks（`claude` / `flat` / `event_map` / `named_group` /
+        `exec` / `exec_list` / `bundle` / `toml` 等）+ 按 shape 注册 MCP；
+        写前备份（`<file>.marktoast-backup-<时间戳>`）、幂等、保留第三方条目、原子写
+  - [x] staged：生成 `~/.marktoast/adapters/<id>/` 下的 hooks/mcp 片段与 README
+        （hub URL、token、手贴步骤、坑）
+  - [x] mcp_only：只生成 MCP 片段与说明
+  - [x] 无法安全合并的 schema 自动降级 staged（报告说明原因）
+  - [x] uninstall 精确回滚 MarkToast 条目并清理 staged 目录
+- [x] CLI：`marktoast adapters list / install / uninstall / status` 全量支持
+      （mode / detected / staged / installed；`--apply`、`--workspace`）
+- [x] hub `/api/adapters` 返回 `mode` / `install_kind` / `staged` / `staged_ready` /
+      `installed`，`installable` 不再写死 ZCode
+- [x] Web UI 适配器页：40 家按 auto / staged / mcp_only 分组、mode 徽章、状态徽章、
+      「接入 / 修复」「生成片段」「查看说明」按模式显示；中英文案
+- [x] ZCode 幂等安装器（hooks + MCP，保留第三方条目）
+- [x] DSH / Hermes staged 片段（Cordis patch / Hermes YAML）
 - [x] `marktoast hook`：事件记录 + SessionStart 注入
 - [x] 导入现有 525 条 ZCode 记忆 / Hermes MEMORY.md（2026-11-04，含去重与 global 布局修正）
-- [ ] 端到端验证：三家读到同一份记忆（需要重启各 harness 实测）
-- [x] Hermes memory provider 插件（完整生命周期，2026-11-04；`adapters/hermes/marktoast`，需 `hermes memory setup` 激活）
+- [x] Hermes memory provider 插件（完整生命周期，2026-11-04；`adapters/hermes/marktoast`，
+      需 `hermes memory setup` 激活）
+- [ ] **端到端逐家验证（auto，19 家）**：重启 harness 实测 hooks 触发、SessionStart 注入
+      可见、MCP 可连；逐家结果回写 YAML 的 `notes`/`hooks.notes`
+- [ ] **端到端逐家验证（staged，12 家）**：按 `~/.marktoast/adapters/<id>/README.txt`
+      手贴后验证；重点 DSH cordis patch、Hermes `config.yaml` + trust gate、插件类
+      （openclaw / oh-my-pi / pi / opencode / cline）
+- [ ] **端到端逐家验证（mcp_only，9 家）**：客户端 MCP 工具列表与调用实测
+- [ ] Claude Desktop 两个 id 分别验证：Chat（`npx -y mcp-remote http://127.0.0.1:3777/mcp`
+      shim）与 Code tab（复用 `~/.claude/settings.json`）
+- [ ] 注入缺口补齐：`pre_llm_call_context`（Hermes）输出 `{"context": ...}`、
+      `mcp_handoff` 家的上下文兜底（DSH/Cline/Pi/Zero/Pool）
+- [ ] 三家读到同一份记忆的联调复测（ZCode / Hermes / DSH）
 
 ## M3 — Hub（HTTP + MCP）✅（2026-11-04）
 

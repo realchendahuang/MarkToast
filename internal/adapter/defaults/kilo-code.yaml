@@ -1,0 +1,39 @@
+id: kilo-code
+title: Kilo Code
+detect:
+  - ~/.config/kilo
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events: []
+  install_kind: mcp_only
+  schema: none
+  scope: global
+  target: ""
+  injection: none
+  needs_trust: false
+  notes: "Kilo Code 无 lifecycle hooks（MCP-only documented）；自动捕获/handoff 不可用。依据：docs/install.md#Kilo-Code；docs/support-matrix.md: Kilo Code。"
+mcp:
+  kind: http
+  target: ~/.config/kilo/kilo.jsonc
+  shape: mcp
+  notes: "全局 ~/.config/kilo/kilo.jsonc（或 kilo.json），项目 kilo.jsonc / .kilo/kilo.jsonc；servers 在 mcp 键下，远程条目 type:\"remote\" + url + enabled + oauth:false + headers（支持 {env:NAME} 展开）。依据：docs/install.md#Kilo-Code（Kilo Code 7.8.8）。"
+session:
+  roots: []
+  format: unknown
+  notes: "事实源未给出 transcript 契约。依据：docs/support-matrix.md: Kilo Code。"
+tier: readonly
+capabilities:
+  - read
+  - mcp
+install_mode: mcp_only
+docs:
+  - ai-memory/docs/support-matrix.md#Kilo Code
+  - ai-memory/docs/install.md#Kilo-Code
+  - https://kilo.ai/docs/automate/mcp/using-in-kilo-code
+notes: "shape 用 mcp（Kilo 的容器键，不是 mcp.servers）；JSONC 需注释安全写入。"

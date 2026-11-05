@@ -1,0 +1,42 @@
+id: pi
+title: Pi
+detect:
+  - ~/.pi
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events: []
+  install_kind: plugin_bundle
+  schema: ""
+  scope: global
+  target: ~/.pi/agent/extensions/ai-memory-pi.ts
+  injection: mcp_handoff
+  needs_trust: false
+  notes: "Pi 没有原生 MCP 配置：生成的 ~/.pi/agent/extensions/ai-memory-pi.ts 同时提供生命周期捕获与 HTTP MCP bridge，extension 内映射 Pi 生命周期事件并强制 capture exclusions。大目录与 MCP 都随 PI_CODING_AGENT_DIR 移动。handoff 注入未在事实源声明，走 MCP handoff。依据：install_hooks.rs: pi_extension_path_in；docs/support-matrix.md: Pi；docs/mcp-install.md#Pi。"
+mcp:
+  kind: stdio_bridge
+  target: ~/.pi/agent/extensions/ai-memory-pi.ts
+  shape: ""
+  notes: "无原生 mcp.json；MCP 由生成的 extension 提供 HTTP bridge，install-mcp --client pi 会拒绝并要求改用 install-hooks --agent pi。依据：install_mcp.rs: McpClient::Pi 错误信息；docs/mcp-install.md#Pi。"
+session:
+  roots:
+    - ~/.pi/agent/sessions
+  format: jsonl
+  notes: "~/.pi/agent/sessions/**/*.jsonl（--session <id> 续接）。依据：docs/managed-workstreams.md 原生适配表。"
+session_logs: ~/.pi/agent/sessions
+tier: projection
+capabilities:
+  - read
+  - inject
+  - mcp
+install_mode: staged
+docs:
+  - ai-memory/docs/support-matrix.md#Pi
+  - ai-memory/docs/mcp-install.md#Pi
+  - ai-memory/docs/install.md#Pi
+notes: "Pi 与 OMP 是不同 harness（extension 文件名与目录不同），不要合并 id。"

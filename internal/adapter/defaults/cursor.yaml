@@ -1,0 +1,48 @@
+id: cursor
+title: Cursor
+detect:
+  - ~/.cursor
+instruction_file:
+  global: ""
+  project: "{workspace}/AGENTS.md"
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events:
+    - sessionStart
+    - sessionEnd
+    - beforeSubmitPrompt
+    - preToolUse
+    - postToolUse
+    - postToolUseFailure
+    - preCompact
+    - stop
+  install_kind: json_merge
+  schema: flat
+  scope: global
+  target: ~/.cursor/hooks.json
+  injection: stdout_additional_context
+  needs_trust: false
+  notes: "hooks.json 是 camelCase 事件 + flat 条目（无内层 hooks 数组），文件根需 version:1；beforeSubmitPrompt 对应 user-prompt-submit（Cursor 没有 userPromptSubmit）。postToolUseFailure 在工具失败/超时/被拒时替代 postToolUse。依据：render_shared.rs: CURSOR_EVENTS/CURSOR_PROFILE（Flat）；install_hooks.rs: cursor_hooks_path（~/.cursor/hooks.json）；docs/mcp-install.md#Cursor。"
+mcp:
+  kind: http
+  target: ~/.cursor/mcp.json
+  shape: mcpServers
+  notes: "全局 ~/.cursor/mcp.json，项目 .cursor/mcp.json；HTTP/SSE 用 url 键，stdio 用 command+args。依据：docs/mcp-install.md#Cursor。"
+session:
+  roots: []
+  format: unknown
+  notes: "事实源未给出 Cursor 原生 transcript store 契约。依据：docs/support-matrix.md: Cursor。"
+tier: projection
+capabilities:
+  - read
+  - inject
+  - mcp
+install_mode: auto
+docs:
+  - ai-memory/docs/support-matrix.md#Cursor
+  - ai-memory/docs/mcp-install.md#Cursor
+  - https://cursor.com/docs/agent/hooks
+notes: "Cursor 不能 post-compaction 注入，压缩后靠已装 instructions 重新落地。"

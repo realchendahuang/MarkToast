@@ -1,0 +1,40 @@
+id: vs-code-copilot
+title: VS Code Copilot
+detect:
+  - ~/.vscode
+  - ~/.config/Code/User
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events: []
+  install_kind: mcp_only
+  schema: none
+  scope: global
+  target: ""
+  injection: none
+  needs_trust: false
+  notes: "Copilot agent mode 目前不暴露 PreToolUse/PostToolUse/SessionStart 等 hook 面，自动捕获与 handoff 注入不可用；只能让模型在 chat 里调 memory_* 工具。依据：docs/mcp-install.md#VS Code GitHub Copilot；docs/support-matrix.md: VS Code Copilot。"
+mcp:
+  kind: http
+  target: "{workspace}/.vscode/mcp.json"
+  shape: servers
+  notes: "工作区默认 .vscode/mcp.json；顶层键是 servers（不是 mcpServers，后者会被静默忽略）；HTTP 条目 type:http + url + headers。用户 profile 的 mcp.json 路径随平台/profile 不同，需显式指定。依据：docs/mcp-install.md#VS Code GitHub Copilot。"
+session:
+  roots: []
+  format: unknown
+  notes: "无 lifecycle hooks，也无事实源给出的 transcript 读取契约。依据：docs/support-matrix.md: VS Code Copilot。"
+tier: readonly
+capabilities:
+  - read
+  - mcp
+install_mode: mcp_only
+docs:
+  - ai-memory/docs/support-matrix.md#VS Code Copilot
+  - ai-memory/docs/mcp-install.md#VS Code GitHub Copilot
+  - https://code.visualstudio.com/docs/copilot/customization/mcp-servers
+notes: "注意与 copilot-cli（GitHub Copilot CLI，有 hooks）区分；--client copilot 的裸别名在过去指 VS Code Copilot。"

@@ -1,0 +1,39 @@
+id: zed
+title: Zed
+detect:
+  - ~/.config/zed
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events: []
+  install_kind: mcp_only
+  schema: none
+  scope: global
+  target: ""
+  injection: none
+  needs_trust: false
+  notes: "Zed 不暴露兼容的 session/tool lifecycle hooks，自动捕获与自动 handoff 注入不可用；需要连续性时让 agent 手动调 memory_handoff_begin/accept。依据：docs/mcp-install.md#Zed；docs/support-matrix.md: Zed。"
+mcp:
+  kind: http
+  target: ~/.config/zed/settings.json
+  shape: context_servers
+  notes: "用户 settings.json 的顶层 context_servers；远程 server 用 url + 可选 headers。macOS/Linux 都是 ~/.config/zed/settings.json（Windows 为 %APPDATA%\\Zed\\settings.json）。写入需保留 JSONC 注释与其它设置。依据：docs/mcp-install.md#Zed。"
+session:
+  roots: []
+  format: unknown
+  notes: "无 lifecycle hooks / managed workstream，无 transcript 契约。依据：docs/support-matrix.md: Zed。"
+tier: readonly
+capabilities:
+  - read
+  - mcp
+install_mode: mcp_only
+docs:
+  - ai-memory/docs/support-matrix.md#Zed
+  - ai-memory/docs/mcp-install.md#Zed
+  - https://zed.dev/docs/ai/mcp
+notes: "context_servers 是 Zed 独有的 shape（不是 mcpServers）。"

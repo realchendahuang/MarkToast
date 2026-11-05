@@ -1,0 +1,52 @@
+id: kimi-code
+title: Kimi Code
+detect:
+  - ~/.kimi-code
+instruction_file:
+  global: ""
+  project: "{workspace}/AGENTS.md"
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events:
+    - SessionStart
+    - UserPromptSubmit
+    - PreToolUse
+    - PostToolUse
+    - PostToolUseFailure
+    - PreCompact
+    - Stop
+    - SessionEnd
+    - SubagentStart
+    - SubagentStop
+  install_kind: toml_merge
+  schema: toml
+  scope: global
+  target: ~/.kimi-code/config.toml
+  injection: stdout_additional_context
+  needs_trust: false
+  notes: "hooks 是 $KIMI_CODE_HOME/config.toml 里的 [[hooks]] 数组条目（与 provider/model 设置同文件）；条目只接受 event/matcher/command/timeout 四键，多一个键会让整个 config.toml 加载失败。10 个事件。Kimi Code 丢弃 SessionStart stdout，handoff 在 UserPromptSubmit stdout 注入（追加为用户消息）。依据：render_shared.rs: KIMI_CODE_EVENTS；install_hooks.rs: kimi_code_config_path_in；docs/mcp-install.md#Kimi Code；docs/install.md#Kimi-Code。"
+mcp:
+  kind: http
+  target: ~/.kimi-code/mcp.json
+  shape: mcpServers
+  notes: "MarkToast 写纯 http://127.0.0.1:3777/mcp：不要加 transport 字段，url 即 streamable HTTP（transport=sse 才切 SSE），条目支持 headers（Authorization: Bearer <token>）。ai-memory 那套 ?flavor=moonshot 是它自己的 tool-schema 变体机制（Moonshot 拒绝根级 anyOf），MarkToast 没有 flavor 概念；若上游确实要求 flavor，由用户自行在 URL 追加。依据：docs/mcp-install.md#Kimi Code；install_mcp.rs: build_mcp_entry（Kimi 走 RootMcpServers 通用条目，headers 可用）。"
+session:
+  roots:
+    - ~/.kimi-code/sessions
+  format: jsonl
+  notes: "$KIMI_CODE_HOME/sessions/*/*/agents/main/wire.jsonl。依据：docs/managed-workstreams.md 原生适配表。"
+session_logs: ~/.kimi-code/sessions
+tier: projection
+capabilities:
+  - read
+  - inject
+  - mcp
+install_mode: auto
+docs:
+  - ai-memory/docs/support-matrix.md#Kimi Code
+  - ai-memory/docs/mcp-install.md#Kimi Code
+  - ai-memory/docs/install.md#Kimi-Code
+notes: "别名 kimi；$KIMI_CODE_HOME 同时移动 mcp.json 与 config.toml。"

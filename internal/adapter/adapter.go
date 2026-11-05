@@ -37,18 +37,26 @@ type NativeMemory struct {
 // should install them.
 type Hooks struct {
 	Events      []string `yaml:"events"`
-	InstallKind string   `yaml:"install_kind"` // json_merge | toml_merge | yaml_snippet | patch_fragment | plugin_bundle | none
+	InstallKind string   `yaml:"install_kind"` // json_merge | toml_merge | json_bundle | yaml_snippet | patch_fragment | plugin_bundle | mcp_only | manual | none
 	Target      string   `yaml:"target"`
 	Injection   string   `yaml:"injection"` // stdout_additional_context | pre_llm_call_context | mcp_handoff | none
 	NeedsTrust  bool     `yaml:"needs_trust"`
-	Notes       string   `yaml:"notes,omitempty"`
+	// Schema names the on-disk hook shape so one merge engine can serve many
+	// harnesses: claude | exec | flat | bundle | toml | yaml | plugin | none.
+	Schema string `yaml:"schema,omitempty"`
+	// Scope is global (user config) or project (repo-relative config).
+	Scope string `yaml:"scope,omitempty"`
+	Notes string `yaml:"notes,omitempty"`
 }
 
 // MCP describes how to register MarkToast as an MCP server for the harness.
 type MCP struct {
-	Kind   string `yaml:"kind"` // http | stdio_bridge | patch_fragment | none
+	Kind   string `yaml:"kind"` // http | stdio_bridge | patch_fragment | project_json | none
 	Target string `yaml:"target"`
-	Notes  string `yaml:"notes,omitempty"`
+	// Shape names the config key shape: mcpServers | mcp.servers |
+	// context_servers | mcp_servers | gemini.notes.
+	Shape string `yaml:"shape,omitempty"`
+	Notes string `yaml:"notes,omitempty"`
 }
 
 // Session describes where the harness keeps its session transcripts.
@@ -71,7 +79,75 @@ type Descriptor struct {
 	SessionLogs     string          `yaml:"session_logs"`
 	Tier            string          `yaml:"tier"` // native | projection | readonly
 	Capabilities    []string        `yaml:"capabilities"`
-	Notes           string          `yaml:"notes,omitempty"`
+	// InstallMode is auto (MarkToast edits the harness config), staged (it
+	// writes ready-to-paste snippet files) or mcp_only (no lifecycle hooks).
+	// Empty derives from Hooks.InstallKind via EffectiveInstallMode.
+	InstallMode string   `yaml:"install_mode,omitempty"`
+	Docs        []string `yaml:"docs,omitempty"`
+	Notes       string   `yaml:"notes,omitempty"`
+}
+
+// Install modes returned by EffectiveInstallMode.
+const (
+	ModeAuto    = "auto"
+	ModeStaged  = "staged"
+	ModeMCPOnly = "mcp_only"
+)
+
+// EffectiveInstallMode resolves the adapter's install mode, deriving one from
+// hooks.install_kind when the descriptor does not state it explicitly.
+func (d Descriptor) EffectiveInstallMode() string {
+	switch strings.TrimSpace(d.InstallMode) {
+	case ModeAuto, ModeStaged, ModeMCPOnly:
+		return strings.TrimSpace(d.InstallMode)
+	case "":
+	default:
+		return ModeStaged
+	}
+	switch strings.TrimSpace(d.Hooks.InstallKind) {
+	case "json_merge", "toml_merge", "json_bundle":
+		return ModeAuto
+	case "mcp_only", "none":
+		return ModeMCPOnly
+	default:
+		return ModeStaged
+	}
+}
+
+// Validate reports descriptor problems that would make an installer unsafe.
+// It is used by tests and by the CLI before acting on an adapter.
+func Validate(d Descriptor) error {
+	if strings.TrimSpace(d.ID) == "" {
+		return fmt.Errorf("adapter id is required")
+	}
+	for _, r := range d.ID {
+		if !(r == '-' || r == '_' || r == '.' || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')) {
+			return fmt.Errorf("adapter id %q must be lower-kebab-case", d.ID)
+		}
+	}
+	mode := d.EffectiveInstallMode()
+	if mode != ModeAuto && mode != ModeStaged && mode != ModeMCPOnly {
+		return fmt.Errorf("adapter %s: unknown install mode %q", d.ID, mode)
+	}
+	if mode == ModeAuto {
+		if strings.TrimSpace(d.Hooks.Target) == "" {
+			return fmt.Errorf("adapter %s: auto install needs hooks.target", d.ID)
+		}
+		if strings.TrimSpace(d.Hooks.Schema) == "" {
+			return fmt.Errorf("adapter %s: auto install needs hooks.schema", d.ID)
+		}
+		if len(d.Hooks.Events) == 0 {
+			return fmt.Errorf("adapter %s: auto install needs hooks.events", d.ID)
+		}
+	}
+	if d.Hooks.InstallKind != "" {
+		switch d.Hooks.InstallKind {
+		case "json_merge", "toml_merge", "json_bundle", "yaml_snippet", "patch_fragment", "plugin_bundle", "mcp_only", "manual", "none":
+		default:
+			return fmt.Errorf("adapter %s: unknown hooks.install_kind %q", d.ID, d.Hooks.InstallKind)
+		}
+	}
+	return nil
 }
 
 // Defaults returns the embedded adapters.

@@ -1,0 +1,40 @@
+id: prime-agent
+title: Prime Agent
+detect:
+  - ~/.prime
+  - ~/.prime/agent
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events: []
+  install_kind: mcp_only
+  schema: none
+  scope: global
+  target: ""
+  injection: none
+  needs_trust: false
+  notes: "Prime Agent 0.10 移除了 0.9 的 TypeScript extensions，也没有 hook 面；生命周期捕获与 managed workstream 均不声明。依据：docs/mcp-install.md#Prime Agent；docs/support-matrix.md: Prime Agent。"
+mcp:
+  kind: http
+  target: ~/.prime/agent/settings.json
+  shape: mcpServers
+  notes: "$PRIME_AGENT_CODING_AGENT_DIR/settings.json（默认 ~/.prime/agent/settings.json）的 mcpServers；HTTP 条目 type:http + url，token 只以 \"bearerTokenEnvVar\": \"AI_MEMORY_AUTH_TOKEN\" 引用（Prime 0.10 只有该变量存在或 OAuth 时才把 server 当 connected 并告知模型）。项目 .prime/agent/settings.json 可覆盖。模型经 Python REPL `mcp.call_tool` 访问；无 session id/cwd，project-scoped 调用需显式传 workspace/project。依据：docs/mcp-install.md#Prime Agent（0.10.0）。"
+session:
+  roots: []
+  format: unknown
+  notes: "无 hooks、无 transcript 契约。依据：docs/support-matrix.md: Prime Agent。"
+tier: readonly
+capabilities:
+  - read
+  - mcp
+install_mode: mcp_only
+docs:
+  - ai-memory/docs/support-matrix.md#Prime Agent
+  - ai-memory/docs/mcp-install.md#Prime Agent
+  - https://github.com/PrimeIntellect-ai/prime-agent
+notes: "bearerTokenEnvVar 是 Prime 特有字段，不能写 headers。"

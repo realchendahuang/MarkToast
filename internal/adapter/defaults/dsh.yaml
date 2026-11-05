@@ -19,13 +19,17 @@ hooks:
     - SubagentStart
     - SubagentStop
   install_kind: patch_fragment
+  schema: none
+  scope: global
   target: ~/.dsh/profiles/{profile}/cordis.patch.yml
   injection: mcp_handoff
-  notes: "通过 @deepseek-ai/dsh-hooks-claude-code 桥（BSD-3-Clause，只执行 command hook）；SessionStart detached，stdout 注入不可靠 → 用 MCP handoff。patch 需用户手合并。"
+  needs_trust: false
+  notes: "通过官方 @deepseek-ai/dsh-hooks-claude-code 桥消费一份生成的 Claude Code hooks.json，桥只投递 7 个事件（无 PreCompact/SessionEnd）；再手合并 - insert: 到 $DSH_HOME/profiles/<profile>/cordis.patch.yml。SessionStart detached，stdout 注入不可靠 → 用 MCP handoff；已结束会话用 finalize-session --agent dsh 关闭。依据：docs/mcp-install.md#DeepSeek-Harness-DSH；render_shared.rs: DSH_EVENTS；install_hooks.rs: DSH 分支（hooks.json 在 data dir）。"
 mcp:
   kind: patch_fragment
   target: ~/.dsh/profiles/{profile}/cordis.patch.yml
-  notes: "@deepseek-ai/dsh-mcp-client 0.2.1-rc.2（MIT，旧 npm 版本曾 BSD-3，须锁版本）；insert 一行 id/name/config，transport: streamable-http + serverName + url + headers。"
+  shape: ""
+  notes: "无固定 MCP 配置文件：@deepseek-ai/dsh-mcp-client 插件条目插进 profile 的 cordis.patch.yml（web profile 会热重载）；install-mcp 只打印片段、拒绝 --apply。依据：docs/mcp-install.md#DeepSeek-Harness-DSH；本仓库 docs/HARNESS-INTEGRATION.md 的 DSH 核查。"
 session:
   roots:
     - ~/.dsh/sessions
@@ -37,4 +41,8 @@ capabilities:
   - read
   - inject
   - mcp
+install_mode: staged
+docs:
+  - ai-memory/docs/support-matrix.md#DeepSeek Harness (DSH)
+  - ai-memory/docs/mcp-install.md#DeepSeek-Harness-DSH
 notes: "无固定 MCP 配置文件；静态兜底是受管 AGENTS.md 区块（约 65536 bytes），但不能替代 MCP。"

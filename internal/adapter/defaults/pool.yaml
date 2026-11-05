@@ -1,0 +1,41 @@
+id: pool
+title: Pool (Poolside Agent CLI)
+detect: []
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events:
+    - SessionStart
+    - UserPromptSubmit
+    - PreToolUse
+    - PostToolUse
+    - Stop
+  install_kind: yaml_snippet
+  schema: yaml
+  scope: project
+  target: .poolside/settings.yaml
+  injection: mcp_handoff
+  needs_trust: false
+  notes: "Pool 只读 repo 根的 .poolside/settings.yaml（committed project 文件），所以 ai-memory 只 stage 脚本并打印可粘贴的 hooks: 片段，不写仓库文件。5 个 Claude 形事件；Stop 是回合边界、无真正 session-end，最终回合后 finalize-session --agent pool。SessionStart stdout 注入未证实 → handoff 走 MCP（memory_handoff_list + accept）。依据：docs/install.md#Pool-Poolside-Agent-CLI；install_hooks.rs: build_pool_settings_yaml / apply_to_pool；render_shared.rs: POOL_EVENTS；docs/support-matrix.md: Pool。"
+mcp:
+  kind: none
+  target: ""
+  shape: ""
+  notes: "事实源未提供 Pool 的 MCP 配置路径与 install-mcp client（Poolside 原生 session-store 契约也未证实），MCP 接入待核实。依据：docs/support-matrix.md: Pool（Hooks-only）。"
+session:
+  roots: []
+  format: unknown
+  notes: "Poolside 原生 session-store 契约未证实，无 managed workstream。依据：docs/support-matrix.md: Pool。"
+tier: projection
+capabilities:
+  - read
+install_mode: staged
+docs:
+  - ai-memory/docs/support-matrix.md#Pool
+  - ai-memory/docs/install.md#Pool-Poolside-Agent-CLI
+notes: "别名 poolside；hooks 配置是项目级文件，MarkToast 只生成 staged 片段。"

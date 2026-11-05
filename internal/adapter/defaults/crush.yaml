@@ -1,0 +1,38 @@
+id: crush
+title: Crush
+detect: []
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events: []
+  install_kind: none
+  schema: none
+  scope: global
+  target: ""
+  injection: none
+  needs_trust: false
+  notes: "事实源只提供 managed 路径（ai-memory run crush），没有 lifecycle-hook 安装器。依据：docs/support-matrix.md: Crush（Managed-only）；docs/managed-workstreams.md 原生适配表。"
+mcp:
+  kind: none
+  target: ""
+  shape: ""
+  notes: "事实源未给出 Crush 的 MCP 配置写入方式（无 install-mcp client），MCP 接入待核实。依据：docs/support-matrix.md: Crush。"
+session:
+  roots:
+    - "{workspace}/.crush/crush.db"
+  format: sqlite
+  notes: "实际 data dir 由 Crush JSON 的 options.data_directory 决定，否则取最近的 .crush 到 git worktree 根，否则 <cwd>/.crush；crush.db 只读打开。依据：docs/managed-workstreams.md 原生适配表。"
+session_logs: "{workspace}/.crush/crush.db"
+tier: readonly
+capabilities:
+  - read
+install_mode: staged
+docs:
+  - ai-memory/docs/support-matrix.md#Crush
+  - ai-memory/docs/managed-workstreams.md
+notes: "Managed-only（ai-memory run crush）；无 hooks/MCP 安装器，MarkToast 只读会话库。"

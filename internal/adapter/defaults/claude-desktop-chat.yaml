@@ -1,0 +1,40 @@
+id: claude-desktop-chat
+title: Claude Desktop (Chat)
+detect:
+  - ~/Library/Application Support/Claude
+  - ~/.config/Claude
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events: []
+  install_kind: mcp_only
+  schema: none
+  scope: global
+  target: ""
+  injection: none
+  needs_trust: false
+  notes: "普通 Chat surface 不运行 lifecycle hooks，无法捕获 prompt/tool 或注入 session 边界 handoff；Cowork 的捕获也未声明。依据：docs/mcp-install.md#Claude Desktop；docs/support-matrix.md: Claude Desktop (Chat)。"
+mcp:
+  kind: stdio_bridge
+  target: ~/Library/Application Support/Claude/claude_desktop_config.json
+  shape: mcpServers
+  notes: "Claude Desktop JSON 只支持 stdio server，接 HTTP 端点必须经社区 mcp-remote shim：command=npx, args=[-y, mcp-remote, <hub>/mcp]。MarkToast 生成的是 npx -y mcp-remote http://127.0.0.1:3777/mcp 这个 stdio shim（installer 已按 id 特判）。macOS 路径如上；Linux 是 ~/.config/Claude/claude_desktop_config.json（XDG 时 $XDG_CONFIG_HOME/Claude/）；Windows 为 %APPDATA%\\Claude\\ 或 MSIX 的 LocalCache\\Roaming\\Claude\\。改完要完全退出并重启 App。依据：docs/mcp-install.md#Claude Desktop。"
+session:
+  roots: []
+  format: unknown
+  notes: "Chat 会话存储未在事实源给出可读契约；Code tab 会话走 claude-desktop-code。依据：docs/mcp-install.md#Claude Desktop。"
+tier: readonly
+capabilities:
+  - read
+  - mcp
+install_mode: mcp_only
+docs:
+  - ai-memory/docs/support-matrix.md#Claude Desktop (Chat)
+  - ai-memory/docs/mcp-install.md#Claude Desktop
+  - https://www.npmjs.com/package/mcp-remote
+notes: "与 Claude Desktop Code tab（claude-desktop-code）是两个 id；CLI 管理的是本地 JSON 配置，不是账号级 connector 或 .mcpb 扩展。"

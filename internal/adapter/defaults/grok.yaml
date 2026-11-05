@@ -1,0 +1,51 @@
+id: grok
+title: Grok Build CLI
+detect:
+  - ~/.grok
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events:
+    - SessionStart
+    - UserPromptSubmit
+    - PreToolUse
+    - PostToolUse
+    - PreCompact
+    - Stop
+    - SessionEnd
+    - SubagentStart
+    - SubagentStop
+  install_kind: json_merge
+  schema: bundle
+  scope: global
+  target: ~/.grok/hooks/marktoast.json
+  injection: stdout_additional_context
+  needs_trust: false
+  notes: "hooks 写 $GROK_HOME/hooks/marktoast.json（Grok 发现 hooks/*.json；用 MarkToast 自己的文件名，第三方文件不受影响、也不与 ai-memory 互相覆盖）；9 个事件，无 PostToolUseFailure（Grok 词汇未核实）。Grok 丢弃 SessionStart/UserPromptSubmit 的 stdout，handoff 在第一个 PostToolUse 以 additionalContext 交付；--apply 另写 $GROK_HOME/rules/ai-memory-handoff.md 让首轮经 use_tool 调 memory_handoff_list。依据：render_shared.rs: GROK_EVENTS；install_hooks.rs: grok_hooks_path；docs/mcp-install.md#Grok Build CLI；docs/support-matrix.md: Grok Build CLI。"
+mcp:
+  kind: http
+  target: ~/.grok/config.toml
+  shape: mcp_servers
+  notes: "[mcp_servers.<name>]：url + enabled + [mcp_servers.<name>.headers]（注意与 Codex 的 http_headers 不同）；字符串支持 ${VAR} 展开，可写 Authorization = \"Bearer ${AI_MEMORY_AUTH_TOKEN}\"。依据：docs/mcp-install.md#Grok Build CLI。"
+session:
+  roots:
+    - ~/.grok/sessions
+  format: jsonl
+  notes: "$GROK_HOME/sessions/*/*/chat_history.jsonl。依据：docs/managed-workstreams.md 原生适配表。"
+session_logs: ~/.grok/sessions
+tier: projection
+capabilities:
+  - read
+  - inject
+  - mcp
+install_mode: auto
+docs:
+  - ai-memory/docs/support-matrix.md#Grok Build CLI
+  - ai-memory/docs/mcp-install.md#Grok Build CLI
+  - ai-memory/docs/install.md#Grok-Build-CLI
+notes: "Grok 只能通过 use_tool 元工具访问 MCP 工具，首轮规则文件是 handoff 可达的关键；Grok 不接受 SessionStart/UserPromptSubmit 注入。"

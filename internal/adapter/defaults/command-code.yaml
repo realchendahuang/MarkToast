@@ -1,0 +1,46 @@
+id: command-code
+title: Command Code
+detect:
+  - ~/.commandcode
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events:
+    - SessionStart
+    - PreToolUse
+    - PostToolUse
+    - Stop
+  install_kind: json_merge
+  schema: claude_no_matcher
+  scope: global
+  target: ~/.commandcode/settings.json
+  injection: stdout_additional_context
+  needs_trust: false
+  notes: "只用 4 个稳定事件（Mods 暴露更多生命周期事件但仍是实验性）；nested handler 形但外层不带 matcher——带 matcher 时 SessionStart/Stop 不触发。Stop 只是回合边界，最终回合后 finalize-session --agent command-code。依据：render_shared.rs: COMMAND_CODE_EVENTS/COMMAND_CODE_PROFILE（NestedWithoutMatcher）；install_hooks.rs: command_code_settings_path；docs/mcp-install.md#Command Code；docs/support-matrix.md: Command Code。"
+mcp:
+  kind: http
+  target: ~/.commandcode/mcp.json
+  shape: mcpServers
+  notes: "~/.commandcode/mcp.json 的 mcpServers；与 hooks 的 settings.json 分开。依据：docs/support-matrix.md: Command Code（MCP config ~/.commandcode/mcp.json）。"
+session:
+  roots:
+    - ~/.commandcode/projects
+  format: jsonl
+  notes: "~/.commandcode/projects/*/<uuid>.jsonl（v3，自描述 append-only；header id 与 cwd 必须一致）。依据：docs/managed-workstreams.md 原生适配表。"
+session_logs: ~/.commandcode/projects
+tier: projection
+capabilities:
+  - read
+  - inject
+  - mcp
+install_mode: auto
+docs:
+  - ai-memory/docs/support-matrix.md#Command Code
+  - ai-memory/docs/install.md#Command-Code
+  - ai-memory/docs/mcp-install.md#Command Code
+notes: "可执行名 command-code（Windows 上 cmdc）；--session <uuid> 续接。"

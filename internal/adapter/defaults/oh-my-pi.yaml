@@ -1,0 +1,41 @@
+id: oh-my-pi
+title: Oh My Pi (OMP)
+detect:
+  - ~/.omp
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events: []
+  install_kind: plugin_bundle
+  schema: ""
+  scope: global
+  target: ~/.omp/agent/extensions/ai-memory-omp.ts
+  injection: stdout_additional_context
+  needs_trust: false
+  notes: "OMP 用 TypeScript extension 接 hooks：<agent dir>/extensions/ai-memory-omp.ts；agent dir 默认 ~/.omp/agent，命名 profile 为 ~/.omp/profiles/<name>/agent，受 PI_CODING_AGENT_DIR / PI_CONFIG_DIR 影响（写错目录会静默不加载）。extension 内部映射 OMP 生命周期事件。依据：install_hooks.rs: omp_extension_path_with（.omp/agent/extensions/ai-memory-omp.ts）；docs/support-matrix.md: Oh My Pi / OMP。"
+mcp:
+  kind: http
+  target: ~/.omp/agent/mcp.json
+  shape: mcpServers
+  notes: "OMP 原生 mcp.json 在 agent dir（profile/env 会移动它）；HTTP MCP 条目。依据：docs/mcp-install.md#Oh-My-Pi-OMP；install_mcp.rs 路径解析。"
+session:
+  roots:
+    - ~/.omp/agent/sessions
+  format: jsonl
+  notes: "<agent dir>/sessions/**/*.jsonl；也支持 XDG 会话目录 $XDG_DATA_HOME/omp/sessions。依据：docs/managed-workstreams.md 原生适配表。"
+session_logs: ~/.omp/agent/sessions
+tier: projection
+capabilities:
+  - read
+  - inject
+  - mcp
+install_mode: staged
+docs:
+  - ai-memory/docs/support-matrix.md#Oh My Pi / OMP
+  - ai-memory/docs/mcp-install.md#Oh-My-Pi-OMP
+notes: "别名 omp/oh-my-pi；extension 与 mcp.json 必须落在同一 agent dir。"

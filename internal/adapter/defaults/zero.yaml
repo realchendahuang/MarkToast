@@ -1,0 +1,45 @@
+id: zero
+title: Zero (Gitlawb/zero)
+detect:
+  - ~/.config/zero
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events:
+    - sessionStart
+    - sessionEnd
+    - beforeTool
+    - afterTool
+    - specialistStart
+    - specialistStop
+  install_kind: json_bundle
+  schema: exec_list
+  scope: global
+  target: ~/.config/zero/hooks.json
+  injection: mcp_handoff
+  needs_trust: false
+  notes: "hooks.json 形如 {enabled:true, hooks:[{id,name,event,command,args,enabled}]}，exec 形无 shell；6 个事件（specialist* 映射为 subagent 事件）。Zero 丢弃 sessionStart stdout → 不能在启动时注入 handoff，只能经 MCP memory_handoff_accept（或让模型自己调）。Zero 的 hook 跑在 sandbox 里：默认禁网（含 loopback），事件先落 <data_dir>/hook-spool/；要么在全局 ~/.config/zero/config.json 放行网络/additionalWriteRoots，要么跑 hook-drain，否则事件堆积。依据：render_shared.rs: ZERO_EVENTS/build_zero_hooks_config；install_hooks.rs: zero hooks 路径；docs/mcp-install.md#Zero-Gitlawb-zero。"
+mcp:
+  kind: http
+  target: ~/.config/zero/config.json
+  shape: mcp.servers
+  notes: "~/.config/zero/config.json 的 mcp.servers，条目 type:http + url + headers；非默认 XDG 用 --config-file。依据：docs/mcp-install.md#Zero-Gitlawb-zero。"
+session:
+  roots: []
+  format: unknown
+  notes: "事实源未给出 Zero 原生 transcript store 契约。依据：docs/support-matrix.md: Zero。"
+tier: projection
+capabilities:
+  - read
+  - mcp
+install_mode: auto
+docs:
+  - ai-memory/docs/support-matrix.md#Zero
+  - ai-memory/docs/mcp-install.md#Zero-Gitlawb-zero
+  - https://github.com/Gitlawb/zero
+notes: "exec_list bundle（hooks.json）与 mcp.servers（config.json）的合并幂等、可回滚。注意 Zero 的 hook 沙箱仍要求用户放行网络或跑 hook-drain，安装器只改配置、不改沙箱策略。"

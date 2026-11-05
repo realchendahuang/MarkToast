@@ -1,0 +1,46 @@
+id: opencode
+title: OpenCode
+detect:
+  - ~/.config/opencode
+instruction_file:
+  global: ""
+  project: "{workspace}/AGENTS.md"
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events:
+    - session.created
+    - session.idle
+    - session.deleted
+    - session.compacted
+  install_kind: plugin_bundle
+  schema: plugin
+  scope: global
+  target: ~/.config/opencode/plugins/ai-memory.ts
+  injection: stdout_additional_context
+  needs_trust: false
+  notes: "hooks 以 TypeScript plugin 形式装在 ~/.config/opencode/plugins/ai-memory.ts，插件启动时加载；V1（function plugin）与 V2（{id,setup} / 事件 API）契约不同，需按 opencode --version 主版本探测。插件订阅 OpenCode 事件 API（session.created/idle/deleted/compacted 等），首轮注入 startup context。依据：install_hooks.rs: opencode_plugin_path；docs/install.md#OpenCode；docs/support-matrix.md: OpenCode。"
+mcp:
+  kind: http
+  target: ~/.config/opencode/opencode.json
+  shape: mcp.servers
+  notes: "V1 是根 mcp 下的直接条目，V2 是嵌套 mcp.servers；.jsonc 带注释时只能打印片段手合并（apply 只写严格 JSON）。依据：docs/mcp-install.md（OpenCode V2 段）；install_mcp.rs: McpClient::OpenCode/OpenCode2。"
+session:
+  roots:
+    - ~/.local/share/opencode
+  format: sqlite
+  notes: "~/.local/share/opencode/opencode.db 只读打开；V1/V2 分别用 session 与 session_v2 表。依据：docs/managed-workstreams.md 原生适配表。"
+session_logs: ~/.local/share/opencode/opencode.db
+tier: projection
+capabilities:
+  - read
+  - inject
+  - mcp
+install_mode: staged
+docs:
+  - ai-memory/docs/support-matrix.md#OpenCode
+  - ai-memory/docs/install.md#OpenCode
+  - ai-memory/docs/mcp-install.md
+notes: "V1/V2 由 executable 版本探测；插件是 TS 源码，故 staged。"

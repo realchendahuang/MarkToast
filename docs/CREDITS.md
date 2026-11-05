@@ -19,6 +19,21 @@ MarkToast 不是从石头里蹦出来的。它的产品形态、存储格式和�
 | [Wails](https://github.com/wailsapp/wails) | MIT | 桌面壳框架（v3.1.0）。 |
 | [moejs](https://github.com/MoeForge/moejs) | Apache-2.0 | 后期插件引擎候选（适配器插件化）。 |
 
+## 移植说明：harness 接线知识（来自 ai-memory）
+
+MarkToast 的 40 份 harness 描述符（`internal/adapter/defaults/*.yaml`）参考
+[ai-memory](https://github.com/akitaonrails/ai-memory)（MIT）的
+`docs/support-matrix.md`、`docs/mcp-install.md`、`docs/install.md` 与
+`docs/managed-harness-contributions.md` 重写而来：
+
+- 移植的是**接线事实**（配置路径、hook 事件名、注入机制、版本差异、已知坑），
+  每家的 `notes` / `hooks.notes` / `mcp.notes` 标注依据；不复制它的 Rust 引擎、
+  wiki / consolidation / managed workstream 等实现。
+- 它的 hook 脚本模板（`hooks/<agent>/`，MIT）没有被复制进本仓库；MarkToast 用
+  一个 `marktoast hook` 命令 + 通用安装引擎替代。
+- `managed-harness-contributions.md` 的检查清单被当作适配器验收标准。
+- 若未来直接移植代码片段，会在文件头保留原版权与 MIT 许可声明。
+
 ## 记忆格式与协议
 
 | 项目 | 许可 | 我们借鉴了什么 |

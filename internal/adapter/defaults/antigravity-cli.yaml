@@ -1,0 +1,48 @@
+id: antigravity-cli
+title: Antigravity CLI (agy)
+detect:
+  - ~/.gemini/config
+  - ~/.gemini/antigravity-cli
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events:
+    - SessionStart
+    - PreInvocation
+    - PreToolUse
+    - PostToolUse
+    - Stop
+  install_kind: json_merge
+  schema: named_group
+  scope: global
+  target: ~/.gemini/config/hooks.json
+  injection: stdout_additional_context
+  needs_trust: false
+  notes: "hooks.json 是命名分组格式：顶层每个 key 是一个 hook 组，组内事件数组；工具事件 PreToolUse/PostToolUse 用 nested+matcher，生命周期事件 SessionStart/PreInvocation/Stop 用 flat。SessionStart 把 handoff 作为 injectSteps 系统消息注入；PreInvocation 的 invocationNum=0 标记每轮用户输入开始；无 conversation-end 事件，需 finalize-session。依据：render_shared.rs: ANTIGRAVITY_TOOL_EVENTS / ANTIGRAVITY_LIFECYCLE_EVENTS；install_hooks.rs: antigravity_hooks_path（~/.gemini/config/hooks.json）；docs/mcp-install.md#Antigravity CLI。"
+mcp:
+  kind: http
+  target: ~/.gemini/config/mcp_config.json
+  shape: mcpServers
+  notes: "独立 mcp_config.json（不是 Gemini 的 settings.json）；streamable HTTP 用 serverUrl（不是 httpUrl），可带 timeout。桌面 App 与 IDE 读同一份全局 hooks/mcp 配置。依据：docs/mcp-install.md#Antigravity CLI；install_mcp.rs 路径解析。"
+session:
+  roots:
+    - ~/.gemini/antigravity-cli
+  format: jsonl
+  notes: "conversations/<id>.db 元数据 + history.jsonl（用户 prompt）+ brain/<id>/.system_generated/logs/transcript*.jsonl；conversation store 未解码，步骤来自 hook 捕获。依据：docs/managed-workstreams.md 原生适配表。"
+session_logs: ~/.gemini/antigravity-cli
+tier: projection
+capabilities:
+  - read
+  - inject
+  - mcp
+install_mode: auto
+docs:
+  - ai-memory/docs/support-matrix.md#Antigravity CLI
+  - ai-memory/docs/mcp-install.md#Antigravity CLI
+  - https://antigravity.google/docs/hooks
+notes: "别名 agy/antigravity；与 gemini-cli 共享 ~/.gemini 根但配置文件名不同（detect 有重叠，安装器按 id 区分）。技能根：~/.gemini/config/skills（App/IDE）与 ~/.gemini/antigravity-cli/skills（CLI），不读 ~/.agents/skills。"

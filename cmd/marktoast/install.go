@@ -1,36 +1,117 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/realchendahuang/MarkToast/internal/adapter"
+	"github.com/realchendahuang/MarkToast/internal/harness"
 	"github.com/realchendahuang/MarkToast/internal/hub"
+	"github.com/realchendahuang/MarkToast/internal/plugin"
 )
 
-// newAdapterInstallCmd wires a harness to MarkToast.
+// The harness install surface.
 //
-// Only ZCode is fully automated for now; DSH and Hermes get staged files and
-// exact instructions because both gate or own their configuration files.
-// Configuration mutations are opt-in via --apply: by default we only print
-// the plan, so a user can review before anything on disk changes.
-func newAdapterInstallCmd() *cobra.Command {
-	var apply bool
+// Every built-in adapter is installable in one of three modes, declared in its
+// YAML descriptor:
+//
+//   - auto: MarkToast merges hooks/MCP into the harness's own config. Dry run
+//     by default; --apply performs the merge (backup + atomic write).
+//   - staged: MarkToast writes paste-ready snippets to
+//     ~/.marktoast/adapters/<id>/ plus a README with exact steps.
+//   - mcp_only: only the MCP registration is staged (no lifecycle hooks).
+//
+// Adapters marked auto whose on-disk schema we cannot merge safely fall back to
+// staged automatically; the report says why.
+
+func newAdapterListCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "install <id>",
-		Short: "Wire a harness adapter (zcode fully automatic; dsh/hermes staged)",
-		Args:  cobra.ExactArgs(1),
+		Use:   "list",
+		Short: "List adapters with install mode, detection and install state",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return installAdapter(args[0], apply)
+			if cfg, err := resolve(); err == nil {
+				if host, loadErr := plugin.Load(cfg.Root); loadErr != nil {
+					fmt.Fprintln(os.Stderr, "plugin:", loadErr)
+				} else if host != nil {
+					defer host.Close()
+				}
+			}
+			adapters, err := loadAdapters()
+			if err != nil {
+				return err
+			}
+			var auto, staged, mcpOnly, detected, wired, stagedReady, downgraded int
+			fmt.Printf("%-20s %-10s %-9s %-8s %-10s %s\n", "ID", "MODE", "DETECTED", "STAGED", "INSTALLED", "TITLE")
+			for _, descriptor := range adapters {
+				status := harness.StatusOf(descriptor, harness.Options{})
+				mode := descriptor.EffectiveInstallMode()
+				label := mode
+				if mode == adapter.ModeAuto && !harness.Supported(descriptor) {
+					label = "auto*"
+					downgraded++
+				}
+				switch mode {
+				case adapter.ModeAuto:
+					auto++
+				case adapter.ModeMCPOnly:
+					mcpOnly++
+				default:
+					staged++
+				}
+				if status.Detected {
+					detected++
+				}
+				if status.Installed {
+					wired++
+				}
+				if status.StagedReady {
+					stagedReady++
+				}
+				fmt.Printf("%-20s %-10s %-9s %-8s %-10s %s\n",
+					descriptor.ID, label, yesNo(status.Detected), yesNo(status.StagedReady), yesNo(status.Installed), descriptor.Title)
+			}
+			fmt.Printf("\n%d adapters: %d auto, %d staged, %d mcp_only | %d detected, %d wired, %d staged snippets\n",
+				len(adapters), auto, staged, mcpOnly, detected, wired, stagedReady)
+			if stagedReady > 0 {
+				fmt.Println("staged snippets live under ~/.marktoast/adapters/<id>/")
+			}
+			if downgraded > 0 {
+				fmt.Println("* auto descriptor whose schema cannot be merged safely yet; install falls back to staged")
+			}
+			fmt.Println("hint: `marktoast adapters install <id>` dry-runs; add --apply to write")
+			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&apply, "apply", false, "write changes to the harness configuration")
+	return cmd
+}
+
+func newAdapterInstallCmd() *cobra.Command {
+	var (
+		apply     bool
+		workspace string
+	)
+	cmd := &cobra.Command{
+		Use:   "install <id>",
+		Short: "Wire a harness adapter (dry run unless --apply)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			descriptor, opts, err := adapterTarget(args[0], apply, workspace)
+			if err != nil {
+				return err
+			}
+			report, err := harness.Install(descriptor, opts)
+			if err != nil {
+				return err
+			}
+			printInstallReport(report, apply)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&apply, "apply", false, "write the changes (default is a dry run)")
+	cmd.Flags().StringVar(&workspace, "workspace", "", "project directory for project-scoped adapters (default: current directory)")
 	return cmd
 }
 
@@ -38,484 +119,261 @@ func newAdapterUninstallCmd() *cobra.Command {
 	var apply bool
 	cmd := &cobra.Command{
 		Use:   "uninstall <id>",
-		Short: "Remove MarkToast entries from a harness configuration",
+		Short: "Remove MarkToast entries and staged snippets for an adapter",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return uninstallAdapter(args[0], apply)
+			descriptor, opts, err := adapterTarget(args[0], apply, "")
+			if err != nil {
+				return err
+			}
+			report, err := harness.Uninstall(descriptor, opts)
+			if err != nil {
+				return err
+			}
+			printUninstallReport(report, apply)
+			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&apply, "apply", false, "write changes to the harness configuration")
+	cmd.Flags().BoolVar(&apply, "apply", false, "write the changes (default is a dry run)")
 	return cmd
 }
 
 func newAdapterStatusCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "status",
-		Short: "Show adapter detection and install state",
+	cmd := &cobra.Command{
+		Use:   "status [id]",
+		Short: "Show detection and install state for adapters",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := resolve()
+			adapters, err := loadAdapters()
 			if err != nil {
 				return err
 			}
-			adapters, err := adapter.All(userAdaptersDir())
-			if err != nil {
-				return err
+			if len(args) == 1 {
+				descriptor, _, err := adapterTarget(args[0], false, "")
+				if err != nil {
+					return err
+				}
+				printAdapterStatus(descriptor)
+				return nil
 			}
-			home, _ := os.UserHomeDir()
-			for _, a := range adapters {
-				detected := false
-				for _, p := range a.Detect {
-					expanded := expandHome(p, home)
-					if _, err := os.Stat(expanded); err == nil {
-						detected = true
-						break
-					}
+			for _, descriptor := range adapters {
+				status := harness.StatusOf(descriptor, harness.Options{})
+				if !status.Detected && !status.Installed && !status.StagedReady {
+					continue
 				}
-				staged := "no"
-				if _, err := os.Stat(stagedDir(a.ID)); err == nil {
-					staged = "yes"
-				}
-				installed := "no"
-				if a.ID == "zcode" && zcodeHasMarkToast(home) {
-					installed = "yes"
-				}
-				fmt.Printf("%-12s detected=%-3v staged=%-3s installed=%s\n", a.ID, detected, staged, installed)
+				printAdapterStatus(descriptor)
 			}
-			fmt.Printf("\nrepository: %s\n", cfg.Root)
+			fmt.Println("\n(tip: `marktoast adapters list` shows all adapters)")
 			return nil
 		},
 	}
+	return cmd
 }
 
-func installAdapter(id string, apply bool) error {
-	cfg, err := resolve()
+// adapterTarget resolves the descriptor plus a ready-to-use Options.
+func adapterTarget(id string, apply bool, workspace string) (adapter.Descriptor, harness.Options, error) {
+	adapters, err := loadAdapters()
 	if err != nil {
-		return err
+		return adapter.Descriptor{}, harness.Options{}, err
 	}
-	adapters, err := adapter.All(userAdaptersDir())
-	if err != nil {
-		return err
-	}
-	var desc *adapter.Descriptor
-	for i := range adapters {
-		if adapters[i].ID == id {
-			desc = &adapters[i]
+	var descriptor adapter.Descriptor
+	found := false
+	for _, candidate := range adapters {
+		if candidate.ID == id {
+			descriptor = candidate
+			found = true
 			break
 		}
 	}
-	if desc == nil {
-		return fmt.Errorf("unknown adapter %q (try `marktoast adapters list`)", id)
+	if !found {
+		return adapter.Descriptor{}, harness.Options{}, unknownAdapterError(id, adapters)
 	}
-	switch id {
-	case "zcode":
-		return installZCode(*desc, cfg.Root, apply)
-	case "dsh":
-		return stagePatchAdapter(*desc, cfg.Root, dshInstructions())
-	case "hermes":
-		return stagePatchAdapter(*desc, cfg.Root, hermesInstructions())
-	default:
-		return fmt.Errorf("adapter %q has no installer yet; use `marktoast adapters list` to see supported ids", id)
-	}
-}
-
-func uninstallAdapter(id string, apply bool) error {
 	cfg, err := resolve()
 	if err != nil {
-		return err
+		return adapter.Descriptor{}, harness.Options{}, err
 	}
-	_ = cfg
-	if id != "zcode" {
-		fmt.Printf("nothing automatic to remove for %q; remove the staged files under ~/.marktoast/adapters/%s/ and the snippets you pasted.\n", id, id)
-		return nil
-	}
-	home, _ := os.UserHomeDir()
-	path := zcodeConfigPath(home)
-	conf, err := loadJSONMap(path)
+	binary, err := os.Executable()
 	if err != nil {
-		return err
+		return adapter.Descriptor{}, harness.Options{}, err
 	}
-	if conf == nil {
-		return fmt.Errorf("%s not found", path)
+	opts := harness.Options{
+		Root:      cfg.Root,
+		Binary:    binary,
+		Apply:     apply,
+		Workspace: workspace,
 	}
-	changed := removeMarkToastHooks(conf)
-	if changedMcp := removeZCodeMCP(conf); changedMcp {
-		changed = true
+	if apply {
+		token, err := hub.EnsureToken(cfg.Root)
+		if err != nil {
+			return descriptor, opts, err
+		}
+		opts.Token = token
 	}
-	if !changed {
-		fmt.Println("no MarkToast entries found in ZCode config")
-		return nil
+	return descriptor, opts, nil
+}
+
+func loadAdapters() ([]adapter.Descriptor, error) {
+	return adapter.All(userAdaptersDir())
+}
+
+func unknownAdapterError(id string, adapters []adapter.Descriptor) error {
+	ids := make([]string, 0, len(adapters))
+	for _, descriptor := range adapters {
+		ids = append(ids, descriptor.ID)
+	}
+	idLower := strings.ToLower(strings.TrimSpace(id))
+	for _, candidate := range ids {
+		candidateLower := strings.ToLower(candidate)
+		if candidateLower == idLower {
+			return fmt.Errorf("unknown adapter %q (did you mean %q?); run `marktoast adapters list`", id, candidate)
+		}
+	}
+	for _, candidate := range ids {
+		candidateLower := strings.ToLower(candidate)
+		if idLower != "" && (strings.Contains(candidateLower, idLower) || strings.Contains(idLower, candidateLower)) {
+			return fmt.Errorf("unknown adapter %q (did you mean %q?); run `marktoast adapters list`", id, candidate)
+		}
+	}
+	return fmt.Errorf("unknown adapter %q; %d adapters are available, run `marktoast adapters list` (known ids: %s)",
+		id, len(ids), strings.Join(ids, ", "))
+}
+
+func printInstallReport(report harness.Report, apply bool) {
+	title := report.Title
+	if title == "" {
+		title = report.ID
+	}
+	if report.Downgraded {
+		fmt.Printf("! %s: automatic install unavailable (%s)\n", title, report.Reason)
+		fmt.Println("  falling back to staged snippets so nothing is overwritten")
+	}
+	switch {
+	case report.Mode == adapter.ModeAuto && !report.Staged:
+		if !apply {
+			fmt.Printf("Dry run (no files changed): %s\n", title)
+			fmt.Printf("  mode:   %s (schema %s)\n", report.Mode, report.Schema)
+			fmt.Printf("  target: %s\n", report.Target)
+			if report.MCPTarget != "" && report.MCPTarget != report.Target {
+				fmt.Printf("  mcp:    %s\n", report.MCPTarget)
+			}
+			fmt.Printf("  events: %s\n", strings.Join(report.Events, ", "))
+			if report.Changed {
+				fmt.Println("  merge:  would add MarkToast hooks/MCP entries (idempotent, third-party entries kept)")
+			} else {
+				fmt.Println("  merge:  already up to date; --apply is a no-op")
+			}
+		} else {
+			fmt.Printf("✔ wired %s to MarkToast\n", title)
+			if report.Target != "" {
+				fmt.Printf("  config: %s\n", report.Target)
+			}
+			if report.MCPTarget != "" && report.MCPTarget != report.Target {
+				fmt.Printf("  mcp:    %s\n", report.MCPTarget)
+			}
+			if report.Backup != "" {
+				fmt.Printf("  backup: %s\n", report.Backup)
+			}
+			fmt.Printf("  events: %s\n", strings.Join(report.Events, ", "))
+			fmt.Printf("  binary: %s\n", report.Binary)
+			fmt.Println("  next:   restart the harness; `marktoast serve` must be running before its first session")
+		}
+	default:
+		if !apply {
+			fmt.Printf("Dry run (no files changed): %s\n", title)
+			fmt.Printf("  mode:   %s\n", report.Mode)
+			fmt.Printf("  dir:    %s\n", report.StagedDir)
+			for _, file := range report.Files {
+				fmt.Printf("  file:   %s\n", file)
+			}
+			for index, step := range report.Steps {
+				fmt.Printf("  step %d: %s\n", index+1, step)
+			}
+		} else {
+			fmt.Printf("✔ staged %s snippets in %s\n", title, report.StagedDir)
+			for _, file := range report.Files {
+				fmt.Printf("  file: %s\n", file)
+			}
+			for index, step := range report.Steps {
+				fmt.Printf("  step %d: %s\n", index+1, step)
+			}
+			fmt.Printf("  read: %s/README.txt for the exact paste steps and pitfalls\n", report.StagedDir)
+		}
+	}
+	if len(report.Warnings) > 0 {
+		for _, warning := range report.Warnings {
+			fmt.Printf("  warning: %s\n", warning)
+		}
 	}
 	if !apply {
-		fmt.Println("Plan: remove MarkToast hooks and MCP server from", path)
-		fmt.Println("Re-run with --apply to write the change (a backup is created).")
-		return nil
+		fmt.Println("Re-run with --apply to write.")
 	}
-	if err := backupFile(path); err != nil {
-		return err
-	}
-	if err := writeJSONAtomic(path, conf); err != nil {
-		return err
-	}
-	fmt.Println("✔ removed MarkToast entries from", path)
-	return nil
 }
 
-// ---------- ZCode ----------
-
-func installZCode(desc adapter.Descriptor, root string, apply bool) error {
-	home, _ := os.UserHomeDir()
-	zcodeDir := filepath.Join(home, ".zcode")
-	if info, err := os.Stat(zcodeDir); err != nil || !info.IsDir() {
-		return fmt.Errorf("ZCode not detected (%s); run ZCode once first", zcodeDir)
+func printUninstallReport(report harness.Report, apply bool) {
+	title := report.Title
+	if title == "" {
+		title = report.ID
 	}
-	path := zcodeConfigPath(home)
-	conf, err := loadJSONMap(path)
-	if err != nil {
-		return err
+	if report.Reason != "" {
+		fmt.Printf("note: %s\n", report.Reason)
 	}
-	if conf == nil {
-		return fmt.Errorf("%s not found; start ZCode once so it creates its config", path)
-	}
-	exe, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	token, err := hub.EnsureToken(root)
-	if err != nil {
-		return err
-	}
-
-	events := []string{"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop"}
-	hooksPlan := buildZCodeHooks(events, exe)
-	plan := map[string]any{
-		"config": path,
-		"hooks":  hooksPlan,
-		"mcp": map[string]any{
-			"type":    "http",
-			"url":     "http://127.0.0.1:3777/mcp",
-			"headers": map[string]any{"Authorization": "Bearer " + token},
-		},
-		"binary": exe,
+	if !report.Changed {
+		fmt.Printf("no MarkToast entries or staged snippets found for %s\n", title)
+		return
 	}
 	if !apply {
-		data, _ := json.MarshalIndent(plan, "", "  ")
-		fmt.Println("Dry run (no files changed). Review and re-run with --apply:")
-		fmt.Println(string(data))
-		return nil
-	}
-
-	mergeZCodeHooks(conf, events, exe)
-	mergeZCodeMCP(conf, token)
-
-	if err := os.MkdirAll(stagedDir("zcode"), 0o700); err != nil {
-		return err
-	}
-	meta, _ := json.MarshalIndent(map[string]any{
-		"installed_at": time.Now().UTC().Format(time.RFC3339),
-		"binary":       exe,
-		"config":       path,
-		"events":       events,
-	}, "", "  ")
-	if err := os.WriteFile(filepath.Join(stagedDir("zcode"), "installed.json"), meta, 0o600); err != nil {
-		return err
-	}
-	if err := backupFile(path); err != nil {
-		return err
-	}
-	if err := writeJSONAtomic(path, conf); err != nil {
-		return err
-	}
-
-	fmt.Println("✔ ZCode wired to MarkToast")
-	fmt.Printf("  config:   %s (backup written)\n", path)
-	fmt.Printf("  hooks:    %s\n", strings.Join(events, ", "))
-	fmt.Printf("  MCP:      http://127.0.0.1:3777/mcp (bearer token in config)\n")
-	fmt.Printf("  binary:   %s\n", exe)
-	fmt.Println("  next:     restart ZCode, then run `marktoast serve` before the first session")
-	return nil
-}
-
-func zcodeConfigPath(home string) string {
-	return filepath.Join(home, ".zcode", "cli", "config.json")
-}
-
-func buildZCodeHooks(events []string, exe string) map[string]any {
-	eventsMap := map[string]any{}
-	for _, event := range events {
-		eventsMap[event] = []any{
-			map[string]any{
-				"hooks": []any{
-					map[string]any{
-						"type":      "process",
-						"command":   exe,
-						"args":      []any{"hook", "--event", event, "--agent", "zcode"},
-						"timeoutMs": 20000,
-					},
-				},
-			},
+		fmt.Printf("Dry run (no files changed): remove MarkToast from %s\n", title)
+		for _, step := range report.Steps {
+			fmt.Printf("  - %s\n", step)
 		}
+		fmt.Println("Re-run with --apply to write.")
+		return
 	}
-	return map[string]any{"enabled": true, "events": eventsMap}
-}
-
-func mergeZCodeHooks(conf map[string]any, events []string, exe string) {
-	hooks := ensureMap(conf, "hooks")
-	hooks["enabled"] = true
-	eventMap := ensureMap(hooks, "events")
-	for _, event := range events {
-		list := removeMatchingEntries(eventMap[event], exe)
-		list = append(list, map[string]any{
-			"hooks": []any{
-				map[string]any{
-					"type":      "process",
-					"command":   exe,
-					"args":      []any{"hook", "--event", event, "--agent", "zcode"},
-					"timeoutMs": 20000,
-				},
-			},
-		})
-		eventMap[event] = list
+	fmt.Printf("✔ removed MarkToast entries for %s\n", title)
+	if report.Backup != "" {
+		fmt.Printf("  backup: %s\n", report.Backup)
+	}
+	for _, step := range report.Steps {
+		fmt.Printf("  - %s\n", step)
 	}
 }
 
-func mergeZCodeMCP(conf map[string]any, token string) {
-	mcpMap := ensureMap(conf, "mcp")
-	servers := ensureMap(mcpMap, "servers")
-	servers["marktoast"] = map[string]any{
-		"type":    "http",
-		"url":     "http://127.0.0.1:3777/mcp",
-		"headers": map[string]any{"Authorization": "Bearer " + token},
+func printAdapterStatus(descriptor adapter.Descriptor) {
+	status := harness.StatusOf(descriptor, harness.Options{})
+	title := descriptor.Title
+	if title == "" {
+		title = descriptor.ID
+	}
+	fmt.Printf("%s (%s)\n", descriptor.ID, title)
+	fmt.Printf("  mode:      %s", status.Mode)
+	if status.Mode == adapter.ModeAuto && !harness.Supported(descriptor) {
+		fmt.Print(" (not safely mergeable yet; install falls back to staged)")
+	}
+	if status.Mode == adapter.ModeAuto && status.Reason != "" {
+		fmt.Printf(" (%s)", status.Reason)
+	}
+	fmt.Println()
+	fmt.Printf("  detected:  %s", yesNo(status.Detected))
+	if len(status.DetectedPaths) > 0 {
+		fmt.Printf(" (%s)", strings.Join(status.DetectedPaths, ", "))
+	}
+	fmt.Println()
+	fmt.Printf("  installed: %s\n", yesNo(status.Installed))
+	fmt.Printf("  staged:    %s", yesNo(status.StagedReady))
+	if status.StagedReady {
+		fmt.Printf(" (%s)", status.StagedDir)
+	} else {
+		fmt.Printf(" (%s)", status.StagedDir)
+	}
+	fmt.Println()
+	if target := strings.TrimSpace(status.Target); target != "" {
+		fmt.Printf("  target:    %s\n", target)
 	}
 }
 
-func removeZCodeMCP(conf map[string]any) bool {
-	mcpMap, ok := conf["mcp"].(map[string]any)
-	if !ok {
-		return false
+func yesNo(value bool) string {
+	if value {
+		return "yes"
 	}
-	servers, ok := mcpMap["servers"].(map[string]any)
-	if !ok {
-		return false
-	}
-	if _, exists := servers["marktoast"]; !exists {
-		return false
-	}
-	delete(servers, "marktoast")
-	return true
-}
-
-// removeMarkToastHooks deletes only our hook entries, preserving third-party
-// hooks and unknown config keys.
-func removeMarkToastHooks(conf map[string]any) bool {
-	hooks, ok := conf["hooks"].(map[string]any)
-	if !ok {
-		return false
-	}
-	eventMap, ok := hooks["events"].(map[string]any)
-	if !ok {
-		return false
-	}
-	removed := false
-	for event, raw := range eventMap {
-		list, ok := raw.([]any)
-		if !ok {
-			continue
-		}
-		filtered := removeMatchingEntries(list, "marktoast")
-		if len(filtered) != len(list) {
-			removed = true
-		}
-		eventMap[event] = filtered
-	}
-	// If we left the hooks block empty and enabled, turn it off only when no
-	// hooks remain (any third-party hook keeps it enabled).
-	empty := true
-	for _, raw := range eventMap {
-		if list, ok := raw.([]any); ok && len(list) > 0 {
-			empty = false
-		}
-	}
-	if empty {
-		hooks["enabled"] = false
-	}
-	return removed
-}
-
-func zcodeHasMarkToast(home string) bool {
-	conf, err := loadJSONMap(zcodeConfigPath(home))
-	if err != nil || conf == nil {
-		return false
-	}
-	mcpMap, _ := conf["mcp"].(map[string]any)
-	servers, _ := mcpMap["servers"].(map[string]any)
-	_, hasMCP := servers["marktoast"]
-	return hasMCP || containsMarker(conf["hooks"], "marktoast")
-}
-
-// ---------- DSH / Hermes staging ----------
-
-func dshInstructions() string {
-	return `DSH needs two manual merges into ~/.dsh/profiles/<profile>/cordis.patch.yml:
-
-1. MCP client (insert one row):
-   - id: marktoast
-     name: MarkToast memory
-     config:
-       transport: streamable-http
-       serverName: marktoast
-       url: http://127.0.0.1:3777/mcp
-       headers:
-         Authorization: Bearer <token from ~/Memory/.marktoast/token>
-
-2. Hooks bridge: copy the generated hooks.json into your DSH data dir and
-   register @deepseek-ai/dsh-hooks-claude-code with it. SessionStart is
-   detached, so MarkToast injects via MCP handoff rather than stdout.
-
-Staged files: ~/.marktoast/adapters/dsh/`
-}
-
-func hermesInstructions() string {
-	return `Hermes owns ~/.hermes/config.yaml and gates hooks behind hooks_auto_accept.
-Paste the generated snippets:
-
-- hooks: pre_llm_call / on_session_start / on_session_end / on_session_finalize
-  commands pointing at the MarkToast binary (marktoast hook --event ... --agent hermes)
-- mcp_servers: marktoast (stdio: marktoast mcp)
-
-For the full lifecycle (prefetch/sync_turn) use the bundled MemoryProvider:
-  cp -R adapters/hermes/marktoast ~/.hermes/plugins/marktoast
-  hermes plugins enable marktoast
-  hermes memory setup   # select marktoast
-Staged files: ~/.marktoast/adapters/hermes/`
-}
-
-func stagePatchAdapter(desc adapter.Descriptor, root string, instructions string) error {
-	exe, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	token, err := hub.EnsureToken(root)
-	if err != nil {
-		return err
-	}
-	dir := stagedDir(desc.ID)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	events := desc.Hooks.Events
-	if len(events) == 0 {
-		events = []string{"SessionStart", "Stop"}
-	}
-	hooks := map[string]any{}
-	for _, event := range events {
-		hooks[event] = []any{map[string]any{
-			"command":   exe,
-			"args":      []any{"hook", "--event", event, "--agent", desc.ID},
-			"timeoutMs": 20000,
-		}}
-	}
-	hooksJSON, _ := json.MarshalIndent(map[string]any{"hooks": hooks}, "", "  ")
-	if err := os.WriteFile(filepath.Join(dir, "hooks.json"), hooksJSON, 0o600); err != nil {
-		return err
-	}
-	snippet := fmt.Sprintf(`# MarkToast %s integration (generated %s)
-# binary: %s
-# mcp url: http://127.0.0.1:3777/mcp
-# token: %s
-`, desc.ID, time.Now().UTC().Format(time.RFC3339), exe, token)
-	if err := os.WriteFile(filepath.Join(dir, "README.txt"), []byte(snippet+"\n"+instructions+"\n"), 0o600); err != nil {
-		return err
-	}
-	fmt.Printf("✔ staged %s adapter files in %s\n\n%s\n", desc.ID, dir, instructions)
-	return nil
-}
-
-// ---------- helpers ----------
-
-func stagedDir(id string) string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".marktoast", "adapters", id)
-}
-
-func expandHome(path, home string) string {
-	if strings.HasPrefix(path, "~/") {
-		return filepath.Join(home, strings.TrimPrefix(path, "~/"))
-	}
-	return path
-}
-
-func loadJSONMap(path string) (map[string]any, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	var out map[string]any
-	if err := json.Unmarshal(data, &out); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
-	}
-	return out, nil
-}
-
-func writeJSONAtomic(path string, v any) error {
-	data, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return err
-	}
-	data = append(data, '\n')
-	tmp := path + ".tmp"
-	mode := os.FileMode(0o600)
-	if info, err := os.Stat(path); err == nil {
-		mode = info.Mode().Perm()
-	}
-	if err := os.WriteFile(tmp, data, mode); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
-}
-
-func backupFile(path string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	backup := path + ".marktoast-backup-" + time.Now().Format("20060102-150405")
-	return os.WriteFile(backup, data, 0o600)
-}
-
-func ensureMap(parent map[string]any, key string) map[string]any {
-	if existing, ok := parent[key].(map[string]any); ok {
-		return existing
-	}
-	created := map[string]any{}
-	parent[key] = created
-	return created
-}
-
-// removeMatchingEntries drops hook entries that mention our binary/marker.
-func removeMatchingEntries(raw any, marker string) []any {
-	list, ok := raw.([]any)
-	if !ok {
-		return nil
-	}
-	filtered := make([]any, 0, len(list))
-	for _, item := range list {
-		if containsMarker(item, marker) {
-			continue
-		}
-		filtered = append(filtered, item)
-	}
-	return filtered
-}
-
-func containsMarker(v any, marker string) bool {
-	data, err := json.Marshal(v)
-	if err != nil {
-		return false
-	}
-	text := strings.ToLower(string(data))
-	marker = strings.ToLower(marker)
-	return strings.Contains(text, marker) || strings.Contains(text, "hook\",\"--event")
+	return "no"
 }

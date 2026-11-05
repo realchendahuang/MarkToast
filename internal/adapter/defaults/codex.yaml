@@ -15,24 +15,35 @@ hooks:
     - UserPromptSubmit
     - PreToolUse
     - PostToolUse
+    - PreCompact
     - Stop
     - SessionEnd
-  install_kind: toml_merge
-  target: ~/.codex/config.toml
+  install_kind: json_merge
+  schema: bundle
+  scope: global
+  target: ~/.codex/hooks.json
   injection: stdout_additional_context
-  notes: "SessionEnd 自 Codex CLI 0.145.0 起可用；旧版本用 finalize 兜底。hook 具体 schema 待本机核实。"
+  needs_trust: false
+  notes: "hooks 写 $CODEX_HOME/hooks.json（默认 ~/.codex/hooks.json），不是 config.toml；嵌套 schema 与 Claude Code 相同。SessionEnd 自 Codex CLI 0.145.0 起可用，旧版本该事件不触发，用 finalize-session 兜底。Hook payload 用顶层 tool_name/tool_input/tool_response/tool_use_id（0.154.0 核实）。依据：render_shared.rs: CODEX_EVENTS/CODEX_PROFILE；install_hooks.rs: codex_hooks_path（~/.codex/hooks.json）；docs/support-matrix.md: Codex。"
 mcp:
-  kind: stdio_bridge
+  kind: http
   target: ~/.codex/config.toml
-  notes: "config.toml 的 mcp_servers；HTTP/stdio 待核实。"
+  shape: mcp_servers
+  notes: "config.toml 的 [mcp_servers.<name>]：url + http_headers（不是 headers）+ enabled；install-mcp 会写 default_tools_approval_mode=approve，并对破坏性工具逐条设 approval_mode=prompt。依据：docs/mcp-install.md 顶部 Codex 段与 install_mcp.rs: render_codex。"
 session:
   roots:
     - ~/.codex/sessions
   format: jsonl
-  notes: "jsonl 会话；deja-vu 有 reader。"
+  notes: "rollout-*.jsonl（闲置一周后可能并存 .zst 副本）；deja-vu 有 reader。"
 session_logs: ~/.codex/sessions
 tier: projection
 capabilities:
   - read
   - inject
-notes: "指令投影 + MCP；SessionEnd 版本差异要在适配器里探测。"
+  - mcp
+install_mode: auto
+docs:
+  - ai-memory/docs/support-matrix.md#Codex
+  - ai-memory/docs/install.md#OpenAI-Codex
+  - https://developers.openai.com/codex/config-reference
+notes: "指令投影 + MCP + hooks；SessionEnd 版本差异要在适配器里探测。"

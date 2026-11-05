@@ -1,0 +1,45 @@
+id: codebuddy
+title: CodeBuddy Code
+detect:
+  - ~/.codebuddy
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events:
+    - SessionStart
+    - UserPromptSubmit
+    - PreToolUse
+    - PostToolUse
+    - PreCompact
+    - Stop
+    - SessionEnd
+  install_kind: json_merge
+  schema: claude
+  scope: global
+  target: ~/.codebuddy/settings.json
+  injection: stdout_additional_context
+  needs_trust: false
+  notes: "hooks 合并进 ~/.codebuddy/settings.json 的 hooks 键（Claude Code 形 payload：session_id/cwd/tool_name/tool_input/tool_response）；7 个事件，无 PostToolUseFailure。SessionStart stdout 的 hookSpecificOutput.additionalContext 注入 handoff；交互式 SessionStart 可能无 cwd，用 CODEBUDDY_PROJECT_DIR 兜底。依据：docs/support-matrix.md: CodeBuddy Code；install_hooks.rs: codebuddy_settings_path；render_shared.rs: CODEBUDDY_EVENTS。"
+mcp:
+  kind: none
+  target: ""
+  shape: ""
+  notes: "事实源未给出 install-mcp client 或 MCP 配置路径（hooks-only 集成），MCP 接入待核实。依据：docs/support-matrix.md: CodeBuddy Code（Hooks-only）。"
+session:
+  roots: []
+  format: unknown
+  notes: "无 native-session adapter / transcript backfill；setup 仅按 ~/.codebuddy 目录探测。依据：setup.rs: codebuddy_detected；docs/support-matrix.md: CodeBuddy Code。"
+tier: projection
+capabilities:
+  - read
+  - inject
+install_mode: auto
+docs:
+  - ai-memory/docs/support-matrix.md#CodeBuddy Code
+  - ai-memory/docs/install.md#CodeBuddy-Code
+notes: "腾讯 CodeBuddy Code；别名 code-buddy；无 native transcript backfill。"

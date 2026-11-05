@@ -1,0 +1,45 @@
+id: ibm-bob
+title: IBM Bob
+detect:
+  - ~/.bob
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events:
+    - SessionStart
+    - UserPromptSubmit
+    - PreToolUse
+    - PostToolUse
+    - Stop
+  install_kind: json_merge
+  schema: claude
+  scope: global
+  target: ~/.bob/settings/settings.json
+  injection: stdout_additional_context
+  needs_trust: false
+  notes: "hooks 合并进 ~/.bob/settings/settings.json 根 hooks 对象；只用 IDE 与 Shell 共同支持的五事件，handoff 以普通 SessionStart context 交付，tool 事件强制 capture exclusions。无真正 session-end，必要时 finalize-session --agent ibm-bob。依据：docs/support-matrix.md: IBM Bob；docs/install.md#IBM-Bob；install_hooks.rs: ibm_bob_settings_path；render_shared.rs: IBM_BOB_EVENTS。"
+mcp:
+  kind: http
+  target: ~/.bob/settings/mcp.json
+  shape: mcpServers
+  notes: "~/.bob/settings/mcp.json 的原生 streamable-http 条目，带 protocolNegotiation: legacy 跳过 Bob 的非标准发现探测。依据：docs/install.md#IBM-Bob；docs/mcp-install.md#IBM Bob。"
+session:
+  roots: []
+  format: unknown
+  notes: "Bob 未文档化稳定原生 transcript store，无 managed workstream。依据：docs/install.md#IBM-Bob。"
+tier: projection
+capabilities:
+  - read
+  - inject
+  - mcp
+install_mode: auto
+docs:
+  - ai-memory/docs/support-matrix.md#IBM Bob
+  - ai-memory/docs/install.md#IBM-Bob
+  - ai-memory/docs/mcp-install.md#IBM Bob
+notes: "别名 bob；IDE 与 Bob Shell 共享 ~/.bob/settings。"

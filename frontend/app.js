@@ -4,6 +4,10 @@
 
 const $ = (id) => document.getElementById(id);
 const tr = (text) => (window.MarkToastI18n ? window.MarkToastI18n.t(text) : text);
+// UI strings that leave the DOM (window.confirm) or are mixed into larger
+// dynamic strings need the current language directly; plain DOM text is
+// translated by the i18n MutationObserver instead.
+const localized = (text) => (window.MarkToastI18n?.language === "en" ? window.MarkToastI18n.t(text) : text);
 
 const API_TIMEOUT_MS = 15_000;
 const MAX_RENDERED_BODY_CHARS = 200_000;
@@ -31,6 +35,7 @@ const state = {
   detailErrors: new Map(),
   detailLoading: false,
   adapters: [],
+  adapterInfo: null,
   inbox: [],
   history: [],
   aliases: {},
@@ -73,6 +78,10 @@ const els = {
   historyRegion: $("history-results"),
   modal: $("memory-modal"),
   detailModal: $("memory-detail-modal"),
+  adapterModal: $("adapter-modal"),
+  adapterDialogTitle: $("adapter-dialog-title"),
+  adapterDialogBody: $("adapter-dialog-body"),
+  adapterDialogAction: $("adapter-dialog-action"),
   detailContent: $("detail-content"),
   detailTitle: $("detail-title"),
   form: $("memory-form"),
@@ -809,7 +818,7 @@ function renderMemories() {
 }
 
 function isAnyModalOpen() {
-  return [els.modal, els.detailModal].some((modal) => Boolean(modal && !modal.hidden));
+  return [els.modal, els.detailModal, els.adapterModal].some((modal) => Boolean(modal && !modal.hidden));
 }
 
 function syncPageInert() {
@@ -1158,9 +1167,71 @@ function renderMemoryError(error) {
   els.resultRegion.appendChild(list);
 }
 
+// ---- Adapters -----------------------------------------------------------
+// The hub reports one row per built-in descriptor (~40 harnesses). Older hub
+// builds have no `mode` field, so derive the install mode from hooks.install_kind
+// the same way the Go side does, and keep the three groups stable.
+const ADAPTER_MODES = ["auto", "staged", "mcp_only"];
+const ADAPTER_MODE_LABELS = { auto: "自动", staged: "片段", mcp_only: "仅 MCP" };
+const ADAPTER_MODE_GROUP_LABELS = { auto: "自动接入", staged: "片段安装", mcp_only: "仅 MCP" };
+const ADAPTER_MODE_HINTS = {
+  auto: "MarkToast 直接合并这家 harness 的配置；写前备份，保留第三方条目。",
+  staged: "MarkToast 生成可直接粘贴的 hooks / MCP 片段，由你手动合并。",
+  mcp_only: "这家只支持 MCP：生成 MCP 片段，不安装生命周期 hooks。",
+};
+const ADAPTER_TIER_LABELS = { native: "原生", projection: "投影", readonly: "只读" };
+const ADAPTER_INJECTION_LABELS = {
+  stdout_additional_context: "stdout additionalContext",
+  pre_llm_call_context: "pre_llm_call context",
+  mcp_handoff: "MCP handoff",
+  none: "none",
+};
+
+function adapterMode(adapter) {
+  const explicit = String(adapter?.mode || adapter?.install_mode || "").trim();
+  if (ADAPTER_MODES.includes(explicit)) return explicit;
+  const kind = String(adapter?.hooks?.install_kind || "").trim();
+  if (kind === "json_merge" || kind === "toml_merge" || kind === "json_bundle") return "auto";
+  if (kind === "mcp_only" || kind === "none") return "mcp_only";
+  return "staged";
+}
+
+function adapterHasExplicitMode(adapter) {
+  return ADAPTER_MODES.includes(String(adapter?.mode || "").trim());
+}
+
+function adapterStagedReady(adapter) {
+  return adapter?.staged_ready === true;
+}
+
+function adapterState(adapter) {
+  const mode = adapterMode(adapter);
+  if (mode === "auto" && adapter?.installed) {
+    return { key: "installed", label: "已接入", className: " is-on" };
+  }
+  if (mode !== "auto" && adapterStagedReady(adapter)) {
+    return { key: "staged", label: "已生成片段", className: " is-on" };
+  }
+  if (adapter?.detected) return { key: "detected", label: "已检测", className: "" };
+  return { key: "missing", label: "未检测", className: "" };
+}
+
+function adapterCanInstall(adapter) {
+  if (adapterMode(adapter) !== "auto" || !adapter?.detected) return false;
+  // New hub builds make every auto-mode adapter installable; legacy builds only
+  // exposed `installable` for ZCode.
+  if (adapterHasExplicitMode(adapter)) return true;
+  return Boolean(adapter?.installable);
+}
+
+function adapterCanStage(adapter) {
+  return adapterMode(adapter) !== "auto" && Boolean(adapter?.detected);
+}
+
 async function runAdapterAction(adapter, button) {
+  const title = adapter.title || adapter.id || "Adapter";
   const verb = adapter.installed ? "重新写入" : "写入";
-  if (!window.confirm(tr(`${verb} ZCode 配置？会先备份原文件。`))) return;
+  if (!window.confirm(localized(`${verb}这家 harness 的配置？会先备份原文件。`))) return;
   setButtonLoading(button, true);
   try {
     const data = await api("/api/adapters/action", {
@@ -1168,7 +1239,7 @@ async function runAdapterAction(adapter, button) {
       body: JSON.stringify({ id: adapter.id, action: "install" }),
       timeoutMs: 60_000,
     });
-    toast(data.installed ? "ZCode 已接入" : "配置已更新");
+    toast(`${title} · ${localized(data?.installed ? "已接入" : "配置已更新")}`);
     await loadAdapters();
     await loadStatus();
   } catch (error) {
@@ -1179,6 +1250,7 @@ async function runAdapterAction(adapter, button) {
 }
 
 async function stageAdapter(adapter, button) {
+  const title = adapter.title || adapter.id || "Adapter";
   setButtonLoading(button, true);
   try {
     const data = await api("/api/adapters/action", {
@@ -1186,17 +1258,163 @@ async function stageAdapter(adapter, button) {
       body: JSON.stringify({ id: adapter.id, action: "stage" }),
       timeoutMs: 60_000,
     });
-    try {
-      await navigator.clipboard.writeText(data.dir);
-      toast("片段已准备，路径已复制");
-    } catch {
-      toast(`片段已准备：${data.dir}`);
+    const dir = String(data?.dir || "").trim();
+    if (dir) {
+      try {
+        await navigator.clipboard.writeText(dir);
+        toast(`${title} · ${localized("片段已生成，路径已复制")}`);
+      } catch {
+        toast(`${title} · ${localized("片段已生成")}：${dir}`);
+      }
+    } else {
+      toast(`${title} · ${localized("片段已生成")}`);
     }
+    await loadAdapters();
   } catch (error) {
     toast(formatError(error), "error");
   } finally {
     setButtonLoading(button, false);
   }
+}
+
+function adapterActionButton(adapter, extraClass = "") {
+  if (adapterCanInstall(adapter)) {
+    const install = element(
+      "button",
+      `button quiet adapter-action${extraClass}`,
+      adapter.installed ? "修复" : "接入",
+    );
+    install.type = "button";
+    install.addEventListener("click", (event) => runAdapterAction(adapter, event.currentTarget));
+    return install;
+  }
+  if (adapterCanStage(adapter)) {
+    const stage = element("button", `button quiet adapter-action${extraClass}`, "生成片段");
+    stage.type = "button";
+    stage.title = "生成合并片段";
+    stage.addEventListener("click", (event) => stageAdapter(adapter, event.currentTarget));
+    return stage;
+  }
+  return null;
+}
+
+function adapterInfoRows(adapter) {
+  const mode = adapterMode(adapter);
+  const hooks = adapter.hooks || {};
+  const mcp = adapter.mcp || {};
+  const rows = [
+    ["接入方式", `${localized(ADAPTER_MODE_LABELS[mode])} · ${localized(ADAPTER_MODE_GROUP_LABELS[mode])}`],
+    ["层级", localized(ADAPTER_TIER_LABELS[adapter.tier] || adapter.tier || "—")],
+  ];
+  const detectedPaths = adapter.detected_path || (Array.isArray(adapter.detect) ? adapter.detect.join(", ") : "");
+  if (detectedPaths) rows.push(["检测路径", detectedPaths]);
+  if (Array.isArray(hooks.events) && hooks.events.length) rows.push(["Hook 事件", hooks.events.join(" · ")]);
+  if (hooks.target) rows.push(["Hook 目标文件", hooks.target]);
+  if (hooks.injection) rows.push(["注入方式", localized(ADAPTER_INJECTION_LABELS[hooks.injection] || hooks.injection)]);
+  if (adapter.install_kind || hooks.install_kind) {
+    rows.push(["安装类型", adapter.install_kind || hooks.install_kind]);
+  }
+  if (mcp.kind) rows.push(["MCP 方式", mcp.kind]);
+  if (mcp.target) rows.push(["MCP 目标文件", mcp.target]);
+  return rows;
+}
+
+function renderAdapterInfo(adapter) {
+  if (!els.adapterDialogBody) return;
+  const body = els.adapterDialogBody;
+  clear(body);
+  const mode = adapterMode(adapter);
+  els.adapterDialogTitle.textContent = adapter.title || adapter.id || "Adapter";
+
+  const intro = element("div", "adapter-info-intro");
+  intro.append(
+    element("span", `pill adapter-mode is-${mode.replace("_", "-")}`, ADAPTER_MODE_LABELS[mode]),
+    element("p", "adapter-info-hint", ADAPTER_MODE_HINTS[mode]),
+  );
+  body.appendChild(intro);
+
+  const table = element("table", "frontmatter-table adapter-info-table");
+  adapterInfoRows(adapter).forEach(([key, value]) => {
+    const trNode = element("tr");
+    trNode.append(element("th", "", key), element("td", "", value));
+    table.appendChild(trNode);
+  });
+  body.appendChild(table);
+
+  if (adapter.notes) {
+    const notes = element("section", "adapter-info-notes");
+    notes.appendChild(element("h3", "", "说明"));
+    const text = element("p", "", adapter.notes);
+    text.dataset.noI18n = "true";
+    notes.appendChild(text);
+    body.appendChild(notes);
+  }
+
+  const stagedDir = String(adapter.staged_dir || "").trim();
+  if (stagedDir) {
+    const dir = element("section", "adapter-info-notes");
+    dir.appendChild(element("h3", "", "片段目录"));
+    const code = element("code", "", stagedDir);
+    code.dataset.noI18n = "true";
+    dir.appendChild(code);
+    body.appendChild(dir);
+  }
+}
+
+function adapterDialogActionDef(adapter) {
+  if (adapterCanInstall(adapter)) return { kind: "install", label: adapter.installed ? "修复" : "接入" };
+  if (adapterCanStage(adapter)) return { kind: "stage", label: "生成片段" };
+  return null;
+}
+
+function syncAdapterDialogAction(adapter) {
+  const action = els.adapterDialogAction;
+  if (!action) return;
+  const def = adapterDialogActionDef(adapter);
+  if (!def) {
+    action.hidden = true;
+    action.removeAttribute("data-adapter-action");
+    return;
+  }
+  action.hidden = false;
+  action.textContent = def.label;
+  action.dataset.adapterAction = def.kind;
+}
+
+function openAdapterInfo(adapter) {
+  if (!els.adapterModal) return;
+  state.adapterInfo = adapter;
+  state.lastFocus = document.activeElement;
+  renderAdapterInfo(adapter);
+  syncAdapterDialogAction(adapter);
+  els.adapterModal.classList.remove("closing");
+  showModal(els.adapterModal);
+  requestAnimationFrame(() => $("close-adapter-dialog")?.focus({ preventScroll: true }));
+}
+
+function closeAdapterInfo() {
+  if (!els.adapterModal || els.adapterModal.hidden || els.adapterModal.classList.contains("closing")) return;
+  els.adapterModal.classList.add("closing");
+  const restoreFocus = state.lastFocus;
+  state.lastFocus = null;
+  state.adapterInfo = null;
+  window.setTimeout(() => {
+    if (!els.adapterModal.classList.contains("closing")) return;
+    hideModal(els.adapterModal);
+    els.adapterModal.classList.remove("closing");
+    if (!isAnyModalOpen() && restoreFocus && typeof restoreFocus.focus === "function") {
+      restoreFocus.focus();
+    }
+  }, 260);
+}
+
+function runAdapterDialogAction() {
+  const adapter = state.adapterInfo;
+  if (!adapter) return;
+  const install = adapterCanInstall(adapter);
+  closeAdapterInfo();
+  if (install) runAdapterAction(adapter, null);
+  else if (adapterCanStage(adapter)) stageAdapter(adapter, null);
 }
 
 async function loadInbox() {
@@ -1312,6 +1530,59 @@ async function loadAdapters() {
   }
 }
 
+function renderAdapterRow(adapter, list) {
+  const mode = adapterMode(adapter);
+  const entry = element("article", "adapter-entry");
+  entry.dataset.adapter = adapter.id || "";
+  const row = element("div", "row adapter-row");
+  row.append(icon("plug", "ic adapter-icon"));
+
+  const who = element("div", "who");
+  who.dataset.noI18n = "true";
+  const nameLine = element("div", "adapter-name-line");
+  nameLine.append(
+    element("span", "name", adapter.title || adapter.id || "Adapter"),
+    element("code", "", adapter.id || ""),
+  );
+  // Config targets read the same in every language and are what people look
+  // for when deciding whether to install; long notes stay in the details dialog.
+  const targets = [...new Set([adapter.hooks?.target, adapter.mcp?.target].filter(Boolean))];
+  who.append(nameLine, element("div", "sub", targets.join("  ·  ") || adapter.detected_path || ""));
+  row.appendChild(who);
+
+  const st = adapterState(adapter);
+  const stateNode = element("span", `adapter-state${st.className}`, st.label);
+  if (adapter.detected_path) stateNode.title = adapter.detected_path;
+  row.appendChild(stateNode);
+
+  const modeBadge = element(
+    "span",
+    `pill adapter-mode is-${mode.replace("_", "-")}`,
+    ADAPTER_MODE_LABELS[mode],
+  );
+  modeBadge.title = ADAPTER_MODE_HINTS[mode];
+  row.appendChild(modeBadge);
+
+  const tierLabel = ADAPTER_TIER_LABELS[adapter.tier] || adapter.tier || "";
+  if (tierLabel) {
+    const tier = element("span", "pill adapter-tier", tierLabel);
+    tier.title = adapter.tier || "";
+    row.appendChild(tier);
+  }
+
+  const actions = element("div", "adapter-actions");
+  const primary = adapterActionButton(adapter);
+  if (primary) actions.appendChild(primary);
+  const info = element("button", "button quiet adapter-action", "查看说明");
+  info.type = "button";
+  info.addEventListener("click", () => openAdapterInfo(adapter));
+  actions.appendChild(info);
+  row.appendChild(actions);
+
+  entry.appendChild(row);
+  list.appendChild(entry);
+}
+
 function renderAdapters() {
   clear(els.adapterRegion);
   els.adapterCount.textContent = String(state.adapters.length);
@@ -1321,50 +1592,30 @@ function renderAdapters() {
     els.adapterRegion.appendChild(list);
     return;
   }
-  const list = element("div", "list");
+
+  const groups = new Map(ADAPTER_MODES.map((mode) => [mode, []]));
   state.adapters
     .slice()
     .sort((a, b) => (b.detected ? 1 : 0) - (a.detected ? 1 : 0) || String(a.title || a.id).localeCompare(String(b.title || b.id), "zh-CN"))
-    .forEach((adapter) => {
-      const entry = element("article", "adapter-entry");
-      const row = element("div", "row adapter-row");
-      row.append(icon("plug", "ic adapter-icon"));
-      const who = element("div", "who");
-      who.dataset.noI18n = "true";
-      who.append(
-        element("div", "name", adapter.title || adapter.id || "Adapter"),
-        element("div", "sub", adapter.notes || adapter.id || ""),
-      );
-      const installed = Boolean(adapter.installed);
-      const installable = Boolean(adapter.installable) && Boolean(adapter.detected);
-      const pending = installable && !installed;
-      const state = element(
-        "span",
-        `adapter-state${installed ? " is-on" : pending ? " is-pending" : ""}`,
-        installed ? "已接入" : pending ? "待接入" : adapter.detected ? "已检测" : "未检测",
-      );
-      if (adapter.detected_path) state.title = adapter.detected_path;
-      const tierLabel = { native: "原生", projection: "投影", readonly: "只读" }[adapter.tier] || adapter.tier || "";
-      const tier = element("span", "pill", tierLabel);
-      tier.title = adapter.tier || "";
-      row.append(who, state);
-      if (adapter.installable && adapter.detected) {
-        const action = element("button", "button quiet adapter-action", installed ? "修复" : "接入");
-        action.type = "button";
-        action.addEventListener("click", (event) => runAdapterAction(adapter, event.currentTarget));
-        row.appendChild(action);
-      } else if (adapter.detected && adapter.staged) {
-        const stage = element("button", "button quiet adapter-action", "片段");
-        stage.type = "button";
-        stage.title = "生成合并片段";
-        stage.addEventListener("click", (event) => stageAdapter(adapter, event.currentTarget));
-        row.appendChild(stage);
-      }
-      row.appendChild(tier);
-      entry.appendChild(row);
-      list.appendChild(entry);
-    });
-  els.adapterRegion.appendChild(list);
+    .forEach((adapter) => groups.get(adapterMode(adapter)).push(adapter));
+
+  ADAPTER_MODES.forEach((mode) => {
+    const adapters = groups.get(mode);
+    if (!adapters.length) return;
+    const group = element("section", "adapter-group");
+    group.dataset.mode = mode;
+    const head = element("div", "adapter-group-head");
+    head.append(
+      element("span", "adapter-group-name", ADAPTER_MODE_GROUP_LABELS[mode]),
+      element("span", "adapter-group-count", String(adapters.length)),
+    );
+    group.appendChild(head);
+    group.appendChild(element("p", "adapter-group-hint", ADAPTER_MODE_HINTS[mode]));
+    const list = element("div", "list");
+    adapters.forEach((adapter) => renderAdapterRow(adapter, list));
+    group.appendChild(list);
+    els.adapterRegion.appendChild(group);
+  });
 }
 
 async function loadHistory() {
@@ -1869,6 +2120,11 @@ function bindEvents() {
         closeDialog();
         return;
       }
+      if (els.adapterModal && !els.adapterModal.hidden) {
+        event.preventDefault();
+        closeAdapterInfo();
+        return;
+      }
       if (memoryDetailOpen()) {
         event.preventDefault();
         closeMemoryDetail();
@@ -1964,6 +2220,28 @@ function bindEvents() {
     if (event.key !== "Tab") return;
     const focusables = [...els.detailModal.querySelectorAll(
       'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href]',
+    )].filter((node) => node.offsetParent !== null);
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
+  $("close-adapter-dialog")?.addEventListener("click", closeAdapterInfo);
+  $("adapter-dialog-close")?.addEventListener("click", closeAdapterInfo);
+  els.adapterDialogAction?.addEventListener("click", runAdapterDialogAction);
+  els.adapterModal?.addEventListener("click", (event) => {
+    if (event.target === els.adapterModal) closeAdapterInfo();
+  });
+  els.adapterModal?.addEventListener("keydown", (event) => {
+    if (event.key !== "Tab") return;
+    const focusables = [...els.adapterModal.querySelectorAll(
+      'button:not([disabled]), a[href]',
     )].filter((node) => node.offsetParent !== null);
     if (!focusables.length) return;
     const first = focusables[0];

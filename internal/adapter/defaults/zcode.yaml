@@ -17,23 +17,33 @@ hooks:
     - PostToolUse
     - PostToolUseFailure
     - Stop
-  install_kind: plugin_bundle # 优先用插件 hooks/hooks.json（自动启用）；config.json 合并作 fallback
+  install_kind: json_merge
+  schema: exec
+  scope: global
   target: ~/.zcode/cli/config.json
   injection: stdout_additional_context
-  notes: "SessionStart 的 additionalContext 可用；Stop 是回合边界（无真正 SessionEnd）；PermissionRequest 官方有但会与交互权限竞态，不装。hook 的 transcript_path 不是完整会话日志。"
+  needs_trust: false
+  notes: "顶层 hooks 块需 enabled:true；6 个已核实触发器，PermissionRequest 会与交互权限客户端竞态故不装；Stop 是回合边界（无真正 SessionEnd），最终回合后 finalize-session。条目是 exec 形 {type:process, command, args, enabled, timeoutMs, statusMessage}，未知键会被静默丢弃。依据：render_shared.rs: ZCODE_EVENTS/build_zcode_hooks_config；docs/install.md#ZCode-z.ai；本仓库 docs/HARNESS-INTEGRATION.md 的 ZCode 源码级核查。"
 mcp:
   kind: http
   target: ~/.zcode/cli/config.json
-  notes: "mcp.servers 严格 schema（type/url/headers）；token 只能写字面量，token 存文件时需手动加。"
+  shape: mcp.servers
+  notes: "mcp.servers 严格 schema（type/url/headers/enabled/timeoutMs），token 只能写字面量；token 存文件时 install-mcp 拒绝自动写（需手加 header）。依据：docs/mcp-install.md#ZCode-z.ai；install_mcp.rs: build_mcp_entry_zcode。"
 session:
   roots:
     - ~/.zcode/cli/db/db.sqlite
   format: sqlite
-  notes: "session/message/part/session_entry 的 JSON 文本列；不要在 MarkToast 里依赖其 schema，优先读原生记忆目录。"
+  notes: "session/message/part/session_entry 的 JSON 文本列；不要依赖其 schema，优先读原生记忆目录。hook 的 transcript_path 不是完整会话日志。"
 session_logs: ~/.zcode/cli/db/db.sqlite
 tier: native
 capabilities:
   - read
   - write
   - inject
-notes: "项目记忆：MEMORY.md 索引（≤200 行 / 25,000 字符）+ 一条事实一个 Markdown（frontmatter）。"
+  - mcp
+install_mode: auto
+docs:
+  - ai-memory/docs/support-matrix.md#ZCode-z.ai
+  - ai-memory/docs/install.md#ZCode-z.ai
+  - ai-memory/docs/mcp-install.md#ZCode-z.ai
+notes: "原生记忆：MEMORY.md 索引（≤200 行 / 25,000 字符）+ 一条事实一个 Markdown（frontmatter）；记忆根由 workspace 路径 SHA-256[:16] 推导。"

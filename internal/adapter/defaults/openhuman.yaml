@@ -1,0 +1,38 @@
+id: openhuman
+title: OpenHuman
+detect: []
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events: []
+  install_kind: mcp_only
+  schema: none
+  scope: global
+  target: ""
+  injection: none
+  needs_trust: false
+  notes: "OpenHuman 无 lifecycle hooks（MCP-only documented）；MCP 只能在 App 的 MCP Servers 界面里添加，自动捕获/handoff 不可用。依据：docs/install.md#OpenHuman；docs/support-matrix.md: OpenHuman。"
+mcp:
+  kind: http
+  target: ""
+  shape: mcpServers
+  notes: "App 的 MCP Servers 界面有 mcp.json 标签页，但那是其内部 store 的视图、不是磁盘上可编辑的文件；条目 url 走 streamable HTTP，headers 存凭据且写入后只读回显。没有可写的磁盘路径，故 target 留空。依据：docs/install.md#OpenHuman（0.64.15）。"
+session:
+  roots: []
+  format: unknown
+  notes: "无 hooks / transcript 契约。依据：docs/support-matrix.md: OpenHuman。"
+tier: readonly
+capabilities:
+  - read
+  - mcp
+install_mode: mcp_only
+docs:
+  - ai-memory/docs/support-matrix.md#OpenHuman
+  - ai-memory/docs/install.md#OpenHuman
+  - https://tinyhumans.gitbook.io/openhuman/features/integrations/mcp-and-skills
+notes: "UI 内配置、无磁盘文件 → detect/target 都留空，MarkToast 只能展示接入说明。"

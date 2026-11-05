@@ -5,7 +5,8 @@
 **Every agent's memory. One place. Yours.**
 
 Local-first, Git-versioned Markdown memory for every coding agent.<br>
-ZCode, Hermes and DSH first — Codex, Claude Code, Pi and the rest next.
+All **40 harnesses built in** — ZCode, Claude Code, Codex, Cursor, Gemini CLI,
+DSH, Hermes, Pi and the rest.
 
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 ![Wails](https://img.shields.io/badge/Wails-v3-DF0000?logo=wails&logoColor=white)
@@ -101,8 +102,11 @@ CI and signed-release validation are implemented.**
 - [x] Markdown repository with atomic writes, per-root advisory locks,
       collision-safe filenames, Git commits limited to managed memory paths,
       and debounced auto-commit flush on shutdown
-- [x] Adapter descriptors with hooks/MCP/session schema; idempotent ZCode
-      installer (hooks + MCP, preserves third-party entries); DSH/Hermes staged
+- [x] **40 built-in harness adapters** — 19 `auto` (MarkToast merges the config),
+      12 `staged` (ready-to-paste hooks/MCP snippets) and 9 `mcp_only` (MCP
+      registration only); one YAML descriptor per harness
+- [x] Generic installer engine: JSON/TOML merge, backups, idempotent writes and
+      third-party entries preserved; snippet generation for staged/MCP-only
 - [x] Loopback-only local hub with cookie/bearer authentication, CSRF and Host
       checks, paginated status/search/memory/memories/projects/adapters/git-log
       APIs; MCP over stdio and streamable HTTP (`memory_search/get/save/list`)
@@ -111,7 +115,85 @@ auto dark, indigo accent), 212px sidebar, breadcrumb header, white list cards an
 rows, **its motion** (view fade-up, segmented thumb glide 280ms, row fold 420ms,
 dialog in/out, skeleton shimmer, reduced-motion), modal, Cmd/Ctrl+K
 - [x] Wails v3.1 desktop shell with embedded web UI (`make desktop`; opens the same hub in a native window)
-- [ ] More adapters
+- [x] Adapter page in the web UI lists all 40 harnesses grouped by install mode,
+      with detection/install state and connect / generate-snippets actions
+
+### Support matrix
+
+All 40 adapters ship in the binary. "Built in" means the descriptor is embedded,
+`marktoast adapters list` shows it and the installer supports its mode;
+per-harness end-to-end verification is tracked in
+[ROADMAP.md](docs/ROADMAP.md). † = the upstream ai-memory recipe is
+documentation-only (not verified end to end).
+
+#### Automatic · auto · 19 harnesses
+
+MarkToast merges the harness config directly, with a backup and third-party entries kept.
+
+| Harness | ID | Integration | Tier | Status |
+|---|---|---|---|---|
+| Antigravity CLI (agy) | `antigravity-cli` | Automatic | projection | Built in |
+| Claude Code | `claude-code` | Automatic | projection | Built in |
+| Claude Desktop (Code tab) | `claude-desktop-code` | Automatic | projection | Built in |
+| CodeBuddy Code | `codebuddy` | Automatic | projection | Built in |
+| Codex | `codex` | Automatic | projection | Built in |
+| Command Code | `command-code` | Automatic | projection | Built in |
+| Cursor | `cursor` | Automatic | projection | Built in |
+| Devin CLI | `devin` | Automatic | projection | Built in |
+| Factory Droid | `factory-droid` | Automatic | projection | Built in |
+| Gemini CLI | `gemini-cli` | Automatic | projection | Built in |
+| GitHub Copilot CLI | `copilot-cli` | Automatic | projection | Built in |
+| Grok Build CLI | `grok` | Automatic | projection | Built in |
+| IBM Bob | `ibm-bob` | Automatic | projection | Built in |
+| Kimi Code | `kimi-code` | Automatic | projection | Built in |
+| Meta Muse Code | `meta-muse` | Automatic | projection | Built in |
+| Qoder | `qoder` | Automatic | projection | Built in |
+| Qwen Code | `qwen-code` | Automatic | projection | Built in |
+| ZCode | `zcode` | Automatic | native | Built in |
+| Zero (Gitlawb/zero) | `zero` | Automatic | projection | Built in |
+
+#### Staged snippets · staged · 12 harnesses
+
+Writes ready-to-paste hooks / MCP snippets to merge by hand or install as a plugin.
+
+| Harness | ID | Integration | Tier | Status |
+|---|---|---|---|---|
+| Cline CLI | `cline` | Hooks snippet | projection | Built in |
+| Crush | `crush` | Hooks snippet | readonly | Built in |
+| DeepSeek Harness | `dsh` | Hooks snippet | projection | Built in |
+| GrizzyBot | `grizzybot` | Hooks snippet | readonly | Built in |
+| Hermes Agent | `hermes` | Hooks snippet | native | Built in |
+| Kiro CLI | `kiro-cli` | Hooks snippet | projection | Built in |
+| Oh My Pi (OMP) | `oh-my-pi` | Hooks snippet | projection | Built in |
+| OpenClaw | `openclaw` | Hooks snippet | projection | Built in |
+| OpenCode | `opencode` | Hooks snippet | projection | Built in |
+| Pi | `pi` | Hooks snippet | projection | Built in |
+| Pool (Poolside Agent CLI) | `pool` | Hooks snippet | projection | Built in |
+| Swival CLI | `swival-cli` | Hooks snippet | readonly | Built in |
+
+#### MCP only · mcp_only · 9 harnesses
+
+Writes an MCP snippet only; no lifecycle hooks are installed.
+
+| Harness | ID | Integration | Tier | Status |
+|---|---|---|---|---|
+| Claude Desktop (Chat) | `claude-desktop-chat` | MCP | readonly | Built in |
+| FreeBuff | `freebuff` | MCP | readonly | Built in |
+| Goose | `goose` | MCP | readonly | Built in † |
+| Kilo Code | `kilo-code` | MCP | readonly | Built in † |
+| OpenHuman | `openhuman` | MCP | readonly | Built in † |
+| Prime Agent | `prime-agent` | MCP | readonly | Built in |
+| VS Code Copilot | `vs-code-copilot` | MCP | readonly | Built in |
+| Warp | `warp` | MCP | readonly | Built in † |
+| Zed | `zed` | MCP | readonly | Built in |
+
+**Tiers:** `native` (2) — the harness has its own memory format MarkToast can read
+and write; `projection` (26) — instruction files / hooks / MCP only; `readonly` (12)
+— MarkToast reads or injects but never writes the harness's own memory.
+
+**Integration:** `Automatic` — MarkToast merges the harness config (backup first);
+`Hooks snippet` — MarkToast writes ready-to-paste hooks/MCP files;
+`MCP` — MCP registration only, no lifecycle hooks.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -170,7 +252,9 @@ MarkToast is built in public debt to these projects — see
   aspire to: Go + Wails v3, system WebView, vanilla frontend, local hub, config
   writers for every agent.
 - **[ai-memory](https://github.com/akitaonrails/ai-memory)** (MIT) — Markdown
-  source of truth, derived index, Git-backed memory engine ideas.
+  source of truth, derived index, Git-backed memory engine ideas, and the
+  cross-harness support matrix / hook patterns that MarkToast's 40 YAML
+  descriptors were ported from (see [docs/CREDITS.md](docs/CREDITS.md)).
 - **[ZCode](https://github.com/zai-org/ZCode)** (Apache-2.0) — the project
   memory format MarkToast adopts (`MEMORY.md` index + one Markdown file per
   fact + frontmatter).
@@ -195,7 +279,7 @@ MarkToast is built in public debt to these projects — see
 | [Architecture](docs/ARCHITECTURE.md) | Components, storage layout, adapters, failure modes |
 | [Roadmap](docs/ROADMAP.md) | M0–M5 |
 | [Reuse research](docs/RESEARCH-REUSE.md) | What we reuse from the open-source memory ecosystem (and what we must not) |
-| [Harness integration](docs/HARNESS-INTEGRATION.md) | Reference matrix for hooking ZCode / DSH / Hermes / Claude Code / Codex |
+| [Harness integration](docs/HARNESS-INTEGRATION.md) | How MarkToast wires all 40 harnesses: install modes, per-harness targets/events/injection, pitfalls |
 | [Credits](docs/CREDITS.md) | Who we learned from, and under which license |
 | [Desktop](docs/DESKTOP.md) | Wails v3 desktop shell, packaging, and release notes |
 | [Adapters](adapters/README.md) | How to add a harness |

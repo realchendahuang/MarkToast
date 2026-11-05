@@ -1,0 +1,47 @@
+id: factory-droid
+title: Factory Droid
+detect:
+  - ~/.factory
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events:
+    - SessionStart
+    - UserPromptSubmit
+    - PreToolUse
+    - PostToolUse
+    - PreCompact
+    - Stop
+    - SessionEnd
+  install_kind: json_merge
+  schema: event_map
+  scope: global
+  target: ~/.factory/hooks.json
+  injection: stdout_additional_context
+  needs_trust: false
+  notes: "~/.factory/hooks.json 文件根就是事件 map（无外层 hooks 键），条目为 Claude Code 形 payload（#1240）；7 个事件，无 PostToolUseFailure。SessionStart 注入 pending handoff，SessionEnd 关闭会话。依据：docs/mcp-install.md#Factory Droid；install_hooks.rs: droid_hooks_path（~/.factory/hooks.json）；render_shared.rs: DROID_EVENTS。"
+mcp:
+  kind: http
+  target: ~/.factory/mcp.json
+  shape: mcpServers
+  notes: '根 mcpServers；条目 type:http + url + headers，Droid 只在 headers 里展开 ${NAME}，故 bearer 写 "Bearer ${AI_MEMORY_AUTH_TOKEN}"。依据：docs/mcp-install.md#Factory Droid。'
+session:
+  roots: []
+  format: unknown
+  notes: "事实源未给出原生 transcript store 契约（无 managed workstream）。依据：docs/support-matrix.md: Factory Droid。"
+tier: projection
+capabilities:
+  - read
+  - inject
+  - mcp
+install_mode: auto
+docs:
+  - ai-memory/docs/support-matrix.md#Factory Droid
+  - ai-memory/docs/mcp-install.md#Factory Droid
+  - https://docs.factory.com/harness/hooks
+notes: "厂商拒绝把 hooks 写进 settings.json，专用 hooks.json 是唯一稳定入口；别名 droid。"

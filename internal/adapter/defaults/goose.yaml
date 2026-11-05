@@ -1,0 +1,39 @@
+id: goose
+title: Goose
+detect:
+  - ~/.config/goose
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events: []
+  install_kind: mcp_only
+  schema: none
+  scope: global
+  target: ""
+  injection: none
+  needs_trust: false
+  notes: "Goose 无 lifecycle hooks（MCP-only documented），只能由模型调 memory_* 工具。依据：docs/install.md#Goose；docs/support-matrix.md: Goose。"
+mcp:
+  kind: http
+  target: ~/.config/goose/config.yaml
+  shape: extensions
+  notes: "~/.config/goose/config.yaml 的 extensions 映射（Windows 为 %APPDATA%\\Block\\goose\\config\\config.yaml）；远程 entry 形如 type: streamable_http + name + enabled + uri（键是 uri，不是 url）+ headers + timeout。可用 `goose configure` 交互添加。依据：docs/install.md#Goose（Goose 1.54.0）。"
+session:
+  roots: []
+  format: unknown
+  notes: "事实源未给出 transcript 契约。依据：docs/support-matrix.md: Goose。"
+tier: readonly
+capabilities:
+  - read
+  - mcp
+install_mode: mcp_only
+docs:
+  - ai-memory/docs/support-matrix.md#Goose
+  - ai-memory/docs/install.md#Goose
+  - https://goose-docs.ai/docs/guides/config-files
+notes: "YAML 配置、extensions 容器、uri 键；Goose 不文档化 headers 环境变量展开。"

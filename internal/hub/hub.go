@@ -225,11 +225,12 @@ func handleAdapters(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	home, _ := os.UserHomeDir()
 	out := make([]map[string]any, 0, len(adapters))
 	for _, a := range adapters {
 		detected := adapter.Detect(a)
-		home, _ := os.UserHomeDir()
-		installed := a.ID == "zcode" && harness.ZCodeInstalled(home)
+		status := harness.StatusOf(a, harness.Options{Home: home})
+		mode := a.EffectiveInstallMode()
 		out = append(out, map[string]any{
 			"id":            a.ID,
 			"title":         a.Title,
@@ -237,16 +238,20 @@ func handleAdapters(w http.ResponseWriter, r *http.Request) {
 			"capabilities":  a.Capabilities,
 			"detect":        a.Detect,
 			"detected":      len(detected) > 0,
-			"installed":     installed,
-			"installable":   a.ID == "zcode",
-			"staged":        a.ID == "dsh" || a.ID == "hermes",
+			"installed":     status.Installed,
+			"installable":   mode == adapter.ModeAuto && harness.Supported(a),
+			"mode":          mode,
+			"install_kind":  a.Hooks.InstallKind,
+			"staged":        mode == adapter.ModeStaged,
+			"staged_ready":  status.StagedReady,
 			"detected_path": strings.Join(detected, ", "),
 			"notes":         a.Notes,
 			"hooks": map[string]any{
 				"events": a.Hooks.Events, "install_kind": a.Hooks.InstallKind,
 				"injection": a.Hooks.Injection, "needs_trust": a.Hooks.NeedsTrust,
+				"schema": a.Hooks.Schema, "scope": a.Hooks.Scope, "target": a.Hooks.Target,
 			},
-			"mcp": map[string]any{"kind": a.MCP.Kind, "target": a.MCP.Target},
+			"mcp": map[string]any{"kind": a.MCP.Kind, "target": a.MCP.Target, "shape": a.MCP.Shape},
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"adapters": out})
@@ -331,6 +336,28 @@ func handleAdapterAction(w http.ResponseWriter, r *http.Request, o Options) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if payload.Action != "install" && payload.Action != "uninstall" && payload.Action != "stage" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("unknown action %q", payload.Action))
+		return
+	}
+	adapters, err := adapter.All("")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	var descriptor adapter.Descriptor
+	found := false
+	for _, candidate := range adapters {
+		if candidate.ID == payload.ID {
+			descriptor = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, fmt.Errorf("unknown adapter %q", payload.ID))
+		return
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -341,46 +368,21 @@ func handleAdapterAction(w http.ResponseWriter, r *http.Request, o Options) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	binary := marktoastCLI()
+	opts := harness.Options{Root: o.Root, Binary: marktoastCLI(), Token: token, Apply: true, Home: home}
+	var report harness.Report
 	switch payload.Action {
-	case "install", "uninstall":
-		if payload.ID != "zcode" {
-			writeError(w, http.StatusBadRequest, fmt.Errorf("adapter %q is not automatically installable; try action=stage", payload.ID))
-			return
-		}
-		var report harness.ZCodeReport
-		if payload.Action == "install" {
-			report, err = harness.InstallZCode(home, o.Root, token, binary, true)
-		} else {
-			report, err = harness.UninstallZCode(home, true)
-		}
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, report)
+	case "install":
+		report, err = harness.Install(descriptor, opts)
+	case "uninstall":
+		report, err = harness.Uninstall(descriptor, opts)
 	case "stage":
-		adapters, err := adapter.All("")
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-		for _, descriptor := range adapters {
-			if descriptor.ID != payload.ID {
-				continue
-			}
-			report, err := harness.Stage(descriptor.ID, o.Root, binary, token, descriptor.Hooks.Events)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, err)
-				return
-			}
-			writeJSON(w, http.StatusOK, report)
-			return
-		}
-		writeError(w, http.StatusNotFound, fmt.Errorf("unknown adapter %q", payload.ID))
-	default:
-		writeError(w, http.StatusBadRequest, fmt.Errorf("unknown action %q", payload.Action))
+		report, err = harness.Stage(descriptor, opts)
 	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
 }
 
 // marktoastCLI locates the CLI used by harness hooks.

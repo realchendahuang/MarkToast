@@ -1,0 +1,52 @@
+id: copilot-cli
+title: GitHub Copilot CLI
+detect:
+  - ~/.copilot
+instruction_file:
+  global: ""
+  project: "{workspace}/AGENTS.md"
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events:
+    - SessionStart
+    - UserPromptSubmit
+    - PreToolUse
+    - PostToolUse
+    - PostToolUseFailure
+    - PreCompact
+    - Stop
+    - SessionEnd
+    - SubagentStart
+    - SubagentStop
+  install_kind: json_merge
+  schema: flat_no_matcher
+  scope: global
+  target: ~/.copilot/hooks/marktoast.json
+  injection: stdout_additional_context
+  needs_trust: false
+  notes: "写 $COPILOT_HOME/hooks/marktoast.json（独立 {version:1,hooks:{...}} 文件；用 MarkToast 自己的文件名，避免与 ai-memory 共存时互相覆盖）；事件用 PascalCase，payload 与 Claude Code 兼容；条目是 flat 且不带 matcher（Copilot 在 SessionStart/Stop/SessionEnd/子代理事件上拒绝 matcher）。SessionStart 经顶层 additionalContext 交付 handoff。--scope project 有意不支持（.github/hooks 会被提交、共享给团队与 cloud agent）。依据：render_shared.rs: COPILOT_CLI_EVENTS/COPILOT_CLI_PROFILE；install_hooks.rs: copilot_cli_hooks_path；docs/support-matrix.md: GitHub Copilot CLI；docs/install.md#GitHub-Copilot-CLI。"
+mcp:
+  kind: http
+  target: ~/.copilot/mcp-config.json
+  shape: mcpServers
+  notes: "$COPILOT_HOME/mcp-config.json 根 mcpServers，条目 type: http + url + 可选 headers。依据：docs/support-matrix.md: GitHub Copilot CLI；install_mcp.rs 路径解析。"
+session:
+  roots:
+    - ~/.copilot/session-state
+  format: jsonl
+  notes: "$COPILOT_HOME/session-state/<uuid>/events.jsonl。依据：docs/managed-workstreams.md 原生适配表。"
+session_logs: ~/.copilot/session-state
+tier: projection
+capabilities:
+  - read
+  - inject
+  - mcp
+install_mode: auto
+docs:
+  - ai-memory/docs/support-matrix.md#GitHub Copilot CLI
+  - ai-memory/docs/install.md#GitHub-Copilot-CLI
+  - https://docs.github.com/en/copilot/reference/hooks-configuration
+notes: "注意区分 VS Code Copilot（vs-code-copilot，MCP-only）与 Copilot CLI；别名 copilot-cli。"

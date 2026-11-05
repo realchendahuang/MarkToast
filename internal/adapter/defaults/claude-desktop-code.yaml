@@ -1,0 +1,52 @@
+id: claude-desktop-code
+title: Claude Desktop (Code tab)
+detect:
+  - ~/Library/Application Support/Claude
+  - ~/.config/Claude
+instruction_file:
+  global: ~/.claude/CLAUDE.md
+  project: "{workspace}/CLAUDE.md"
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events:
+    - SessionStart
+    - UserPromptSubmit
+    - PreToolUse
+    - PostToolUse
+    - PostToolUseFailure
+    - PreCompact
+    - Stop
+    - SessionEnd
+    - SubagentStart
+    - SubagentStop
+  install_kind: json_merge
+  schema: claude
+  scope: global
+  target: ~/.claude/settings.json
+  injection: stdout_additional_context
+  needs_trust: false
+  notes: "Code tab 实际运行 Claude Code，读同一份 ~/.claude/settings.json，所以 install-hooks --agent claude-code 已覆盖它（会话按 claude-code 归类）。无项目目录启动的会话落在 ~/.config/Claude/scratch-workspaces/ 下，成为独立的自动命名 project。依据：docs/mcp-install.md#Claude Desktop；docs/support-matrix.md: Claude Desktop (Code tab)。"
+mcp:
+  kind: http
+  target: ~/.claude.json
+  shape: mcpServers
+  notes: "Code tab 的本地会话同时读取 claude_desktop_config.json、~/.claude.json 与 .mcp.json；同名 server 以 claude_desktop_config.json 优先。HTTP 直连只能经 CLI 那份配置注册，Claude Desktop 自身 JSON 只支持 stdio。依据：docs/mcp-install.md#Claude Desktop。"
+session:
+  roots:
+    - ~/.claude/projects
+  format: jsonl
+  notes: "与 Claude Code 共用 ~/.claude/projects；scratch 会话的 cwd 在 ~/.config/Claude/scratch-workspaces/。"
+session_logs: ~/.claude/projects
+tier: projection
+capabilities:
+  - read
+  - inject
+  - mcp
+install_mode: auto
+docs:
+  - ai-memory/docs/support-matrix.md#Claude Desktop (Code tab)
+  - ai-memory/docs/mcp-install.md#Claude Desktop
+notes: "与 claude-code 共用 hooks 目标文件，装一次即覆盖；与 Chat tab（claude-desktop-chat）是两个不同 id。"

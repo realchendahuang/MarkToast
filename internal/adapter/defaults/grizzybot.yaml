@@ -1,0 +1,36 @@
+id: grizzybot
+title: GrizzyBot
+detect: []
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events: []
+  install_kind: manual
+  schema: none
+  scope: global
+  target: ""
+  injection: none
+  needs_trust: false
+  notes: "GrizzyBot（原生 macOS agent app）自带 ai-memory bridge，自己把生命周期事件 POST 到 /hook?agent=grizzybot，并直连 /mcp；没有 install-hooks 可写的东西。桥由 GrizzyBot 仓库维护，接入前需审阅。依据：docs/support-matrix.md: GrizzyBot；ids.rs: AgentKind::Grizzybot 注释。"
+mcp:
+  kind: none
+  target: ""
+  shape: ""
+  notes: "App 直接对 /mcp 发起请求，没有可写的客户端配置文件；无需 MarkToast 注册。依据：docs/support-matrix.md: GrizzyBot。"
+session:
+  roots: []
+  format: unknown
+  notes: "会话归到 agent=grizzybot；原生存储路径未在事实源给出。依据：docs/support-matrix.md: GrizzyBot。"
+tier: readonly
+capabilities:
+  - read
+install_mode: staged
+docs:
+  - ai-memory/docs/support-matrix.md#GrizzyBot
+  - https://github.com/Foscoe63/GrizzyBot
+notes: "无可写配置，只有应用内 bridge，故为 staged。"

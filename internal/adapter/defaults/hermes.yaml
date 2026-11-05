@@ -18,14 +18,17 @@ hooks:
     - on_session_end
     - on_session_finalize
   install_kind: yaml_snippet
+  schema: yaml
+  scope: global
   target: ~/.hermes/config.yaml
   injection: pre_llm_call_context
   needs_trust: true
-  notes: "不会自动写 ~/.hermes/config.yaml；受 hooks_auto_accept 门控；Hermes 忽略 on_session_start 输出，要在 pre_llm_call 打印 {\"context\": ...}。"
+  notes: "ai-memory 从不写 ~/.hermes/config.yaml（只打印 hooks: 块），且 Hermes 用 hooks_auto_accept / shell-hooks-allowlist.json 门控 user hooks；每个 profile 是独立 home，需各自 accept。6 个事件、20s 超时，command 用 shlex.split 无 shell。Hermes 忽略 on_session_start 输出，handoff 要在 pre_llm_call 打印 {\"context\": ...}（resume 后也生效）；on_session_end 是回合边界，on_session_finalize 才是会话结束。依据：docs/install.md#Hermes-Agent-Nous-Research；docs/mcp-install.md#Hermes Agent；render_shared.rs: HERMES_TOOL_EVENTS/HERMES_LIFECYCLE_EVENTS；install_hooks.rs: hermes 分支。"
 mcp:
   kind: stdio_bridge
   target: ~/.hermes/config.yaml
-  notes: "mcp_servers 支持 stdio 与 HTTP/Streamable HTTP；Hermes 不读 MCP server instructions。仅 MCP = 只有工具调用，无 prefetch/sync_turn 生命周期。"
+  shape: mcp_servers
+  notes: "mcp_servers 支持 stdio 与 HTTP/Streamable HTTP；install-mcp --client hermes 只打印条目（--apply 拒绝）：stdio 跑 ai-memory mcp-bridge --no-session-id 并带 --data-dir；Hermes 不读 MCP server instructions。仅 MCP = 只有工具调用，无 prefetch/sync_turn 生命周期。依据：docs/mcp-install.md#Hermes Agent。"
 session:
   roots:
     - ~/.hermes/state.db
@@ -36,4 +39,11 @@ tier: native
 capabilities:
   - read
   - write
-notes: "内置 MEMORY.md/USER.md 用精确 \"\\n§\\n\" 分隔，2200/1375 字符预算（本机 MEMORY.md 已 2528/2200 超限）；完整 preload/turn sync 需实现 standalone MemoryProvider 并关闭内置写入以避免双写。"
+  - inject
+  - mcp
+install_mode: staged
+docs:
+  - ai-memory/docs/support-matrix.md#Hermes Agent
+  - ai-memory/docs/install.md#Hermes-Agent-Nous-Research
+  - ai-memory/docs/mcp-install.md#Hermes Agent
+notes: "内置 MEMORY.md/USER.md 用精确 \"\\n§\\n\" 分隔，2200/1375 字符预算；完整 preload/turn sync 需实现 standalone MemoryProvider 并关闭内置写入以避免双写。"

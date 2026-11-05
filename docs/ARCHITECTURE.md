@@ -108,25 +108,87 @@ One durable fact.
 
 ## 7. 适配器
 
-内置描述符位于 `internal/adapter/defaults/<id>.yaml`，声明式描述 T1/T2/T3/T4 分级能力：
+内置描述符位于 `internal/adapter/defaults/<id>.yaml`，**40 家 harness 一家一个文件**，
+声明式描述 T1/T2/T3/T4 能力。加一家 harness 是新增一个 YAML，不是改核心代码：
 
 ```yaml
-id: zcode
-detect: [~/.zcode]
+# 示意：字段形态；具体每家的真实取值以 defaults/<id>.yaml 为准
+id: example-harness
+title: Example Harness
+detect: [~/.example]
 instruction_file:
-  global: ~/.zcode/AGENTS.md
+  global: ~/.example/AGENTS.md
   project: "{workspace}/AGENTS.md"
   marker: "<!-- marktoast:begin -->"
 native_memory:
-  root: ~/.zcode/cli/memories/projects/{projectKey}/memory
+  root: ~/.example/memories
   index: MEMORY.md
-session_logs: ~/.zcode/v2/sessions
-capabilities: [read, write, inject]
-tier: native
+hooks:
+  events: [SessionStart, UserPromptSubmit, Stop]
+  install_kind: json_merge      # 安装形态
+  schema: claude                # 落盘 hooks 的 schema 变体
+  scope: global                 # global | project
+  target: ~/.example/config.json
+  injection: stdout_additional_context
+  notes: "…（依据与坑）"
+mcp:
+  kind: http
+  shape: mcpServers
+  target: ~/.example/config.json
+session_logs: ~/.example/sessions
+tier: projection
+capabilities: [read, inject, mcp]
+install_mode: auto
 ```
 
-首批适配器：**ZCode → DSH → Hermes**；随后 Codex、Claude Code、Pi、OpenCode、Cline。
-新增 harness 只需一个 YAML + 一个 fixture，社区可贡献。
+### 7.1 三级安装模式
+
+| 模式 | 含义 | 安装器行为 |
+|---|---|---|
+| `auto` | MarkToast 能安全合并该家配置（JSON/TOML、schema 明确） | 按 `hooks.schema` 合并 hooks，按 `mcp.kind`/`mcp.shape` 注册 MCP；备份、幂等、保留第三方条目、原子写 |
+| `staged` | 需要插件安装、补丁合并或人工粘贴 | 在 `~/.marktoast/adapters/<id>/` 生成 `hooks.*` / `mcp.*` / `README.txt`，打印粘贴步骤与坑 |
+| `mcp_only` | 只有 MCP，没有（或无法安全接）生命周期 hooks | 只生成 MCP 片段与说明，不写 hooks |
+
+`install_mode` 缺省时由 `hooks.install_kind` 推导：`json_merge` / `toml_merge` /
+`json_bundle` → `auto`；`mcp_only` / `none` → `mcp_only`；其余 → `staged`。
+
+### 7.2 通用安装引擎
+
+`internal/harness` 是唯一的安装入口（`Install` / `Uninstall`），按描述符分派，
+替换了早期硬编码的 ZCode / DSH / Hermes 三家实现：
+
+- **hooks 合并**支持 schema 变体：`claude` / `claude_no_matcher`
+  （`hooks[event] = [{matcher?, hooks: [{type: "command", command, timeoutMs}]}]`）、
+  `flat` / `flat_no_matcher`（事件 → `[{type, command}]`）、`event_map`（根级事件表）、
+  `named_group`（命名分组）、`exec`（ZCode）、`exec_list`（Zero）、`bundle`
+  （独立 hooks JSON 文件，可用 `bundle:<modifier>` 钉形状）、`toml`（`[[hooks]]`）、
+  `yaml` / `plugin` / `none`。
+- **MCP 注册**支持 shape：`mcpServers` / `mcp.servers` / `mcp_servers` /
+  `context_servers` / `servers` / `mcp` / `extensions`（各家配置键形状）。
+- **无法安全合并的 schema 一律降级 `staged`**，宁可由用户粘贴，也不写坏别人的配置。
+- `uninstall` 按写入前记录的 marker/条目精确回滚；staged 目录直接删除。
+- hub `/api/adapters` 返回 `mode`、`install_kind`、`staged`（能力）、`staged_ready`（片段是否已生成）
+  与 `installed`（仅 auto 家做真实配置检测），Web UI 据此分组与显示动作。
+
+### 7.3 能力分级（tier）
+
+| tier | 含义 |
+|---|---|
+| `native` | 有稳定的原生记忆格式，可双向读写（如 ZCode） |
+| `projection` | 只能投影：指令文件 / MCP / hooks，不直接写原生记忆 |
+| `readonly` | 只读取会话或记忆，不写回 |
+
+### 7.4 事实来源与归属
+
+40 家 harness 的配置路径、hook 事件、注入方式与已知坑，主要参考
+[akitaonrails/ai-memory](https://github.com/akitaonrails/ai-memory)（MIT）的
+`docs/support-matrix.md`、`docs/mcp-install.md`、`docs/install.md` 与
+`docs/managed-harness-contributions.md`，再按其自身文档核实，写进每个 YAML 的 `notes`。
+MarkToast **不 fork 其引擎**，只移植接线事实与脚本模式；归属见 [CREDITS.md](CREDITS.md)。
+
+新增 harness 只需一个 YAML（可选一个字段断言）；描述符校验与安装步骤见
+[adapters/README.md](../adapters/README.md)，全量矩阵见
+[HARNESS-INTEGRATION.md](HARNESS-INTEGRATION.md)。
 
 ## 8. 并发与故障模式
 
@@ -179,7 +241,7 @@ tier: native
 | POST | `/api/memory` | 保存记忆（写 Markdown → 索引 → `MEMORY.md` → commit） |
 | GET | `/api/memories?project=&type=&limit=&offset=&sort=` | 分页列表 |
 | GET | `/api/projects` | 项目与 facts 计数 |
-| GET | `/api/adapters` | 适配器描述符（hooks/mcp 元数据） |
+| GET | `/api/adapters` | 全量适配器：`mode` / `install_kind` / `staged`（能力）/ `staged_ready`（片段是否已生成）/ `detected` / `installed` + hooks/mcp 元数据 |
 | GET | `/api/git/log?n=` | 最近提交 |
 | POST | `/mcp` | MCP Streamable HTTP（Bearer token 来自 `<root>/.marktoast/token`） |
 
@@ -197,17 +259,38 @@ stdio 入口是 `marktoast mcp`；HTTP 入口由 `marktoast serve` 提供。
   内容是该项目的 `MEMORY.md`（或生成的紧凑索引），超过 6000 字符截断；
 - 其它事件输出 `{}`，兼容要求 JSON 的 harness。
 
-注入是否生效由 harness 决定：ZCode 支持 `additionalContext`；DSH 的 SessionStart 是 detached，
-走 MCP 兜底；Hermes 忽略 on_session_start 输出，要在 `pre_llm_call` 打印 `{"context": ...}`（M2 做）。
+注入是否生效由 harness 决定，描述符的 `hooks.injection` 记录该家的真实机制：
+
+| `hooks.injection` | 含义 | 代表 |
+|---|---|---|
+| `stdout_additional_context` | hook stdout 的结构化 `additionalContext` 会被读入 | ZCode、Claude Code、CodeBuddy |
+| `pre_llm_call_context` | 在每回合前打印 `{"context": ...}` | Hermes（忽略 session-start 输出） |
+| `mcp_handoff` | stdout 注入不可靠，走 MCP 兜底 | DSH（SessionStart detached） |
+| `none` | 该家没有可用注入点 | 仅 MCP / read-only 家 |
+
+同一种注入机制在不同家仍可能有细节差异（detached 执行、只接受字面量 token、
+`Stop` 只是回合边界等），这些都写进对应 YAML 的 `hooks.notes`，安装前先读。
+
+当前 `marktoast hook` 对所有 `SessionStart` 统一输出 `additionalContext`；
+`pre_llm_call_context`（如 Hermes）与 `mcp_handoff`（如 DSH）的家由 provider 插件 /
+MCP 兜底，注入效果的逐家实测仍是 M2 的剩余验证项（见 [ROADMAP.md](ROADMAP.md)）。
 
 ### 12.4 适配器安装语义
 
-`marktoast adapters install <id>` 默认 dry-run，`--apply` 才写：
+`marktoast adapters install <id>` 默认 dry-run，`--apply` 才写；按描述符的
+`install_mode` 分三档执行（引擎在 `internal/harness`）：
 
-- ZCode：合并 `~/.zcode/cli/config.json` 的 `hooks`（6 事件）与 `mcp.servers.marktoast`，
-  保留第三方条目；写前备份；`uninstall --apply` 精确移除。
-- DSH / Hermes：staged 到 `~/.marktoast/adapters/<id>/` 并打印必须人工粘贴的片段
-  （Cordis patch / Hermes YAML）；不假装一键。
+- **auto**：按 `hooks.schema` 合并 hooks、按 `mcp.kind`/`mcp.shape` 注册 MCP。
+  写前备份、幂等、保留第三方条目、原子写；`uninstall --apply` 只移除 MarkToast 条目。
+  ZCode / Claude Code / Codex / Cursor / Gemini 等配置结构明确的家走这一档。
+- **staged**：在 `~/.marktoast/adapters/<id>/` 生成 `hooks.*` / `mcp.*` / `README.txt`
+  （含 hub URL、token、手贴步骤与该家的坑），由用户手动合并。DSH 的 Cordis patch、
+  Hermes 的 `config.yaml` hooks 等走这一档。
+- **mcp_only**：只生成 MCP 片段与说明，不装生命周期 hooks；`installed` 恒为 false，
+  状态只看 `detected` 与 `staged_ready`。
+
+无法安全合并的 schema 宁可降级为 staged，也不写坏用户配置；`adapters status` 与
+hub `/api/adapters` 会如实报告 `mode`、`staged_ready` 与 `installed`。
 
 ## 13. 里程碑
 

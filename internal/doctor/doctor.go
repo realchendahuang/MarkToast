@@ -94,19 +94,28 @@ func Run(root string) []Check {
 	} else {
 		detected := 0
 		installed := 0
+		stagedReady := 0
+		autoCount := 0
 		for _, descriptor := range adapters {
 			if len(adapter.Detect(descriptor)) > 0 {
 				detected++
 			}
-			if descriptor.ID == "zcode" && harness.ZCodeInstalled(home) {
+			if descriptor.EffectiveInstallMode() == adapter.ModeAuto {
+				autoCount++
+			}
+			status := harness.StatusOf(descriptor, harness.Options{Home: home})
+			if status.Installed {
 				installed++
+			}
+			if status.StagedReady {
+				stagedReady++
 			}
 		}
 		status := "ok"
 		if detected == 0 {
 			status = "warn"
 		}
-		checks = append(checks, Check{"adapters", status, fmt.Sprintf("%d detected, %d wired", detected, installed)})
+		checks = append(checks, Check{"adapters", status, fmt.Sprintf("%d detected, %d wired (of %d auto; %d staged snippets ready)", detected, installed, autoCount, stagedReady)})
 	}
 
 	client := http.Client{Timeout: 400 * time.Millisecond}

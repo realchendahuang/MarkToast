@@ -16,28 +16,37 @@ hooks:
     - PreToolUse
     - PostToolUse
     - PostToolUseFailure
+    - PreCompact
     - Stop
+    - SessionEnd
     - SubagentStart
     - SubagentStop
-    - PreCompact
-    - SessionEnd
   install_kind: json_merge
+  schema: claude
+  scope: global
   target: ~/.claude/settings.json
   injection: stdout_additional_context
   needs_trust: false
-  notes: "SessionStart 的 additionalContext 注入可用；hooks 可放用户级 settings.json 或项目 .claude/settings.json。"
+  notes: "10 个事件；PostToolUseFailure 是工具失败时替代 PostToolUse 的独立事件（outcome=error，错误文本有界）。SessionStart 的 additionalContext 注入可用；hooks 也可放项目 .claude/settings.local.json。同一套 hooks/MCP/skills 另有 marketplace 插件形态。依据：ai-memory docs/support-matrix.md: Claude Code；docs/mcp-install.md#Claude Code；render_shared.rs: CLAUDE_CODE_EVENTS；install_hooks.rs: claude_settings_path。"
 mcp:
   kind: http
   target: ~/.claude.json
-  notes: "claude mcp add --transport http（用户 scope: ~/.claude.json；项目 scope: .mcp.json）。"
+  shape: mcpServers
+  notes: "静态 HTTP 条目写 ~/.claude.json（用户 scope），项目 scope 用 .mcp.json；--session-aware 时改写为本地 stdio mcp-bridge，透传 CLAUDE_CODE_SESSION_ID。依据：docs/mcp-install.md#Claude Code。"
 session:
   roots:
     - ~/.claude/projects
   format: jsonl
-  notes: "项目目录下 .jsonl 会话；deja-vu 有 reader。"
+  notes: "项目目录下 *.jsonl；Code tab 的 scratch 会话落在 ~/.config/Claude/scratch-workspaces/。"
 session_logs: ~/.claude/projects
 tier: projection
 capabilities:
   - read
   - inject
-notes: "指令投影 + MCP；hooks 可作为 T2 会话摄取来源。"
+  - mcp
+install_mode: auto
+docs:
+  - ai-memory/docs/support-matrix.md#Claude Code
+  - ai-memory/docs/mcp-install.md#Claude Code
+  - https://code.claude.com/docs/en/hooks
+notes: "指令投影 + MCP + hooks；hooks 也可作为会话摄取来源。"

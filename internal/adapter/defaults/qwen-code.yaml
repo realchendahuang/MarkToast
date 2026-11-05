@@ -1,0 +1,50 @@
+id: qwen-code
+title: Qwen Code
+detect:
+  - ~/.qwen
+instruction_file:
+  global: ""
+  project: "{workspace}/AGENTS.md"
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events:
+    - SessionStart
+    - UserPromptSubmit
+    - PreToolUse
+    - PostToolUse
+    - PostToolUseFailure
+    - PreCompact
+    - Stop
+    - SessionEnd
+    - SubagentStart
+    - SubagentStop
+  install_kind: json_merge
+  schema: claude
+  scope: global
+  target: ~/.qwen/settings.json
+  injection: stdout_additional_context
+  needs_trust: false
+  notes: "hooks 合并进 ~/.qwen/settings.json 根 hooks 对象，空 matcher = match-all；10 个事件。payload 为 Claude 形（session_id/cwd/tool_name/tool_input/tool_use_id），capture exclusions 覆盖 Qwen 的 Gemini 类工具；UserPromptSubmit 只认 submitted_prompt。SessionStart 经 hookSpecificOutput.additionalContext 注入 handoff；无 cwd 时用 QWEN_PROJECT_DIR。Qwen 有真实 SessionEnd。依据：docs/install.md#Qwen-Code；docs/mcp-install.md#Qwen Code；render_shared.rs: QWEN_CODE_EVENTS；install_hooks.rs: qwen_code_settings_path。"
+mcp:
+  kind: http
+  target: ~/.qwen/settings.json
+  shape: mcpServers
+  notes: "根 mcpServers；streamable HTTP 用 httpUrl（不是 url）+ timeout（毫秒），url 是 legacy SSE，不要混用；token-file 安装改写为 stdio mcp-bridge --no-session-id。依据：docs/mcp-install.md#Qwen Code。"
+session:
+  roots: []
+  format: unknown
+  notes: "Qwen 未文档化稳定 transcript store（无 managed adapter / backfill）。依据：docs/install.md#Qwen-Code。"
+tier: projection
+capabilities:
+  - read
+  - inject
+  - mcp
+install_mode: auto
+docs:
+  - ai-memory/docs/support-matrix.md#Qwen Code
+  - ai-memory/docs/install.md#Qwen-Code
+  - ai-memory/docs/mcp-install.md#Qwen Code
+notes: "别名 qwen/qwencode；读 AGENTS.md 与 QWEN.md，routing 片段无需 Qwen 专属文件；setup 在 ~/.qwen 存在时自动接线。"

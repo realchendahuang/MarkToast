@@ -1,0 +1,47 @@
+id: kiro-cli
+title: Kiro CLI
+detect:
+  - ~/.kiro
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events:
+    - agentSpawn
+    - userPromptSubmit
+    - preToolUse
+    - postToolUse
+    - stop
+  install_kind: json_merge
+  schema: claude
+  scope: global
+  target: ~/.kiro/agents
+  injection: stdout_additional_context
+  needs_trust: false
+  notes: "v2 把 hooks 合并进每个全局 agent 定义（$KIRO_HOME/agents/*.json，camelCase 事件）；v3 写独立 $KIRO_HOME/hooks/ai-memory.json，事件为 PascalCase 的 SessionStart/UserPromptSubmit/PreToolUse/PostToolUse/Stop。两条路径都拒绝创建合成 agent 文件、保留第三方条目、按 $KIRO_HOME 定位；无真正 SessionEnd，需 finalize-session。project-local agent 需显式 --config-file .kiro/agents/<name>.json。依据：render_shared.rs: KIRO_CLI_V2_EVENTS/KIRO_CLI_V3_EVENTS；install_hooks.rs: kiro cli 路径；docs/mcp-install.md#Kiro CLI。"
+mcp:
+  kind: http
+  target: ~/.kiro/settings/mcp.json
+  shape: mcpServers
+  notes: "$KIRO_HOME/settings/mcp.json 的 mcpServers；MarkToast 写纯 http://127.0.0.1:3777/mcp + headers（Authorization: Bearer <token>）。ai-memory 的 ?flavor=bedrock 是它自己的 tool-schema 变体机制（Bedrock 拒绝根级 anyOf），MarkToast 没有 flavor 概念，若上游要求由用户自行追加。Kiro 允许 HTTPS 远程端点，plain HTTP 仅限 loopback。依据：docs/mcp-install.md#Kiro CLI；install_mcp.rs: build_mcp_entry（Kiro 走通用 mcpServers 条目）。"
+session:
+  roots:
+    - ~/.kiro/sessions
+  format: jsonl
+  notes: "v2: $KIRO_HOME/sessions/cli/<uuid>.jsonl；v3: sessions/<checkout-bucket>/<sess_uuid>/messages.jsonl。依据：docs/managed-workstreams.md 原生适配表。"
+session_logs: ~/.kiro/sessions
+tier: projection
+capabilities:
+  - read
+  - inject
+  - mcp
+install_mode: staged
+docs:
+  - ai-memory/docs/support-matrix.md#Kiro CLI
+  - ai-memory/docs/mcp-install.md#Kiro CLI
+  - https://kiro.dev/docs/hooks/
+notes: "v2/v3 是两个不兼容的 hook 注册格式；MarkToast 目前以 v2 片段为准，v3 尚未覆盖。"

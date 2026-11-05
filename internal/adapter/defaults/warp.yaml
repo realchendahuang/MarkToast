@@ -1,0 +1,40 @@
+id: warp
+title: Warp
+detect:
+  - ~/.warp
+  - ~/.warp_cli
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events: []
+  install_kind: mcp_only
+  schema: none
+  scope: global
+  target: ""
+  injection: none
+  needs_trust: false
+  notes: "Warp 无 lifecycle-hook 面，文档只给出手写 MCP 配方（MCP-only documented），自动捕获/handoff 注入不可用。依据：docs/install.md#Warp；docs/support-matrix.md: Warp。"
+mcp:
+  kind: http
+  target: ~/.warp/.mcp.json
+  shape: mcpServers
+  notes: "Warp 读 ~/.warp/.mcp.json，批准后也读项目 .warp/.mcp.json；URL server 用 url + 可选 headers，没有 type 键。Warp 不文档化 headers 里的环境变量展开；Warp Agent CLI 另有 ~/.warp_cli/.mcp.json（macOS）。依据：docs/install.md#Warp（Warp v0.2026.10.07.08.29）。"
+session:
+  roots: []
+  format: unknown
+  notes: "事实源未给出 transcript 契约（MCP-only documented）。依据：docs/support-matrix.md: Warp。"
+tier: readonly
+capabilities:
+  - read
+  - mcp
+install_mode: mcp_only
+docs:
+  - ai-memory/docs/support-matrix.md#Warp
+  - ai-memory/docs/install.md#Warp
+  - https://docs.warp.dev/agents/capabilities/mcp
+notes: "MCP-only documented（未端到端验证）；Warp 与 Warp Agent CLI 是两份配置。"

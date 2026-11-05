@@ -21,7 +21,6 @@ import (
 	"github.com/realchendahuang/MarkToast/internal/gitx"
 	"github.com/realchendahuang/MarkToast/internal/hub"
 	"github.com/realchendahuang/MarkToast/internal/index"
-	"github.com/realchendahuang/MarkToast/internal/plugin"
 	"github.com/realchendahuang/MarkToast/internal/service"
 	"github.com/realchendahuang/MarkToast/internal/store"
 	"github.com/realchendahuang/MarkToast/internal/version"
@@ -272,32 +271,7 @@ func newAdaptersCmd() *cobra.Command {
 		Short: "List harness adapters",
 	}
 	cmd.AddCommand(
-		&cobra.Command{
-			Use:   "list",
-			Short: "List available adapters",
-			RunE: func(cmd *cobra.Command, args []string) error {
-				cfg, err := resolve()
-				if err != nil {
-					return err
-				}
-				host, loadErr := plugin.Load(cfg.Root)
-				if loadErr != nil {
-					fmt.Fprintln(os.Stderr, "plugin:", loadErr)
-				}
-				if host != nil {
-					defer host.Close()
-				}
-				adapters, err := adapter.All(userAdaptersDir())
-				if err != nil {
-					return err
-				}
-				for _, a := range adapters {
-					caps := strings.Join(a.Capabilities, ",")
-					fmt.Printf("%-12s  %-22s  tier=%-10s  caps=%s\n", a.ID, a.Title, a.Tier, caps)
-				}
-				return nil
-			},
-		},
+		newAdapterListCmd(),
 		newAdapterInstallCmd(),
 		newAdapterUninstallCmd(),
 		newAdapterStatusCmd(),

@@ -1,0 +1,45 @@
+id: gemini-cli
+title: Gemini CLI
+detect:
+  - ~/.gemini
+instruction_file:
+  global: ""
+  project: "{workspace}/AGENTS.md"
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events:
+    - SessionStart
+    - SessionEnd
+    - BeforeTool
+    - AfterTool
+    - PreCompress
+  install_kind: json_merge
+  schema: claude
+  scope: global
+  target: ~/.gemini/settings.json
+  injection: stdout_additional_context
+  needs_trust: false
+  notes: "事件词汇与 Claude Code 不同：BeforeTool/AfterTool（不是 Pre/PostToolUse）、PreCompress（不是 PreCompact）；无 UserPromptSubmit、无 Stop（SessionEnd 覆盖）。5 个事件，嵌套 schema。SessionStart 取回 pending handoff。改 ~/.gemini/settings.json 后需重启 CLI 会话。依据：render_shared.rs: GEMINI_EVENTS/GEMINI_PROFILE；install_hooks.rs: gemini_settings_path；docs/mcp-install.md#Gemini CLI；docs/support-matrix.md: Gemini CLI。"
+mcp:
+  kind: http
+  target: ~/.gemini/settings.json
+  shape: mcpServers
+  notes: "根 mcpServers；streamable HTTP 用 httpUrl（不是 url）+ timeout（毫秒），stdio 用 command/args，SSE 用 url；不要在一个条目里混用。依据：docs/mcp-install.md#Gemini CLI。"
+session:
+  roots: []
+  format: unknown
+  notes: "事实源未给出 Gemini CLI 原生 transcript store 契约。依据：docs/support-matrix.md: Gemini CLI（未提 backfill）。"
+tier: projection
+capabilities:
+  - read
+  - inject
+  - mcp
+install_mode: auto
+docs:
+  - ai-memory/docs/support-matrix.md#Gemini CLI
+  - ai-memory/docs/mcp-install.md#Gemini CLI
+  - https://geminicli.com/docs/hooks/reference
+notes: "ai-memory 把 Gemini 归入 AGENTS.md 阵营（install_instructions.rs: Codex/OpenCode/Cursor/Gemini/Kimi Code 收敛到 AGENTS.md）；Gemini 自身也读 GEMINI.md，MarkToast 目前只投影 AGENTS.md，尚未覆盖 GEMINI.md。"

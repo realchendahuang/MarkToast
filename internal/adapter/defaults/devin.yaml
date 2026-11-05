@@ -1,0 +1,47 @@
+id: devin
+title: Devin CLI
+detect:
+  - ~/.devin
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events:
+    - SessionStart
+    - UserPromptSubmit
+    - PreToolUse
+    - PostToolUse
+    - PostCompaction
+    - Stop
+    - SessionEnd
+  install_kind: json_bundle
+  schema: event_map
+  scope: global
+  target: ~/.devin/hooks.v1.json
+  injection: stdout_additional_context
+  needs_trust: false
+  notes: "默认写 ~/.devin/hooks.v1.json（整个文件就是 hooks 事件对象）；也可 --config-file ~/.devin/config.json 合并到 hooks 键下。7 个事件含 Devin 特有的 PostCompaction（带 summary，映射为 post-compaction）；Devin 没有 subagent start/stop。SessionStart/PostToolUse 的 payload 可能缺 session_id/cwd，用 DEVIN_PROJECT_DIR 或 hook 进程 cwd 兜底。SessionStart 经 hookSpecificOutput.additionalContext 注入 handoff。依据：render_shared.rs: DEVIN_EVENTS；install_hooks.rs: devin_hooks_path（~/.devin/hooks.v1.json）与 devin config 分支；docs/install.md#Devin-CLI。"
+mcp:
+  kind: http
+  target: ~/.devin/config.json
+  shape: mcpServers
+  notes: "~/.devin/config.json 的 mcpServers；条目带 \"transport\": \"http\" + url + headers。依据：docs/mcp-install.md#Devin CLI；install_mcp.rs: render_devin。"
+session:
+  roots: []
+  format: unknown
+  notes: "事实源未给出原生 transcript store 契约（无 managed workstream）。依据：docs/support-matrix.md: Devin CLI（未提 backfill）。"
+tier: projection
+capabilities:
+  - read
+  - inject
+  - mcp
+install_mode: auto
+docs:
+  - ai-memory/docs/support-matrix.md#Devin CLI
+  - ai-memory/docs/install.md#Devin-CLI
+  - ai-memory/docs/mcp-install.md#Devin CLI
+notes: "SessionEnd 可用（真实会话结束），无需 finalize-session；PostCompaction 是 Devin 独有事件。"

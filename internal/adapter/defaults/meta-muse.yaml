@@ -1,0 +1,49 @@
+id: meta-muse
+title: Meta Muse Code
+detect:
+  - ~/.config/muse
+  - ~/.local/share/muse
+instruction_file:
+  global: ""
+  project: "{workspace}/AGENTS.md"
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events:
+    - SessionStart
+    - UserPromptSubmit
+    - PreToolUse
+    - PostToolUse
+    - PostToolUseFailure
+    - PreCompact
+    - Stop
+    - SessionEnd
+  install_kind: json_merge
+  schema: claude
+  scope: global
+  target: ~/.config/muse/settings.json
+  injection: stdout_additional_context
+  needs_trust: false
+  notes: "hooks 与 MCP 合并进 ${XDG_CONFIG_HOME:-~/.config}/muse/settings.json；必须补 \"schema_version\": 1（缺失会让每个 muse 命令启动失败），已有值不覆盖。8 个事件，空 matcher、30s 超时；不含 SubagentStart/Stop（Muse 每轮为内置提醒观察者触发）。SessionStart 经 hookSpecificOutput.additionalContext 注入 handoff。依据：docs/support-matrix.md: Meta Muse Code；install_hooks.rs: muse_settings_path；render_shared.rs: MUSE_EVENTS。"
+mcp:
+  kind: stdio_bridge
+  target: ~/.config/muse/settings.json
+  shape: mcpServers
+  notes: "stdio 条目 ai-memory mcp-bridge --agent muse（透传 MUSE_SESSION_ID），带 \"mode\": \"optional\" 与 install 的 --data-dir（Muse 以清空环境启动 stdio server/hooks）；若文件已有 legacy mcp_servers 则写那里，两 map 并存时 Muse 忽略全部 MCP server。依据：docs/mcp-install.md#Muse Code。"
+session:
+  roots: []
+  format: unknown
+  notes: "无 transcript backfill / managed workstream；$XDG_DATA_HOME/muse 是其数据目录。依据：docs/support-matrix.md: Meta Muse Code；setup.rs: muse_detected。"
+tier: projection
+capabilities:
+  - read
+  - inject
+  - mcp
+install_mode: auto
+docs:
+  - ai-memory/docs/support-matrix.md#Meta Muse Code
+  - ai-memory/docs/mcp-install.md#Muse Code
+  - ai-memory/docs/install.md#Meta-Muse-Code
+notes: "别名 muse/muse-code；读 ~/.agents/skills 与 AGENTS.md，技能无需另装。"

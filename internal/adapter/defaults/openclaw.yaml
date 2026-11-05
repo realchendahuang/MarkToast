@@ -1,0 +1,43 @@
+id: openclaw
+title: OpenClaw
+detect:
+  - ~/.openclaw
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events:
+    - session_start
+    - session_end
+    - before_tool
+    - after_tool
+  install_kind: plugin_bundle
+  schema: ""
+  scope: global
+  target: ""
+  injection: stdout_additional_context
+  needs_trust: false
+  notes: "没有配置文件级 hooks：ai-memory 生成完整 OpenClaw 插件包（package.json / openclaw.plugin.json / index.ts，插件 id ai-memory），写入 <data-local>/ai-memory/openclaw-plugin 后经 `openclaw plugins install` 安装，再 `openclaw gateway restart`。插件订阅 session_start/session_end/before_tool/after_tool。依据：install_hooks.rs: AgentChoice::Openclaw 分支与 openclaw_plugin.rs（ENTRYPOINT_TS、default_plugin_dir）；docs/support-matrix.md: OpenClaw。"
+mcp:
+  kind: http
+  target: ~/.openclaw/config.json
+  shape: mcp.servers
+  notes: "config.json 的 mcp.servers（与 Zero/ZCode 同形）；条目 url + transport: streamable-http + headers。依据：docs/mcp-install.md（OpenClaw 段）；install_mcp.rs: build_mcp_entry_openclaw/render_openclaw。"
+session:
+  roots: []
+  format: unknown
+  notes: "事实源未给出 OpenClaw 原生 transcript store 契约。依据：docs/support-matrix.md: OpenClaw。"
+tier: projection
+capabilities:
+  - read
+  - inject
+  - mcp
+install_mode: staged
+docs:
+  - ai-memory/docs/support-matrix.md#OpenClaw
+  - ai-memory/docs/mcp-install.md
+notes: "插件包没有单一配置目标，须经 openclaw plugins install 安装，故为 staged。"

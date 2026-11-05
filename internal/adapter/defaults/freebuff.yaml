@@ -1,0 +1,38 @@
+id: freebuff
+title: FreeBuff
+detect:
+  - ~/.agents
+instruction_file:
+  global: ""
+  project: "{workspace}/AGENTS.md"
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events: []
+  install_kind: mcp_only
+  schema: none
+  scope: global
+  target: ""
+  injection: none
+  needs_trust: false
+  notes: "FreeBuff 无文档化 lifecycle-hook 面（MCP-only），自动捕获/handoff 注入不可用；它已读 AGENTS.md。依据：docs/mcp-install.md#FreeBuff；docs/support-matrix.md: FreeBuff。"
+mcp:
+  kind: stdio_bridge
+  target: ~/.agents/mcp.json
+  shape: mcpServers
+  notes: "FreeBuff 从当前目录向上走到 home 查找 .agents/mcp.json；安装器写 home 里的这份，注册本地 stdio `ai-memory mcp-bridge --no-session-id`（file-backed token，不把 token 抄进配置）。依据：docs/mcp-install.md#FreeBuff。"
+session:
+  roots: []
+  format: unknown
+  notes: "无 lifecycle hooks / managed workstream。依据：docs/support-matrix.md: FreeBuff。"
+tier: readonly
+capabilities:
+  - read
+  - mcp
+install_mode: mcp_only
+docs:
+  - ai-memory/docs/support-matrix.md#FreeBuff
+  - ai-memory/docs/mcp-install.md#FreeBuff
+notes: "配置文件在 ~/.agents（与共享 skills 同根）；stdio bridge 非 HTTP 条目。"

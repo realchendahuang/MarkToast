@@ -1,0 +1,47 @@
+id: cline
+title: Cline CLI
+detect:
+  - ~/.cline
+instruction_file:
+  global: ""
+  project: ""
+  marker: "<!-- marktoast:begin -->"
+native_memory:
+  root: ""
+  index: ""
+hooks:
+  events:
+    - TaskStart
+    - TaskResume
+    - UserPromptSubmit
+    - PreToolUse
+    - PostToolUse
+    - TaskComplete
+    - TaskCancel
+    - TaskError
+    - SessionShutdown
+  install_kind: json_bundle
+  schema: ""
+  scope: global
+  target: ~/.cline/hooks
+  injection: mcp_handoff
+  needs_trust: false
+  notes: "Cline CLI 的 hooks 是 ~/.cline/hooks 下每个事件一个文件（9 个事件；--scope project 用 .cline/hooks）。生成文件 owner-only，拒绝覆盖用户自有文件与 symlink 目标。TaskStart/TaskResume 是 detached 执行 → handoff 只能经 MCP（memory_handoff_list/accept）；yolo 模式关闭 hooks；装完需重启 Cline。headless `cline -y` 首轮不触发 UserPromptSubmit。VS Code 扩展用独立 ~/Documents/Cline/Hooks，不在此接线范围。依据：install_hooks.rs: CLINE_HOOK_EVENTS（9 项）与 cline_hooks_path_in；docs/mcp-install.md#Cline CLI；docs/support-matrix.md: Cline CLI。"
+mcp:
+  kind: http
+  target: ~/.cline/data/settings/cline_mcp_settings.json
+  shape: mcpServers
+  notes: "默认 ${CLINE_MCP_SETTINGS_PATH:-~/.cline/data/settings/cline_mcp_settings.json}；条目必须显式 type: streamableHttp（裸 url 会走 legacy SSE）。依据：docs/mcp-install.md#Cline CLI。"
+session:
+  roots: []
+  format: unknown
+  notes: "无 managed workstream / transcript backfill 声明。依据：docs/support-matrix.md: Cline CLI。"
+tier: projection
+capabilities:
+  - read
+  - mcp
+install_mode: staged
+docs:
+  - ai-memory/docs/support-matrix.md#Cline CLI
+  - ai-memory/docs/mcp-install.md#Cline CLI
+notes: "每事件一个 JSON 文件，不是单文件 schema，故 staged；VC 扩展 hooks 目录不同。"

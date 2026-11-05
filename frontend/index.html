@@ -492,6 +492,28 @@
     </div>
   </div>
 
+  <div class="modal" id="adapter-modal" hidden>
+    <div class="dialog adapter-dialog" role="dialog" aria-modal="true" aria-labelledby="adapter-dialog-title">
+      <header class="dialog-head">
+        <div class="dialog-title-wrap">
+          <svg class="logo"><use href="#icon-plug"></use></svg>
+          <h2 id="adapter-dialog-title" data-no-i18n>适配器</h2>
+        </div>
+        <button class="icon" id="close-adapter-dialog" type="button" aria-label="关闭说明">
+          <svg class="ic"><use href="#icon-close"></use></svg>
+        </button>
+      </header>
+      <div class="dialog-body adapter-dialog-body" id="adapter-dialog-body"></div>
+      <footer class="dialog-foot">
+        <span>接入说明</span>
+        <div class="dialog-actions">
+          <button class="button quiet" id="adapter-dialog-action" type="button" hidden>接入</button>
+          <button class="button" id="adapter-dialog-close" type="button">关闭</button>
+        </div>
+      </footer>
+    </div>
+  </div>
+
   <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
   <script src="i18n.js"></script>
   <script src="app.js"></script>
