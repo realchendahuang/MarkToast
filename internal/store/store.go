@@ -4,9 +4,9 @@
 // The layout mirrors ZCode's project memory (Apache-2.0) so that existing
 // memories can be imported without conversion:
 //
-//	<root>/projects/<slug>-<sha256(path)[:16]>/memory/MEMORY.md
-//	<root>/projects/<slug>-<hash>/memory/<fact>.md
-//	<root>/global/<fact>.md
+// <root>/projects/<slug>-<sha256(path)[:16]>/memory/MEMORY.md
+// <root>/projects/<slug>-<hash>/memory/<fact>.md
+// <root>/global/<fact>.md
 //
 // Markdown is the single source of truth; everything under <root>/.marktoast/
 // is derived and safe to delete.
@@ -16,14 +16,18 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/realchendahuang/MarkToast/internal/lockfile"
 	"github.com/realchendahuang/MarkToast/internal/redact"
 )
 
@@ -34,6 +38,14 @@ const (
 	IndexFile = "MEMORY.md"
 	// MetaDir holds derived state (index, lock, cache). Gitignored.
 	MetaDir = ".marktoast"
+
+	// MaxFactBodyBytes bounds a single Markdown memory body. The limit keeps
+	// accidental multi-megabyte dumps out of the repository and UI.
+	MaxFactBodyBytes = 2 << 20
+	// MaxFactNameRunes and MaxFactDescriptionRunes keep frontmatter and the
+	// generated index manageable.
+	MaxFactNameRunes        = 200
+	MaxFactDescriptionRunes = 2000
 )
 
 // Fact is one durable memory.
@@ -75,13 +87,77 @@ func Init(root string) error {
 	return nil
 }
 
-// MemoryDir returns <root>/projects/<project>/memory, or <root>/global for
-// the reserved global project.
-func MemoryDir(root, project string) string {
-	if project == "" || project == GlobalProject {
-		return filepath.Join(root, GlobalProject)
+// LockWrite holds the repository's write lock until the returned function is
+// called. It is re-entrant within one process.
+func LockWrite(root string) (func(), error) {
+	return lockfile.Acquire(root)
+}
+
+// EnsureMetaDir creates and validates <root>/.marktoast, rejecting symlinked
+// derived-state directories that escape the repository.
+func EnsureMetaDir(root string) (string, error) {
+	dir := filepath.Join(root, MetaDir)
+	if err := mkdirWithinRoot(root, dir); err != nil {
+		return "", err
 	}
-	return filepath.Join(root, "projects", project, "memory")
+	return dir, nil
+}
+
+// ValidateProject checks that project is one safe path component. A project
+// key is never allowed to contain separators, "." or "..", which makes
+// accidental writes outside the repository impossible at the layout layer.
+func ValidateProject(project string) error {
+	if project == "" {
+		project = GlobalProject
+	}
+	if project == GlobalProject {
+		return nil
+	}
+	if len(project) > 128 {
+		return fmt.Errorf("project key is too long")
+	}
+	if project == "." || project == ".." || strings.ContainsAny(project, `/\\`) || project != strings.TrimSpace(project) {
+		return fmt.Errorf("invalid project key %q", project)
+	}
+	for _, r := range project {
+		if unicode.IsControl(r) {
+			return fmt.Errorf("invalid project key %q", project)
+		}
+	}
+	return nil
+}
+
+// MemoryDir returns <root>/projects/<project>/memory, or <root>/global for
+// the reserved global project. The project key is validated before joining.
+func MemoryDir(root, project string) (string, error) {
+	if project == "" {
+		project = GlobalProject
+	}
+	if err := ValidateProject(project); err != nil {
+		return "", err
+	}
+	var dir string
+	if project == GlobalProject {
+		dir = filepath.Join(root, GlobalProject)
+	} else {
+		dir = filepath.Join(root, "projects", project, "memory")
+	}
+	if !pathWithin(root, dir) {
+		return "", fmt.Errorf("memory directory escapes repository")
+	}
+	return dir, nil
+}
+
+// EnsureMemoryDir creates the validated memory directory for a project.
+func EnsureMemoryDir(root, project string) (string, error) {
+	dir, err := MemoryDir(root, project)
+	if err != nil {
+		return "", err
+	}
+	if err := mkdirWithinRoot(root, dir); err != nil {
+		return "", err
+	}
+	return dir, nil
 }
 
 // ProjectKey derives the stable project key for a workspace path, matching
@@ -123,6 +199,11 @@ func SanitizeSlug(value string) string {
 	return slug
 }
 
+func nameHash(name string) string {
+	sum := sha256.Sum256([]byte(name))
+	return hex.EncodeToString(sum[:])
+}
+
 // factFileName keeps ASCII names human-readable, and adds a short hash for
 // names that would otherwise collide (Chinese names all sanitise to "project").
 func factFileName(name string) string {
@@ -135,14 +216,22 @@ func factFileName(name string) string {
 		}
 	}
 	if slug == "project" || !ascii {
-		sum := sha256.Sum256([]byte(name))
-		suffix := hex.EncodeToString(sum[:])[:8]
+		suffix := nameHash(name)[:8]
 		if slug == "project" {
 			return "fact-" + suffix + ".md"
 		}
 		return slug + "-" + suffix + ".md"
 	}
 	return slug + ".md"
+}
+
+func hashedFactFileName(name string) string {
+	slug := SanitizeSlug(name)
+	suffix := nameHash(name)[:8]
+	if slug == "project" {
+		return "fact-" + suffix + ".md"
+	}
+	return slug + "-" + suffix + ".md"
 }
 
 // Parse splits a markdown file into frontmatter and body.
@@ -194,74 +283,180 @@ func ParseFile(path string) (Fact, error) {
 	return f, nil
 }
 
-// WriteFact writes (or updates) one fact atomically.
+// WriteFact writes (or safely updates) one fact atomically.
 func WriteFact(root, project string, f Fact) (string, error) {
-	if f.Name == "" {
-		return "", fmt.Errorf("fact name is required")
+	if project == "" {
+		project = GlobalProject
 	}
-	dir := MemoryDir(root, project)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := ValidateProject(project); err != nil {
 		return "", err
 	}
-	meta := frontmatter{Name: f.Name, Description: redact.String(f.Description)}
-	meta.Metadata.NodeType = "memory"
-	if f.NodeType != "" {
-		meta.Metadata.NodeType = f.NodeType
+	name := strings.TrimSpace(f.Name)
+	if name == "" {
+		return "", fmt.Errorf("fact name is required")
 	}
-	if f.Type == "" {
-		meta.Metadata.Type = "reference"
-	} else {
-		meta.Metadata.Type = f.Type
+	if utf8.RuneCountInString(name) > MaxFactNameRunes {
+		return "", fmt.Errorf("fact name exceeds %d characters", MaxFactNameRunes)
 	}
-	meta.Metadata.OriginSessionID = f.OriginSessionID
+	description := strings.TrimSpace(f.Description)
+	if utf8.RuneCountInString(description) > MaxFactDescriptionRunes {
+		return "", fmt.Errorf("fact description exceeds %d characters", MaxFactDescriptionRunes)
+	}
+	body := redact.String(strings.TrimLeft(f.Body, "\r\n"))
+	if len([]byte(body)) > MaxFactBodyBytes {
+		return "", fmt.Errorf("fact body exceeds %d bytes", MaxFactBodyBytes)
+	}
+	description = redact.String(description)
 
+	typ := strings.TrimSpace(f.Type)
+	if typ == "" {
+		typ = "reference"
+	}
+	nodeType := strings.TrimSpace(f.NodeType)
+	if nodeType == "" {
+		nodeType = "memory"
+	}
+
+	unlock, err := LockWrite(root)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
+
+	dir, err := EnsureMemoryDir(root, project)
+	if err != nil {
+		return "", err
+	}
+
+	path, err := existingFactPath(dir, name)
+	if err != nil {
+		return "", err
+	}
+	if path == "" {
+		path, err = newFactPath(dir, name)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	meta := frontmatter{Name: name, Description: description}
+	meta.Metadata.NodeType = nodeType
+	meta.Metadata.Type = typ
+	meta.Metadata.OriginSessionID = f.OriginSessionID
 	head, err := yaml.Marshal(meta)
 	if err != nil {
 		return "", err
 	}
-	body := redact.String(strings.TrimLeft(f.Body, "\r\n"))
 	content := "---\n" + string(head) + "---\n\n" + body + "\n"
-
-	path := filepath.Join(dir, factFileName(f.Name))
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(content), 0o600); err != nil {
-		return "", err
-	}
-	if err := os.Rename(tmp, path); err != nil {
+	if err := AtomicWriteFile(path, []byte(content), 0o600); err != nil {
 		return "", err
 	}
 	return path, nil
 }
 
-// ListFacts walks the repository and returns every fact (indexes excluded).
+// existingFactPath returns an existing file whose frontmatter name exactly
+// matches name. This preserves imported/legacy filenames when updating a fact.
+func existingFactPath(dir, name string) (string, error) {
+	var found string
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if d.IsDir() || d.Type()&os.ModeSymlink != 0 || !strings.HasSuffix(strings.ToLower(path), ".md") || strings.EqualFold(filepath.Base(path), IndexFile) {
+			return nil
+		}
+		f, err := ParseFile(path)
+		if err == nil && f.Name == name {
+			found = path
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	return found, err
+}
+
+func newFactPath(dir, name string) (string, error) {
+	path := filepath.Join(dir, factFileName(name))
+	if err := checkFactTarget(path, name); err == nil {
+		return path, nil
+	}
+	path = filepath.Join(dir, hashedFactFileName(name))
+	if err := checkFactTarget(path, name); err == nil {
+		return path, nil
+	}
+	return "", fmt.Errorf("filename collision for memory %q", name)
+}
+
+func checkFactTarget(path, name string) error {
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return fmt.Errorf("unsafe existing memory path")
+	}
+	f, err := ParseFile(path)
+	if err != nil {
+		return err
+	}
+	if f.Name != name {
+		return fmt.Errorf("filename collision")
+	}
+	return nil
+}
+
+// ListFacts walks the repository and returns every valid fact (indexes and
+// symlinks excluded).
 func ListFacts(root string) ([]Fact, error) {
 	var facts []Fact
 	projects := filepath.Join(root, "projects")
 	err := filepath.WalkDir(projects, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
 			return nil
 		}
-		if d.IsDir() || !strings.HasSuffix(strings.ToLower(path), ".md") {
+		if d.IsDir() || d.Type()&os.ModeSymlink != 0 || !strings.HasSuffix(strings.ToLower(path), ".md") {
 			return nil
 		}
-		if filepath.Base(path) == IndexFile {
+		if strings.EqualFold(filepath.Base(path), IndexFile) {
 			return nil
 		}
 		f, err := ParseFile(path)
 		if err != nil {
 			return nil
 		}
-		f.Project = filepath.Base(filepath.Dir(filepath.Dir(path)))
+		project, projectErr := ProjectFromPath(root, path)
+		if projectErr != nil {
+			return nil
+		}
+		f.Project = project
 		facts = append(facts, f)
 		return nil
 	})
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
-	// Global facts live outside projects/.
-	globalFiles, _ := filepath.Glob(filepath.Join(root, GlobalProject, "*.md"))
+
+	globalFiles, err := filepath.Glob(filepath.Join(root, GlobalProject, "*.md"))
+	if err != nil {
+		return nil, err
+	}
 	for _, path := range globalFiles {
-		if filepath.Base(path) == IndexFile {
+		if strings.EqualFold(filepath.Base(path), IndexFile) {
+			continue
+		}
+		if info, err := os.Lstat(path); err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 			continue
 		}
 		f, err := ParseFile(path)
@@ -271,12 +466,23 @@ func ListFacts(root string) ([]Fact, error) {
 		f.Project = GlobalProject
 		facts = append(facts, f)
 	}
-	sort.Slice(facts, func(i, j int) bool { return facts[i].Name < facts[j].Name })
+	sort.Slice(facts, func(i, j int) bool {
+		if facts[i].Name == facts[j].Name {
+			return facts[i].Path < facts[j].Path
+		}
+		return facts[i].Name < facts[j].Name
+	})
 	return facts, nil
 }
 
 // WriteIndexes regenerates MEMORY.md for every project that has facts.
 func WriteIndexes(root string) error {
+	unlock, err := LockWrite(root)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	facts, err := ListFacts(root)
 	if err != nil {
 		return err
@@ -286,28 +492,196 @@ func WriteIndexes(root string) error {
 		byProject[f.Project] = append(byProject[f.Project], f)
 	}
 	for project, list := range byProject {
-		sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
-		var b strings.Builder
-		b.WriteString("# Memory Index\n")
-		for _, f := range list {
-			desc := strings.TrimSpace(f.Description)
-			if desc == "" {
-				desc = "(no description)"
+		dir, err := MemoryDir(root, project)
+		if err != nil {
+			return err
+		}
+		if err := writeProjectIndex(root, dir, list); err != nil {
+			return err
+		}
+	}
+
+	// Clear stale generated indexes for directories whose last fact was
+	// removed outside MarkToast. Empty projects remain discoverable but cannot
+	// point at deleted files.
+	projectDirs, _ := filepath.Glob(filepath.Join(root, "projects", "*", "memory"))
+	for _, dir := range projectDirs {
+		project := filepath.Base(filepath.Dir(dir))
+		if _, ok := byProject[project]; !ok {
+			if _, err := os.Stat(filepath.Join(dir, IndexFile)); err == nil {
+				if err := writeProjectIndex(root, dir, nil); err != nil {
+					return err
+				}
 			}
-			fmt.Fprintf(&b, "- [%s](%s.md) — %s\n", f.Name, SanitizeSlug(f.Name), desc)
 		}
-		dir := filepath.Join(root, "projects", project)
-		if project == GlobalProject {
-			dir = filepath.Join(root, GlobalProject)
-		} else {
-			dir = MemoryDir(root, project)
-		}
-		if err := os.MkdirAll(dir, 0o700); err != nil {
+	}
+	if _, ok := byProject[GlobalProject]; !ok {
+		if err := writeProjectIndex(root, filepath.Join(root, GlobalProject), nil); err != nil {
 			return err
 		}
-		if err := os.WriteFile(filepath.Join(dir, IndexFile), []byte(b.String()), 0o600); err != nil {
-			return err
+	}
+	return nil
+}
+
+func writeProjectIndex(root, dir string, list []Fact) error {
+	sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
+	var b strings.Builder
+	b.WriteString("# Memory Index\n")
+	for _, f := range list {
+		desc := strings.Join(strings.Fields(f.Description), " ")
+		if desc == "" {
+			desc = "(no description)"
 		}
+		base := filepath.Base(f.Path)
+		target := url.PathEscape(filepath.ToSlash(base))
+		fmt.Fprintf(&b, "- [%s](%s) — %s\n", escapeMarkdownLabel(f.Name), target, desc)
+	}
+	if err := mkdirWithinRoot(root, dir); err != nil {
+		return err
+	}
+	return AtomicWriteFile(filepath.Join(dir, IndexFile), []byte(b.String()), 0o600)
+}
+
+func escapeMarkdownLabel(value string) string {
+	value = strings.Join(strings.Fields(value), " ")
+	replacer := strings.NewReplacer("\\", "\\\\", "[", "\\[", "]", "\\]")
+	return replacer.Replace(value)
+}
+
+// AtomicWriteFile writes path through a unique temporary file in the same
+// directory, fsyncs it, and only then renames it into place.
+func AtomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".marktoast-write-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }()
+	if err := tmp.Chmod(perm); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	if dirFile, err := os.Open(dir); err == nil {
+		_ = dirFile.Sync()
+		_ = dirFile.Close()
+	}
+	return nil
+}
+
+// ResolveMemoryPath accepts an absolute or repository-relative memory path and
+// returns a canonical path restricted to global/<fact>.md or
+// projects/<project>/memory/<fact>.md. Symlinks are rejected.
+func ResolveMemoryPath(root, input string) (abs, rel, project string, err error) {
+	if strings.TrimSpace(input) == "" {
+		return "", "", "", fmt.Errorf("path is required")
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return "", "", "", err
+	}
+	abs = input
+	if !filepath.IsAbs(abs) {
+		abs = filepath.Join(rootAbs, abs)
+	}
+	abs, err = filepath.Abs(abs)
+	if err != nil {
+		return "", "", "", err
+	}
+	rel, err = filepath.Rel(rootAbs, abs)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", "", "", fmt.Errorf("path escapes memory repository")
+	}
+	parts := strings.Split(filepath.ToSlash(rel), "/")
+	if len(parts) == 2 && parts[0] == GlobalProject {
+		project = GlobalProject
+	} else if len(parts) == 4 && parts[0] == "projects" && parts[2] == "memory" {
+		project = parts[1]
+	} else {
+		return "", "", "", fmt.Errorf("path is not a memory fact")
+	}
+	if err := ValidateProject(project); err != nil {
+		return "", "", "", err
+	}
+	base := parts[len(parts)-1]
+	if strings.EqualFold(base, IndexFile) || !strings.HasSuffix(strings.ToLower(base), ".md") {
+		return "", "", "", fmt.Errorf("path is not a readable memory fact")
+	}
+
+	realRoot, err := filepath.EvalSymlinks(rootAbs)
+	if err != nil {
+		return "", "", "", err
+	}
+	realParent, err := filepath.EvalSymlinks(filepath.Dir(abs))
+	if err != nil {
+		return "", "", "", err
+	}
+	if !pathWithin(realRoot, realParent) {
+		return "", "", "", fmt.Errorf("path escapes memory repository")
+	}
+	if info, statErr := os.Lstat(abs); statErr == nil {
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return "", "", "", fmt.Errorf("memory path must be a regular file")
+		}
+		realFile, evalErr := filepath.EvalSymlinks(abs)
+		if evalErr != nil || !pathWithin(realRoot, realFile) {
+			return "", "", "", fmt.Errorf("path escapes memory repository")
+		}
+	} else if !os.IsNotExist(statErr) {
+		return "", "", "", statErr
+	}
+	return abs, filepath.ToSlash(rel), project, nil
+}
+
+// ProjectFromPath returns the project key for a memory fact path.
+func ProjectFromPath(root, path string) (string, error) {
+	_, _, project, err := ResolveMemoryPath(root, path)
+	return project, err
+}
+
+func pathWithin(root, path string) bool {
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	pathAbs, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	return pathAbs == rootAbs || strings.HasPrefix(pathAbs, rootAbs+string(filepath.Separator))
+}
+
+func mkdirWithinRoot(root, dir string) error {
+	if !pathWithin(root, dir) {
+		return fmt.Errorf("directory escapes repository")
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
+	realDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return err
+	}
+	if !pathWithin(realRoot, realDir) {
+		return fmt.Errorf("directory escapes repository through a symlink")
 	}
 	return nil
 }

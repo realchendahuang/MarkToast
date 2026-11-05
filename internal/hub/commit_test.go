@@ -22,7 +22,7 @@ func TestCommitterBatchesAndFlushes(t *testing.T) {
 	if _, err := gitx.EnsureRepo(root); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "a.md"), []byte("one\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "global", "a.md"), []byte("one\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	c := newCommitter(root, time.Hour)

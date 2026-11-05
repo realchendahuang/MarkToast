@@ -19,7 +19,7 @@
 | **Hermes memory provider 接口** | MIT | 设计参考 / 后续实现 | `internal/adapter` 的 provider 生命周期、`prefetch/sync_turn/tools` | 本机源码 |
 | **ZCode 项目记忆格式** | Apache-2.0 | 格式采用 | `internal/store`（`MEMORY.md` + 一事实一文件 + frontmatter） | 已采用 |
 | **gitleaks 规则集** | MIT | 参考/移植规则 | 写入前脱敏（M2） | — |
-| **Wails v3** | MIT | 直接依赖 | M4 桌面壳 | nightly |
+| **Wails v3** | MIT | 直接依赖 | 桌面壳（已实现） | v3.1.0 |
 | **moejs** | Apache-2.0 | 直接依赖（M5） | 适配器 JS 插件宿主 | 429★ |
 | **Bleve v2 + CJK analyzer** | Apache-2.0 | 备选 | 若 FTS5 能力不足时的第二索引 | v2.6.2 |
 | **sqlite-vec + bge-small-zh-v1.5** | Apache-2.0 / MIT | v2 可选 | 语义混合检索（RRF） | 需实测 |
@@ -128,7 +128,7 @@ MarkToast 的 hub 用一个进程同时提供 stdio（给 CLI 型 harness）和 
 
 ### 4.5 桌面与插件
 
-- **Wails v3**（MIT，nightly 活跃）：M4 桌面壳；beta/nightly 风险已接受，保留 Web UI 兜底。
+- **Wails v3**（MIT，v3.1.0 稳定版）：桌面壳已实现；保留 Web UI 作为无 GUI 兜底。
 - **moejs**（Apache-2.0，429★，活跃）：M5 适配器 JS 插件宿主，复用而非自研。
 - Bubble Tea（MIT）：TUI 第二界面，M5。
 

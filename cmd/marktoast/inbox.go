@@ -2,13 +2,14 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/realchendahuang/MarkToast/internal/gitx"
-	"github.com/realchendahuang/MarkToast/internal/index"
 	"github.com/realchendahuang/MarkToast/internal/ingest"
+	"github.com/realchendahuang/MarkToast/internal/service"
 )
 
 func newInboxCmd() *cobra.Command {
@@ -57,15 +58,14 @@ func newInboxPromoteCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			path, err := ingest.Promote(cfg.Root, args[0], project)
+			path, err := service.New(cfg.Root).PromoteInbox(args[0], project)
 			if err != nil {
 				return err
 			}
-			if _, err := index.Rebuild(cfg.Root); err != nil {
-				return err
-			}
 			if gitx.Available() {
-				_, _ = gitx.CommitAll(cfg.Root, "inbox: promote candidate")
+				if _, err := gitx.CommitAll(cfg.Root, "inbox: promote candidate"); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: git commit failed: %v\n", err)
+				}
 			}
 			fmt.Printf("✔ promoted to %s\n", path)
 			return nil
@@ -89,7 +89,9 @@ func newInboxDismissCmd() *cobra.Command {
 				return err
 			}
 			if gitx.Available() {
-				_, _ = gitx.CommitAll(cfg.Root, "inbox: dismiss candidate")
+				if _, err := gitx.CommitAll(cfg.Root, "inbox: dismiss candidate"); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: git commit failed: %v\n", err)
+				}
 			}
 			fmt.Println("✔ candidate dismissed")
 			return nil

@@ -31,6 +31,8 @@ type Options struct {
 	Project string
 	Type    string
 	Limit   int
+	Offset  int
+	Sort    string // relevance (default), updated, title
 }
 
 // Result is one ranked hit.
@@ -44,6 +46,7 @@ type Result struct {
 type DB struct {
 	db   *sql.DB
 	path string
+	root string
 }
 
 const schema = `
@@ -69,10 +72,11 @@ func Path(root string) string {
 
 // Open opens (and creates) the index database.
 func Open(root string) (*DB, error) {
-	if err := os.MkdirAll(filepath.Join(root, store.MetaDir), 0o700); err != nil {
+	metaDir, err := store.EnsureMetaDir(root)
+	if err != nil {
 		return nil, err
 	}
-	path := Path(root)
+	path := filepath.Join(metaDir, "index.db")
 	dsn := "file:" + path + "?_pragma=busy_timeout(5000)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
@@ -87,7 +91,7 @@ func Open(root string) (*DB, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	return &DB{db: db, path: path}, nil
+	return &DB{db: db, path: path, root: root}, nil
 }
 
 // Close closes the index database.
@@ -96,6 +100,11 @@ func (d *DB) Close() error { return d.db.Close() }
 // Rebuild replaces the whole index with the current Markdown facts and
 // returns the number of indexed facts.
 func (d *DB) Rebuild(root string) (int, error) {
+	unlock, err := store.LockWrite(root)
+	if err != nil {
+		return 0, err
+	}
+	defer unlock()
 	facts, err := store.ListFacts(root)
 	if err != nil {
 		return 0, err
@@ -123,10 +132,12 @@ func (d *DB) Rebuild(root string) (int, error) {
 			return 0, err
 		}
 	}
+	now := time.Now().UTC().Format(time.RFC3339)
 	for key, value := range map[string]string{
-		"built_at": time.Now().UTC().Format(time.RFC3339),
-		"facts":    fmt.Sprint(len(facts)),
-		"schema":   "1",
+		"built_at":   now,
+		"updated_at": now,
+		"facts":      fmt.Sprint(len(facts)),
+		"schema":     "2",
 	} {
 		if _, err := tx.Exec(`INSERT INTO meta(key, value) VALUES(?, ?)
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value;`, key, value); err != nil {
@@ -139,49 +150,90 @@ func (d *DB) Rebuild(root string) (int, error) {
 	return len(facts), nil
 }
 
-// Upsert indexes (or reindexes) one fact.
+// Upsert indexes (or reindexes) one fact in a single transaction.
 func (d *DB) Upsert(f store.Fact) error {
-	if _, err := d.db.Exec(`DELETE FROM memory_fts WHERE path = ?;`, f.Path); err != nil {
+	if d.root != "" {
+		unlock, err := store.LockWrite(d.root)
+		if err != nil {
+			return err
+		}
+		defer unlock()
+	}
+	tx, err := d.db.Begin()
+	if err != nil {
 		return err
 	}
-	_, err := d.db.Exec(`INSERT INTO memory_fts
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`DELETE FROM memory_fts WHERE path = ?;`, f.Path); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO memory_fts
 		(name_tokens, desc_tokens, body_tokens, project, path, type, updated, name, description)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
 		Tokenize(f.Name), Tokenize(f.Description), Tokenize(f.Body),
-		f.Project, f.Path, f.Type, f.Updated.Unix(), f.Name, f.Description)
-	return err
+		f.Project, f.Path, f.Type, f.Updated.Unix(), f.Name, f.Description); err != nil {
+		return err
+	}
+	var count int
+	if err := tx.QueryRow(`SELECT count(*) FROM memory_fts;`).Scan(&count); err != nil {
+		return err
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	for key, value := range map[string]string{
+		"facts":      fmt.Sprint(count),
+		"updated_at": now,
+	} {
+		if _, err := tx.Exec(`INSERT INTO meta(key, value) VALUES(?, ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value;`, key, value); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
-// Search runs a ranked full-text query. When the database is missing or
-// unreadable it falls back to a linear scan so that search never hard-fails.
+// Search runs a ranked full-text query and returns only the requested page.
 func (d *DB) Search(root, query string, opts Options) ([]Result, error) {
+	results, _, err := d.SearchPage(root, query, opts)
+	return results, err
+}
+
+// SearchPage is Search plus the total number of matching facts.
+func (d *DB) SearchPage(root, query string, opts Options) ([]Result, int, error) {
 	match := buildMatch(query)
 	if match == "" {
-		return nil, nil
+		return nil, 0, nil
 	}
-	limit := opts.Limit
-	if limit <= 0 {
-		limit = 10
+	if err := d.ensureFresh(root); err != nil {
+		return nil, 0, err
+	}
+	limit := normalizeLimit(opts.Limit)
+	offset := opts.Offset
+	if offset < 0 {
+		offset = 0
 	}
 
-	sqlText := `SELECT path, name, description, project, type, updated,
-		bm25(memory_fts, 5.0, 2.0, 1.0) AS rank
-		FROM memory_fts WHERE memory_fts MATCH ?`
+	where := ` FROM memory_fts WHERE memory_fts MATCH ?`
 	args := []any{match}
 	if opts.Project != "" {
-		sqlText += ` AND project = ?`
+		where += ` AND project = ?`
 		args = append(args, opts.Project)
 	}
 	if opts.Type != "" {
-		sqlText += ` AND type = ?`
+		where += ` AND type = ?`
 		args = append(args, opts.Type)
 	}
-	sqlText += ` ORDER BY rank LIMIT ?;`
-	args = append(args, limit)
+	var total int
+	if err := d.db.QueryRow(`SELECT count(*)`+where+`;`, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("fts count: %w", err)
+	}
 
-	rows, err := d.db.Query(sqlText, args...)
+	sqlText := `SELECT path, name, description, project, type, updated,
+		bm25(memory_fts, 5.0, 2.0, 1.0) AS rank` + where
+	sqlText += ` ORDER BY ` + orderClause(opts.Sort) + ` LIMIT ? OFFSET ?;`
+	queryArgs := append(append([]any{}, args...), limit, offset)
+	rows, err := d.db.Query(sqlText, queryArgs...)
 	if err != nil {
-		return nil, fmt.Errorf("fts query: %w", err)
+		return nil, 0, fmt.Errorf("fts query: %w", err)
 	}
 	defer rows.Close()
 	var results []Result
@@ -192,7 +244,7 @@ func (d *DB) Search(root, query string, opts Options) ([]Result, error) {
 			rank                           float64
 		)
 		if err := rows.Scan(&path, &name, &desc, &project, &typ, &updated, &rank); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		f, err := store.ParseFile(path)
 		if err != nil {
@@ -208,7 +260,81 @@ func (d *DB) Search(root, query string, opts Options) ([]Result, error) {
 			Snippet: Snippet(f.Body, firstQueryTerm(query), 140),
 		})
 	}
-	return results, rows.Err()
+	return results, total, rows.Err()
+}
+
+func normalizeLimit(limit int) int {
+	if limit <= 0 {
+		return 10
+	}
+	if limit > 100 {
+		return 100
+	}
+	return limit
+}
+
+func orderClause(sortBy string) string {
+	switch strings.ToLower(sortBy) {
+	case "updated":
+		return `updated DESC, rank`
+	case "title", "name":
+		return `name COLLATE NOCASE ASC, rank`
+	default:
+		return `rank`
+	}
+}
+
+// ensureFresh rebuilds the derived index when Markdown files have changed
+// since the last rebuild/upsert. This keeps external editor and git-pull
+// changes visible without requiring a manual reindex.
+func (d *DB) ensureFresh(root string) error {
+	newest, err := newestFactModTime(root)
+	if err != nil {
+		return err
+	}
+	if newest.IsZero() {
+		return nil
+	}
+	var updatedAt string
+	_ = d.db.QueryRow(`SELECT value FROM meta WHERE key = 'updated_at';`).Scan(&updatedAt)
+	if updatedAt == "" {
+		_ = d.db.QueryRow(`SELECT value FROM meta WHERE key = 'built_at';`).Scan(&updatedAt)
+	}
+	updated, parseErr := time.Parse(time.RFC3339, updatedAt)
+	if updatedAt == "" || parseErr != nil || newest.After(updated.Add(time.Second)) {
+		_, err := d.Rebuild(root)
+		return err
+	}
+	return nil
+}
+
+func newestFactModTime(root string) (time.Time, error) {
+	var newest time.Time
+	for _, rootDir := range []string{filepath.Join(root, "projects"), filepath.Join(root, store.GlobalProject)} {
+		err := filepath.WalkDir(rootDir, func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				if os.IsNotExist(err) {
+					return nil
+				}
+				return nil
+			}
+			if entry.Type()&os.ModeSymlink != 0 {
+				return nil
+			}
+			info, err := entry.Info()
+			if err == nil && info.ModTime().After(newest) {
+				newest = info.ModTime()
+			}
+			if entry.IsDir() || !strings.HasSuffix(strings.ToLower(path), ".md") || filepath.Base(path) == store.IndexFile {
+				return nil
+			}
+			return nil
+		})
+		if err != nil && !os.IsNotExist(err) {
+			return newest, err
+		}
+	}
+	return newest, nil
 }
 
 // firstQueryTerm extracts a human-friendly term for snippet highlighting.
@@ -319,7 +445,7 @@ func buildMatch(query string) string {
 		case isCJK(r):
 			flushWord()
 			cjk = append(cjk, r)
-		case unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' || r == '.':
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
 			flushCJK()
 			word = append(word, unicode.ToLower(r))
 		default:
@@ -338,7 +464,7 @@ func buildMatch(query string) string {
 func sanitizeWord(s string) string {
 	var b strings.Builder
 	for _, r := range s {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
 			b.WriteRune(r)
 		}
 	}
@@ -358,29 +484,40 @@ func Rebuild(root string) (int, error) {
 // Search finds facts, opening the index on demand. A missing/unreadable index
 // degrades to a linear scan of the Markdown repository.
 func Search(root, query string, opts Options) ([]Result, error) {
+	results, _, err := SearchPage(root, query, opts)
+	return results, err
+}
+
+// SearchPage returns one page plus the total match count.
+func SearchPage(root, query string, opts Options) ([]Result, int, error) {
 	d, err := Open(root)
 	if err == nil {
 		defer d.Close()
-		results, err := d.Search(root, query, opts)
-		if err == nil && len(results) > 0 {
-			return results, nil
-		}
-		if err == nil {
-			return results, nil
+		results, total, searchErr := d.SearchPage(root, query, opts)
+		if searchErr == nil {
+			// A zero-hit FTS query can still be caused by an old/stale index.
+			// The Markdown scan is authoritative, so use it before returning.
+			if len(results) == 0 {
+				scanned, scanTotal, scanErr := scanSearchPage(root, query, opts)
+				if scanErr == nil {
+					return scanned, scanTotal, nil
+				}
+			}
+			return results, total, nil
 		}
 	}
-	return scanSearch(root, query, opts)
+	return scanSearchPage(root, query, opts)
 }
 
-// scanSearch is the dependency-free fallback.
-func scanSearch(root, query string, opts Options) ([]Result, error) {
+// scanSearchPage is the dependency-free fallback.
+func scanSearchPage(root, query string, opts Options) ([]Result, int, error) {
 	terms := strings.Fields(strings.ToLower(query))
 	if len(terms) == 0 {
-		return nil, nil
+		return nil, 0, nil
 	}
 	facts, err := store.ListFacts(root)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	var results []Result
 	for _, f := range facts {
@@ -411,19 +548,36 @@ func scanSearch(root, query string, opts Options) ([]Result, error) {
 		results = append(results, Result{Fact: f, Score: score, Snippet: Snippet(f.Body, terms[0], 140)})
 	}
 	sort.Slice(results, func(i, j int) bool {
-		if results[i].Score != results[j].Score {
-			return results[i].Score > results[j].Score
+		switch strings.ToLower(opts.Sort) {
+		case "updated":
+			return results[i].Fact.Updated.After(results[j].Fact.Updated)
+		case "title", "name":
+			return strings.ToLower(results[i].Fact.Name) < strings.ToLower(results[j].Fact.Name)
+		default:
+			if results[i].Score != results[j].Score {
+				return results[i].Score > results[j].Score
+			}
+			return results[i].Fact.Updated.After(results[j].Fact.Updated)
 		}
-		return results[i].Fact.Updated.After(results[j].Fact.Updated)
 	})
-	limit := opts.Limit
-	if limit <= 0 {
-		limit = 10
+	total := len(results)
+	offset := opts.Offset
+	if offset < 0 {
+		offset = 0
 	}
-	if len(results) > limit {
-		results = results[:limit]
+	if offset >= total {
+		return nil, total, nil
 	}
-	return results, nil
+	end := offset + normalizeLimit(opts.Limit)
+	if end > total {
+		end = total
+	}
+	return results[offset:end], total, nil
+}
+
+func scanSearch(root, query string, opts Options) ([]Result, error) {
+	results, _, err := scanSearchPage(root, query, opts)
+	return results, err
 }
 
 // Snippet returns up to limit runes of body around the first occurrence of
@@ -498,6 +652,7 @@ func Inspect(root string) Stats {
 		return Stats{Path: Path(root)}
 	}
 	defer d.Close()
+	_ = d.ensureFresh(root)
 	stats := Stats{Path: d.path}
 	rows, err := d.db.Query(`SELECT key, value FROM meta;`)
 	if err != nil {
@@ -516,11 +671,124 @@ func Inspect(root string) Stats {
 			stats.BuiltAt = v
 		}
 	}
-	if stats.Facts == 0 {
-		var count int
-		if err := d.db.QueryRow(`SELECT count(*) FROM memory_fts;`).Scan(&count); err == nil {
-			stats.Facts = count
-		}
+	var count int
+	if err := d.db.QueryRow(`SELECT count(*) FROM memory_fts;`).Scan(&count); err == nil {
+		stats.Facts = count
 	}
 	return stats
+}
+
+// ListOptions narrows a metadata listing.
+type ListOptions struct {
+	Project string
+	Type    string
+	Limit   int
+	Offset  int
+	Sort    string
+}
+
+// ListPage returns fact metadata without reading full Markdown bodies. The
+// SQLite table is kept fresh by the same mtime check used for search.
+func ListPage(root string, opts ListOptions) ([]store.Fact, int, error) {
+	d, err := Open(root)
+	if err == nil {
+		defer d.Close()
+		results, total, listErr := d.listPage(root, opts)
+		if listErr == nil {
+			return results, total, nil
+		}
+	}
+	return listFromMarkdown(root, opts)
+}
+
+func (d *DB) listPage(root string, opts ListOptions) ([]store.Fact, int, error) {
+	if err := d.ensureFresh(root); err != nil {
+		return nil, 0, err
+	}
+	where := ` WHERE 1=1`
+	var args []any
+	if opts.Project != "" {
+		where += ` AND project = ?`
+		args = append(args, opts.Project)
+	}
+	if opts.Type != "" {
+		where += ` AND type = ?`
+		args = append(args, opts.Type)
+	}
+	var total int
+	if err := d.db.QueryRow(`SELECT count(*) FROM memory_fts`+where+`;`, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	limit := opts.Limit
+	limitArg := limit
+	if limit <= 0 {
+		limitArg = -1
+	}
+	offset := opts.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	query := `SELECT path, name, description, project, type, updated FROM memory_fts` + where + ` ORDER BY ` + listOrderClause(opts.Sort) + ` LIMIT ? OFFSET ?;`
+	queryArgs := append(append([]any{}, args...), limitArg, offset)
+	rows, err := d.db.Query(query, queryArgs...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	var facts []store.Fact
+	for rows.Next() {
+		var f store.Fact
+		var updated int64
+		if err := rows.Scan(&f.Path, &f.Name, &f.Description, &f.Project, &f.Type, &updated); err != nil {
+			return nil, 0, err
+		}
+		f.Updated = time.Unix(updated, 0)
+		facts = append(facts, f)
+	}
+	return facts, total, rows.Err()
+}
+
+func listOrderClause(sortBy string) string {
+	switch strings.ToLower(sortBy) {
+	case "updated":
+		return `updated DESC, name COLLATE NOCASE ASC`
+	default:
+		return `name COLLATE NOCASE ASC, path`
+	}
+}
+
+func listFromMarkdown(root string, opts ListOptions) ([]store.Fact, int, error) {
+	facts, err := store.ListFacts(root)
+	if err != nil {
+		return nil, 0, err
+	}
+	filtered := make([]store.Fact, 0, len(facts))
+	for _, f := range facts {
+		if opts.Project != "" && f.Project != opts.Project {
+			continue
+		}
+		if opts.Type != "" && f.Type != opts.Type {
+			continue
+		}
+		filtered = append(filtered, f)
+	}
+	sort.SliceStable(filtered, func(i, j int) bool {
+		if strings.EqualFold(opts.Sort, "updated") {
+			return filtered[i].Updated.After(filtered[j].Updated)
+		}
+		return strings.ToLower(filtered[i].Name) < strings.ToLower(filtered[j].Name)
+	})
+	total := len(filtered)
+	offset := opts.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= total {
+		return nil, total, nil
+	}
+	end := total
+	if opts.Limit > 0 && offset+opts.Limit < end {
+		end = offset + opts.Limit
+	}
+	return filtered[offset:end], total, nil
 }

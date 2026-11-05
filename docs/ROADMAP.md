@@ -45,7 +45,7 @@
 - [x] 会话日志摄取 → `inbox/` 候选记忆（T2，2026-11-04；保留/丢弃 UI + CLI）
 - [x] 敏感信息脱敏（高置信度规则：私钥 / OpenAI / GitHub / AWS / Google / Slack / Stripe / JWT / Bearer，2026-11-04）
 
-## M4 — 桌面 UI 🟡（Web UI + Wails 壳完成，差 diff/回滚与 i18n）
+## M4 — 桌面 UI ✅（Web UI + Wails 壳；diff/回滚与中英 i18n 已完成）
 
 - [x] 浏览器 Web UI（Magpie 风格）由 hub 托管：搜索、详情、frontmatter、Git 历史、适配器、新建记忆、Cmd+K
 - [x] 中文界面 + 离线/错误状态
@@ -65,6 +65,10 @@
 - [x] 更新检查（`marktoast update`，GitHub Releases，2026-11-04）
 - [ ] 自动下载安装更新（需要已签名的 release）
 - [x] 安全审计：脱敏上线、doctor 诊断（2026-11-04）
+- [x] Hub 安全边界：loopback、Host/Origin、CSRF、Cookie/Bearer 认证、MCP fail-closed
+- [x] 数据完整性：仓库写锁、原子写、文件名防覆盖、MEMORY.md 真实链接、受管 Git 提交
+- [x] 前端可靠性：分页、请求超时、详情缓存刷新、大正文限制、modal/ARIA/i18n 修正
+- [x] 发布工程：CI、非破坏性 verify、签名校验、版本统一、前端嵌入二进制
 - [ ] 公开仓库前的数据清理
 - [x] MIT LICENSE（2026-11-04）
 - [ ] 公开仓库 + 文档站 + 发布首版

@@ -11,7 +11,7 @@
 ![Wails](https://img.shields.io/badge/Wails-v3-DF0000?logo=wails&logoColor=white)
 ![macOS](https://img.shields.io/badge/macOS-first-000000?logo=apple&logoColor=white)
 ![Status](https://img.shields.io/badge/status-pre--alpha-d8b26a)
-![License](https://img.shields.io/badge/license-MIT%20(later)-lightgrey)
+![License](https://img.shields.io/badge/license-MIT-green)
 
 [English](README.md) · [产品定位](docs/PRODUCT.md) · [技术栈](docs/TECH-STACK.md) · [架构设计](docs/ARCHITECTURE.md) · [路线图](docs/ROADMAP.md) · [致敬](docs/CREDITS.md)
 
@@ -47,7 +47,7 @@ MarkToast 把记忆还原成它本该有的样子：**一个你拥有的仓库�
                         │  projects/<key>/memory/      │    （Git 版本化、人类可读）
                         │  global/                     │
                         └──────────────┬───────────────┘
-                                       │  监听 / 原子写 / flock
+                                       │  原子写 / 仓库锁 / 索引自动刷新
                         ┌──────────────┴───────────────┐
                         │        core（Go）             │
                         │  store · index（FTS5+CJK）    │
@@ -55,7 +55,7 @@ MarkToast 把记忆还原成它本该有的样子：**一个你拥有的仓库�
                         │  hub（HTTP + MCP）            │
                         └──────┬───────────────┬───────┘
                                │               │
-                      CLI `marktoast`     Wails v3 桌面（M4）
+                      CLI `marktoast`     Wails v3 桌面（内嵌 UI）
                                │
              ┌─────────────────┴──────────────────┐
              │  适配器（YAML 描述符）                │
@@ -77,41 +77,61 @@ MarkToast 把记忆还原成它本该有的样子：**一个你拥有的仓库�
 4. `marktoast serve` 起本地 hub；每家 harness 的适配器把索引投影进它自己的
    指令/记忆接口。
 5. `git log` 就是记忆的历史，`git revert` 就是撤销。
+6. 本地 hub 只监听 loopback。浏览器 API 使用 HttpOnly + SameSite 会话 Cookie，
+   并校验 Host/Origin；脚本客户端与 MCP 使用 `.marktoast/` 下的 bearer token。
 
 ## 现状
 
-**私有 pre-alpha —— 核心闭环已跑通（M1–M3），桌面壳下一步（M4）。**
+**私有 pre-alpha —— 核心闭环、加固后的本地 hub、内嵌 UI 桌面壳、CI 与签名发布校验均已实现。**
 
 - [x] Go module + CLI（`version` / `init` / `add` / `get` / `search` / `reindex` /
       `log` / `status` / `hook` / `mcp` / `adapters` / `serve` / `ui`）
 - [x] SQLite FTS5 索引 + 零依赖 CJK bigram 分词（两字中文可命中；OR + BM25 排序）
-- [x] Markdown 仓库 + Git 提交（当前每次变更一次提交，debounce 批量提交待做）
+- [x] Markdown 原子写、仓库级写锁、文件名防覆盖、只提交受管记忆路径、退出时 flush 防抖提交
 - [x] 适配器描述符（hooks / MCP / session）；ZCode 幂等安装器（hooks + MCP，保留第三方条目）；
       DSH / Hermes 已做半自动 staged 安装
-- [x] 本地 hub：status/search/memory/memories/projects/adapters/git-log API；
+- [x] 仅监听 loopback 的本地 hub：Cookie/Bearer 认证、CSRF/Host 校验、分页 API；
       MCP server（stdio + streamable HTTP，`memory_search/get/save/list`）
 - [x] Web UI 采用 Magpie 的设计语言（MIT）：同一套 design tokens（浅色默认 + 自动暗色、靛蓝强调色）、212px 侧栏、面包屑头部、白色列表卡片与行、**Magpie 同款交互动画**（视图淡入、分段控件 thumb 滑动 280ms、行展开折叠 420ms、弹层进出、骨架 shimmer、reduced-motion）、弹层、Cmd/Ctrl+K
-- [x] Wails v3.1 桌面壳（`make desktop`；原生窗口加载同一个 hub）
-- [ ] debounce 提交、会话摄取、Hermes memory provider、更多适配器
+- [x] Wails v3.1 桌面壳 + 内嵌 Web UI（`make desktop`；原生窗口加载同一个 hub）
+- [ ] 更多适配器
 
 详见 [docs/ROADMAP.md](docs/ROADMAP.md)。
 
-## 快速开始（开发）
+## 安装
+
+CLI 的唯一入口是 `cmd/marktoast`（根目录不再有 `main.go`）。在仓库内安装：
 
 ```bash
-make build
+go install ./cmd/marktoast
+```
+
+或安装最新发布版本：
+
+```bash
+go install github.com/realchendahuang/MarkToast/cmd/marktoast@latest
+```
+
+## 快速开始（开发）
+
+依赖：Go 1.26+、git；`make verify` 中的 JavaScript 语法检查需要 Node.js 20+。
+macOS 是主要目标，构建 Wails 桌面壳还需要 Xcode command-line tools。Web UI
+已内嵌进原生应用，不需要单独的前端构建步骤。
+
+```bash
+make verify                                  # 格式、tidy、vet、race 测试、JS 语法、构建
 ./bin/marktoast version
 ./bin/marktoast init                         # 创建 ~/Memory + git 仓库
 ./bin/marktoast add --name release-rollback \
   --description "2026-09 发版回滚原因" --type project --body "发版后首页闪屏，决定回滚。"
 ./bin/marktoast search "回滚"
-./bin/marktoast serve                        # http://127.0.0.1:3777（Web UI）
-make desktop && ./bin/marktoast-desktop              # 原生 Wails 窗口
+./bin/marktoast serve                        # 内嵌 Web UI：http://127.0.0.1:3777
+make desktop                                 # 内嵌 UI 的原生 Wails 窗口
+./bin/marktoast-desktop
 ./bin/marktoast mcp                          # 给 harness 的 stdio MCP server
 ./bin/marktoast adapters install zcode       # 默认 dry-run；加 --apply 写入
+make install                                 # CLI + MarkToast.app（由安装脚本构建）
 ```
-
-依赖：Go 1.26+、git。macOS 优先；Windows/Linux 保持可编译，但不是 v1 目标。
 
 ## 致敬 · Standing on shoulders
 
@@ -146,7 +166,7 @@ MarkToast 站在这些项目肩上——具体借鉴了什么见 [docs/CREDITS.m
 | [复用调研](docs/RESEARCH-REUSE.md) | 开源记忆生态里哪些能复用、哪些不能碰 |
 | [harness 接入](docs/HARNESS-INTEGRATION.md) | ZCode / DSH / Hermes / Claude Code / Codex 的接线参考矩阵 |
 | [致敬](docs/CREDITS.md) | 向谁学习、在什么许可下 |
-| [桌面壳](docs/DESKTOP.md) | Wails v3 计划（M4） |
+| [桌面壳](docs/DESKTOP.md) | Wails v3 桌面壳、打包与发布说明 |
 | [适配器](adapters/README.md) | 如何新增一家 harness |
 
 ## 许可证

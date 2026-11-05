@@ -2,6 +2,8 @@ package hub
 
 import (
 	"log"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -16,6 +18,7 @@ type committer struct {
 	delay   time.Duration
 	timer   *time.Timer
 	message string
+	lastErr error
 }
 
 func newCommitter(root string, delay time.Duration) *committer {
@@ -35,27 +38,33 @@ func (c *committer) Schedule(message string) {
 	if c.timer != nil {
 		c.timer.Stop()
 	}
-	c.timer = time.AfterFunc(c.delay, c.flush)
+	c.timer = time.AfterFunc(c.delay, func() {
+		if err := c.flush(); err != nil {
+			log.Printf("marktoast: debounced commit failed: %v", err)
+		}
+	})
 }
 
-func (c *committer) flush() {
+func (c *committer) flush() error {
 	c.mu.Lock()
 	message := c.message
 	c.timer = nil
 	c.message = ""
 	c.mu.Unlock()
 	if message == "" {
-		return
+		return c.lastErr
 	}
-	if _, err := gitx.CommitAll(c.root, message); err != nil {
-		log.Printf("marktoast: debounced commit failed: %v", err)
-	}
+	_, err := gitx.CommitAll(c.root, message)
+	c.mu.Lock()
+	c.lastErr = err
+	c.mu.Unlock()
+	return err
 }
 
-// Flush commits any pending mutation immediately.
-func (c *committer) Flush() {
+// Flush commits any pending mutation immediately and returns its error.
+func (c *committer) Flush() error {
 	if c == nil {
-		return
+		return nil
 	}
 	c.mu.Lock()
 	if c.timer != nil {
@@ -63,19 +72,24 @@ func (c *committer) Flush() {
 		c.timer = nil
 	}
 	c.mu.Unlock()
-	c.flush()
+	return c.flush()
 }
 
 // commit writes a commit now, or schedules it when batching is enabled.
-func commit(o Options, message string) {
+func commit(o Options, message string) error {
 	if o.Committer != nil {
 		o.Committer.Schedule(message)
-		return
+		return nil
 	}
 	if !gitx.Available() {
-		return
+		return nil
 	}
-	if _, err := gitx.CommitAll(o.Root, message); err != nil {
+	if _, err := os.Stat(filepath.Join(o.Root, ".git")); err != nil {
+		return nil
+	}
+	_, err := gitx.CommitAll(o.Root, message)
+	if err != nil {
 		log.Printf("marktoast: commit failed: %v", err)
 	}
+	return err
 }

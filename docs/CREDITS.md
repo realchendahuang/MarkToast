@@ -16,7 +16,7 @@ MarkToast 不是从石头里蹦出来的。它的产品形态、存储格式和�
 | [dsh-memory-manager](https://www.npmjs.com/package/@duke-dsh-plugins/dsh-memory-manager) | MIT | ZCode 风格项目记忆的 scan/frontmatter/dedupe/index 参考实现。 |
 | [dsh-claude-move](https://www.npmjs.com/package/@deepseek-ai/dsh-claude-move) | Apache-2.0 | 白名单、冲突状态、幂等 manifest、受管 AGENTS.md 块的参考实现。 |
 | [modelcontextprotocol/go-sdk](https://github.com/modelcontextprotocol/go-sdk) | Apache-2.0 AND MIT | MCP server（stdio + Streamable HTTP、多 client、token/session metadata）。 |
-| [Wails](https://github.com/wailsapp/wails) | MIT | 桌面壳框架（v3 beta）。 |
+| [Wails](https://github.com/wailsapp/wails) | MIT | 桌面壳框架（v3.1.0）。 |
 | [moejs](https://github.com/MoeForge/moejs) | Apache-2.0 | 后期插件引擎候选（适配器插件化）。 |
 
 ## 记忆格式与协议

@@ -6,6 +6,7 @@ package main
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,12 +15,14 @@ import (
 
 	"github.com/spf13/cobra"
 
+	webui "github.com/realchendahuang/MarkToast/frontend"
 	"github.com/realchendahuang/MarkToast/internal/adapter"
 	"github.com/realchendahuang/MarkToast/internal/config"
 	"github.com/realchendahuang/MarkToast/internal/gitx"
 	"github.com/realchendahuang/MarkToast/internal/hub"
 	"github.com/realchendahuang/MarkToast/internal/index"
 	"github.com/realchendahuang/MarkToast/internal/plugin"
+	"github.com/realchendahuang/MarkToast/internal/service"
 	"github.com/realchendahuang/MarkToast/internal/store"
 	"github.com/realchendahuang/MarkToast/internal/version"
 )
@@ -240,12 +243,12 @@ func newReindexCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			n, err := index.Rebuild(cfg.Root)
+			if err := service.New(cfg.Root).RebuildIndexFile(); err != nil {
+				return err
+			}
+			n, err := service.New(cfg.Root).Reindex()
 			if err != nil {
 				return fmt.Errorf("rebuild fts index: %w", err)
-			}
-			if err := store.WriteIndexes(cfg.Root); err != nil {
-				return err
 			}
 			if gitx.Available() {
 				committed, err := gitx.CommitAll(cfg.Root, "mem: reindex")
@@ -306,18 +309,18 @@ func newServeCmd() *cobra.Command {
 	var addr string
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Run the local hub (HTTP; MCP lands in M3)",
+		Short: "Run the local hub (HTTP API + MCP + embedded web UI)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := resolve()
 			if err != nil {
 				return err
 			}
 			return hub.Serve(hub.Options{
-				Addr:        addr,
-				Root:        cfg.Root,
-				FrontendDir: frontendDir(),
-				AutoCommit:  cfg.Git.AutoCommit,
-				Debounce:    time.Duration(cfg.Git.DebounceMS) * time.Millisecond,
+				Addr:       addr,
+				Root:       cfg.Root,
+				FrontendFS: webUIFS(),
+				AutoCommit: cfg.Git.AutoCommit,
+				Debounce:   time.Duration(cfg.Git.DebounceMS) * time.Millisecond,
 			})
 		},
 	}
@@ -329,7 +332,7 @@ func newUICmd() *cobra.Command {
 	var addr string
 	cmd := &cobra.Command{
 		Use:   "ui",
-		Short: "Open the web UI (desktop shell lands in M4)",
+		Short: "Open the local web UI",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := resolve()
 			if err != nil {
@@ -337,11 +340,11 @@ func newUICmd() *cobra.Command {
 			}
 			fmt.Printf("web UI: http://%s/ (desktop shell ships in M4 — see docs/DESKTOP.md)\n", addr)
 			return hub.Serve(hub.Options{
-				Addr:        addr,
-				Root:        cfg.Root,
-				FrontendDir: frontendDir(),
-				AutoCommit:  cfg.Git.AutoCommit,
-				Debounce:    time.Duration(cfg.Git.DebounceMS) * time.Millisecond,
+				Addr:       addr,
+				Root:       cfg.Root,
+				FrontendFS: webUIFS(),
+				AutoCommit: cfg.Git.AutoCommit,
+				Debounce:   time.Duration(cfg.Git.DebounceMS) * time.Millisecond,
 			})
 		},
 	}
@@ -357,21 +360,15 @@ func userAdaptersDir() string {
 	return ""
 }
 
-// frontendDir locates the web UI directory.
-func frontendDir() string {
+// webUIFS returns the embedded web UI, unless MARKTOAST_UI_DIR points at a
+// development checkout for live editing.
+func webUIFS() fs.FS {
 	if dir := os.Getenv("MARKTOAST_UI_DIR"); dir != "" {
-		return dir
-	}
-	if info, err := os.Stat("frontend"); err == nil && info.IsDir() {
-		return "frontend"
-	}
-	if exe, err := os.Executable(); err == nil {
-		candidate := filepath.Join(filepath.Dir(exe), "frontend")
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return os.DirFS(dir)
 		}
 	}
-	return ""
+	return webui.FS()
 }
 
 func oneLine(s string) string {

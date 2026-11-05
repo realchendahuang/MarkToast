@@ -394,7 +394,10 @@ func stagePatchAdapter(desc adapter.Descriptor, root string, instructions string
 	if err != nil {
 		return err
 	}
-	token, _ := hub.EnsureToken(root)
+	token, err := hub.EnsureToken(root)
+	if err != nil {
+		return err
+	}
 	dir := stagedDir(desc.ID)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err

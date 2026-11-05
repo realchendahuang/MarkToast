@@ -73,3 +73,25 @@ func TestZCodeInstallAndUninstall(t *testing.T) {
 		t.Fatalf("MarkToast entries remained: %s", data)
 	}
 }
+
+func TestMergeHooksPreservesUnrelatedEventHook(t *testing.T) {
+	conf := map[string]any{
+		"hooks": map[string]any{
+			"enabled": true,
+			"events": map[string]any{
+				"Stop": []any{map[string]any{
+					"hooks": []any{map[string]any{
+						"type": "process", "command": "/usr/local/bin/other", "args": []any{"hook", "--event", "Stop"},
+					}},
+				}},
+			},
+		},
+	}
+	mergeZCodeHooks(conf, []string{"Stop"}, "/usr/local/bin/marktoast")
+	hooks := conf["hooks"].(map[string]any)
+	events := hooks["events"].(map[string]any)
+	list := events["Stop"].([]any)
+	if len(list) != 2 {
+		t.Fatalf("unrelated hook was removed or duplicate added: %#v", list)
+	}
+}

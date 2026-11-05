@@ -257,5 +257,5 @@ func containsMarker(v any, marker string) bool {
 	}
 	text := strings.ToLower(string(data))
 	marker = strings.ToLower(marker)
-	return strings.Contains(text, marker) || strings.Contains(text, "hook\",\"--event")
+	return strings.Contains(text, marker)
 }

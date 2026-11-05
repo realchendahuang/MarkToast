@@ -89,6 +89,16 @@
     "复制": "Copy",
     "复制 MCP token": "Copy MCP token",
     "关闭新建记忆弹层": "Close new memory dialog",
+    "展开侧栏": "Expand sidebar",
+    "收起侧栏": "Collapse sidebar",
+    "加载更多": "Load more",
+    "加载中…": "Loading…",
+    "请求超时，请稍后重试。": "Request timed out; try again.",
+    "请求已取消。": "Request cancelled.",
+    "未授权，请重新连接本地 hub。": "Unauthorized; reconnect to the local hub.",
+    "没有权限执行此操作。": "You don't have permission to do that.",
+    "本地 hub 暂时不可用，请稍后重试。": "The local hub is temporarily unavailable; try again later.",
+    "本地 hub 返回了无法解析的响应。": "The local hub returned an unreadable response.",
     "为搜索补充一点上下文": "Extra context for search",
     "写下这条记忆…": "Write this memory…",
     "未命名记忆": "Untitled memory",
@@ -205,14 +215,20 @@
     [/^索引已重建 · (\d+) 条$/, (m) => `Index rebuilt · ${m[1]} memories`],
     [/^收起记忆：(.*)$/, (m) => `Collapse memory: ${m[1]}`],
     [/^展开记忆：(.*)$/, (m) => `Expand memory: ${m[1]}`],
+    [/^打开记忆：(.*)$/, (m) => `Open memory: ${m[1]}`],
+    [/^项目 (.+) 的显示名$/, (m) => `Display name for project ${m[1]}`],
+    [/^正文较长，仅显示前 (.+) 个字符。$/, (m) => `Long body; showing the first ${m[1]} characters.`],
     [/^(.*) · 恢复 (.*)$/, (m) => `${m[1]} · restored ${m[2]}`],
     [/^(.*) · 保存 (.*)$/, (m) => `${m[1]} · saved ${m[2]}`],
     [/^(.*) · 新增 (.*)$/, (m) => `${m[1]} · added ${m[2]}`],
     [/^(.*)已复制$/, (m) => `${m[1]} copied`],
+    [/^(.*)，但 Git 提交失败：(.*)$/, (m) => `${m[1]}, but the Git commit failed: ${m[2]}`],
   ];
 
   const textOriginals = new WeakMap();
+  const translatedTexts = new WeakMap();
   const attrOriginals = new WeakMap();
+  const translatedAttrs = new WeakMap();
   let language = "zh";
   let observer = null;
   let busy = false;
@@ -252,24 +268,37 @@
     const raw = node.nodeValue;
     const trimmed = raw.trim();
     if (!trimmed) return;
-    if (language === "en" && parent && parent.closest(".type-pill") && typePills[trimmed]) {
-      if (!textOriginals.has(node)) textOriginals.set(node, raw);
-      node.nodeValue = raw.replace(trimmed, typePills[trimmed]);
+    if (language === "zh") {
+      const original = textOriginals.get(node);
+      if (original !== undefined) {
+        const lastTranslated = translatedTexts.get(node);
+        node.nodeValue = lastTranslated === undefined || raw === lastTranslated ? original : raw;
+      }
+      textOriginals.delete(node);
+      translatedTexts.delete(node);
       return;
     }
-    if (language === "zh") {
-      if (textOriginals.has(node)) {
-        const original = textOriginals.get(node);
-        if (raw !== original) node.nodeValue = original;
+
+    let translated = raw;
+    if (parent && parent.closest(".type-pill") && typePills[trimmed]) {
+      translated = raw.replace(trimmed, typePills[trimmed]);
+    } else {
+      const mapped = translate(trimmed);
+      if (mapped !== trimmed) translated = raw.replace(trimmed, mapped);
+    }
+
+    const lastTranslated = translatedTexts.get(node);
+    const isOwnTranslation = lastTranslated !== undefined && raw === lastTranslated;
+    if (translated === raw) {
+      if (!isOwnTranslation) {
+        textOriginals.delete(node);
+        translatedTexts.delete(node);
       }
       return;
     }
-    const translated = translate(trimmed);
-    if (translated === trimmed) return;
-    if (!textOriginals.has(node)) textOriginals.set(node, raw);
-    const start = raw.indexOf(trimmed);
-    const next = raw.slice(0, start) + translated + raw.slice(start + trimmed.length);
-    if (next !== raw) node.nodeValue = next;
+    if (!isOwnTranslation) textOriginals.set(node, raw);
+    node.nodeValue = translated;
+    translatedTexts.set(node, translated);
   }
 
   function translateAttributes(element) {
@@ -282,14 +311,33 @@
         stored = {};
         attrOriginals.set(element, stored);
       }
+      let translated = translatedAttrs.get(element);
+      if (!translated) {
+        translated = {};
+        translatedAttrs.set(element, translated);
+      }
       if (language === "zh") {
-        if (stored[name] !== undefined) element.setAttribute(name, stored[name]);
+        if (stored[name] !== undefined) {
+          const lastTranslated = translated[name];
+          if (lastTranslated === undefined || value === lastTranslated) element.setAttribute(name, stored[name]);
+        }
+        delete stored[name];
+        delete translated[name];
         return;
       }
-      const translated = translate(value);
-      if (translated === value.trim()) return;
-      if (stored[name] === undefined) stored[name] = value;
-      element.setAttribute(name, translated);
+      const lastTranslated = translated[name];
+      const isOwnTranslation = lastTranslated !== undefined && value === lastTranslated;
+      const rendered = translate(value);
+      if (rendered === value.trim()) {
+        if (!isOwnTranslation) {
+          delete stored[name];
+          delete translated[name];
+        }
+        return;
+      }
+      if (!isOwnTranslation) stored[name] = value;
+      element.setAttribute(name, rendered);
+      translated[name] = rendered;
     });
   }
 
@@ -343,7 +391,9 @@
 
   function syncButtons() {
     document.querySelectorAll("[data-lang]").forEach((button) => {
-      button.classList.toggle("on", button.dataset.lang === language);
+      const active = button.dataset.lang === language;
+      button.classList.toggle("on", active);
+      button.setAttribute("aria-pressed", String(active));
     });
   }
 

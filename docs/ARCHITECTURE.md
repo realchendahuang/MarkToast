@@ -1,6 +1,6 @@
 # MarkToast 架构设计
 
-> 状态：草案 v0（2026-11-04）。私有开发期文档，随实现演进。
+> 状态：v0（2026-11-04 起草，随实现更新）。私有开发期文档。
 
 ## 1. 一句话定位
 
@@ -17,7 +17,7 @@ MarkToast 是一个**本地优先、Git 版本化的 Markdown 记忆中枢**：�
 3. **先联邦，后搬家。** 适配器优先对接各 harness 已有的原生记忆（指令文件、原生记忆目录、
    hooks）；导入外部 store 只是兜底。
 4. **Hub + 适配器。** 核心只做存储 / 索引 / Git / HTTP+MCP；harness 的差异全部收进
-   `adapters/*.yaml` descriptor，加一家 harness 是配置工作，不是核心代码。
+   `internal/adapter/defaults/*.yaml` descriptor，加一家 harness 是配置工作，不是核心代码。
 5. **本地零云。** 默认只监听 `127.0.0.1`；跨机同步走用户自己的 Git remote；无遥测。
 6. **中文优先。** CJK 分词 / 子串检索是一等公民。
 7. **多层降级。** hub 挂了，Markdown 仍可读、可 grep、可 git；不能让记忆"失忆"。
@@ -35,12 +35,12 @@ MarkToast 是一个**本地优先、Git 版本化的 Markdown 记忆中枢**：�
 │  ┌────────────── core（Go） ──────────────┐                         │
 │  │ store   读写/锁/frontmatter/原子替换     │                         │
 │  │ index   SQLite FTS5（CJK）+ 增量重建     │                         │
-│  │ git     批量提交/分支/回滚/远端同步      │                         │
+│  │ git     批量提交/回滚（远端用 git CLI）  │                         │
 │  │ hub     HTTP + MCP（localhost, token）  │                         │
 │  │ adapters descriptor 加载 + 写入器        │                         │
 │  └───────────────┬───────────────────────┘                         │
 │                  │                                                 │
-│     CLI `marktoast`   ·   Wails v3 桌面 UI（后续）                  │
+│   CLI `marktoast` · Wails v3 桌面壳（内嵌 UI）                      │
 │                  │                                                 │
 │  ┌───────────────┴───────────── 适配层（按 harness 分级）──────────┐ │
 │  │ T1 指令文件投影（AGENTS.md/CLAUDE.md/GEMINI.md marker 块）      │ │
@@ -66,7 +66,7 @@ MarkToast 是一个**本地优先、Git 版本化的 Markdown 记忆中枢**：�
         trust-hardening-roadmap.md
   global/                                  # 跨项目 / 用户画像事实
     user-fast-answers.md
-  .marktoast/                              # 派生物（.gitignore）
+  .marktoast/                              # 派生物（.git/info/exclude 忽略）
     index.db                               # SQLite FTS5
     lock
     cache/
@@ -92,8 +92,8 @@ One durable fact.
 ## 5. 索引（FTS5 + CJK）
 
 - SQLite FTS5，`external content` 表 + 触发器同步；索引是派生物，`marktoast reindex` 可全量重建。
-- 中文：入口层用 jieba 预处理（索引与查询两侧同一套分词）或退化为 `trigram`；
-  `bm25(name*5, description*2, body*1) + 时间衰减 + 类型权重` 排序。
+- 中文：`internal/index` 使用零依赖 CJK bigram 分词（索引与查询两侧相同）；
+  FTS5 + BM25 排序，两字中文查询可直接命中。
 - 结果返回 `path + snippet + rank`，由 agent 决定是否读全文（不整段注入）。
 - 后续可插拔向量索引（embedding 只做派生层，可关可重建）。
 
@@ -101,13 +101,14 @@ One durable fact.
 
 - **批量提交**：写入先落盘，再按 debounce（默认 5s）聚合为一次 commit，避免仓库爆炸。
 - **提交信息模板**：`mem(<project>): <op> <name>`，author 记录 harness 名。
-- **分支**：`memory/experiment/<topic>` 用于记忆实验；合并时索引 regenerate，不合并文本。
+- **分支**：需要记忆实验时直接用 `git branch` / `git switch`；MarkToast 不另造分支命令。
 - **冲突**：事实文件按 name 唯一；同名不同内容的冲突进 `inbox/conflicts/` 人工裁决。
-- **远端**：`marktoast sync` → 用户自己的 Git remote（GitHub/Gitea/自建）。
+- **远端**：MarkToast 不封装同步；在记忆仓库中直接使用用户自己的 Git remote。
+  例如：`git -C ~/Memory pull --rebase && git -C ~/Memory push`（GitHub/Gitea/自建均可）。
 
 ## 7. 适配器
 
-`adapters/<id>.yaml` 声明式描述，T1/T2/T3/T4 分级能力：
+内置描述符位于 `internal/adapter/defaults/<id>.yaml`，声明式描述 T1/T2/T3/T4 分级能力：
 
 ```yaml
 id: zcode
@@ -129,10 +130,14 @@ tier: native
 
 ## 8. 并发与故障模式
 
-- **单写者**：hub 或 CLI 拿 `flock` 串行写；SQLite WAL；Markdown 原子替换（temp + rename）。
+- **单写者**：CLI / HTTP / MCP 都经过 `internal/service` 的统一记忆操作；操作期间持有
+  仓库级 `flock`（Windows 使用 `LockFileEx`），SQLite WAL，Markdown 使用唯一临时文件 +
+  fsync + rename。
+- **索引一致性**：每次写入后更新 SQLite 单条事务与 `MEMORY.md`；索引打开/查询前按
+  Markdown mtime 检查是否过期，外部编辑或 `git pull` 后可自动重建。
 - **hub 挂掉**：降级为只读——AGENTS.md 里已投影的索引仍在，记忆仓库仍可 git/grep；
   不丢数据、不静默失忆。
-- **Git 不可用**：记忆照常读写，提交排队；`marktoast status` 报告积压。
+- **Git 不可用**：记忆照常读写，后续变更可手工提交；`marktoast status` 报告仓库状态。
 
 ## 9. 技术栈
 
@@ -143,17 +148,20 @@ tier: native
 | SQLite | **modernc.org/sqlite**（纯 Go） | 无 CGo，交叉编译简单，FTS5 可用 |
 | Git | **调用 `git` CLI**（exec）+ 批量提交 | 行为可预期、覆盖边界操作；开发者本机已有 git |
 | 插件引擎（后续） | **moejs**（Apache-2.0，Magpie 同款） | 适配器可做成 JS 插件，社区可扩展 |
-| 前端 | **原生 HTML/CSS/JS**（Vite 构建、无框架） | 对齐 Magpie：系统 WebView 内足够快、无框架负担 |
-| TUI（后期） | **Bubble Tea + Lipgloss** | 与 Magpie 同款；给无 GUI/远程场景 |
+| 前端 | **原生 HTML/CSS/JS**（静态资源内嵌、无框架） | 对齐 Magpie：系统 WebView 内足够快、无框架负担 |
+| TUI | **Bubble Tea + Lipgloss** | 与 Magpie 同款；给无 GUI/远程场景 |
 | 平台 | **macOS 优先**，架构保持可移植 | 先在两台 mac 上做深，Windows/Linux 后续 |
 
 参考实现（架构与工程纪律借鉴，不直接 fork）：`yetone/magpie`（MIT，Go+Wails 本地 hub
 与配置写入器）、`akitaonrails/ai-memory`（MIT，Markdown+Git-backed 记忆引擎）。
-许可证与署名记录在 `docs/CREDITS.md`（待建）。
+许可证与署名记录在 `docs/CREDITS.md`。
 
 ## 10. 安全与隐私
 
-- 默认仅 `127.0.0.1` 监听；MCP/HTTP 使用本地 bearer token。
+- 默认且强制仅 loopback 监听；拒绝非 loopback Host 与跨站 Origin。
+- 浏览器 UI 使用进程级 HttpOnly + SameSite 会话 Cookie；脚本 API 与 MCP 使用
+  `<root>/.marktoast/token` 的 bearer token。Token 读取/创建失败时 fail-closed。
+- `/api/*` 全部需要认证；Cookie 认证的写请求必须通过同源校验。
 - 记忆进入索引/注入前做敏感信息脱敏（密钥模式、私密路径）。
 - 无遥测、无云默认值；`--root` 可指向加密卷。
 - 公开仓库前清理所有个人记忆样例与 token。
@@ -166,10 +174,10 @@ tier: native
 | 方法 | 路径 | 作用 |
 |---|---|---|
 | GET | `/api/status` | 版本、仓库、facts、projects、adapters、index、git |
-| GET | `/api/search?q=&project=&type=&limit=` | 排名搜索（FTS5 + BM25） |
+| GET | `/api/search?q=&project=&type=&limit=&offset=&sort=` | 分页排名搜索（FTS5 + BM25） |
 | GET | `/api/memory?path=` / `?name=` | 单条记忆（frontmatter + body + raw） |
 | POST | `/api/memory` | 保存记忆（写 Markdown → 索引 → `MEMORY.md` → commit） |
-| GET | `/api/memories?project=` | 列表 |
+| GET | `/api/memories?project=&type=&limit=&offset=&sort=` | 分页列表 |
 | GET | `/api/projects` | 项目与 facts 计数 |
 | GET | `/api/adapters` | 适配器描述符（hooks/mcp 元数据） |
 | GET | `/api/git/log?n=` | 最近提交 |

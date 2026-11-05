@@ -1,14 +1,17 @@
 // MarkToast desktop shell (Wails v3).
 //
-// It starts (or attaches to) the local hub and opens the Magpie-inspired web
-// UI in a native window. The hub, API and UI are the same code paths used by
-// `marktoast serve`; the shell only adds a window and a menu bar surface.
+// It starts (or attaches to) the local hub and opens the same web UI in a
+// native window. The hub runs in-process, so the desktop shell owns its
+// lifecycle and flushes pending Git commits before exiting.
 package main
 
 import (
+	"context"
 	_ "embed"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -17,6 +20,7 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
+	webui "github.com/realchendahuang/MarkToast/frontend"
 	"github.com/realchendahuang/MarkToast/internal/config"
 	"github.com/realchendahuang/MarkToast/internal/hub"
 )
@@ -40,24 +44,32 @@ func main() {
 		}
 		cfg.Root = abs
 	}
-	uiDir := findFrontendDir()
 
-	go func() {
-		if err := hub.Serve(hub.Options{
-			Addr:        *addr,
-			Root:        cfg.Root,
-			FrontendDir: uiDir,
-			AutoCommit:  cfg.Git.AutoCommit,
-			Debounce:    time.Duration(cfg.Git.DebounceMS) * time.Millisecond,
-		}); err != nil {
-			// A hub may already be running (e.g. `marktoast serve`); the
-			// window can still load it.
-			log.Printf("hub: %v", err)
-		}
-	}()
+	hubServer, err := hub.Start(hub.Options{
+		Addr:       *addr,
+		Root:       cfg.Root,
+		FrontendFS: desktopUIFS(),
+		AutoCommit: cfg.Git.AutoCommit,
+		Debounce:   time.Duration(cfg.Git.DebounceMS) * time.Millisecond,
+	})
+	if err != nil {
+		// A hub may already be running (e.g. `marktoast serve`); the window
+		// can still load it, but only after a strict health check.
+		log.Printf("hub: %v", err)
+	} else {
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := hubServer.Shutdown(ctx); err != nil {
+				log.Printf("hub shutdown: %v", err)
+			}
+		}()
+	}
 
 	url := fmt.Sprintf("http://%s/", *addr)
-	waitForHub(url, 4*time.Second)
+	if !waitForHub(url, 4*time.Second) {
+		log.Fatalf("local hub is not available at %s", url)
+	}
 
 	app := application.New(application.Options{
 		Name:        "MarkToast",
@@ -100,34 +112,35 @@ func main() {
 	}
 }
 
-// findFrontendDir locates the web UI on disk.
-func findFrontendDir() string {
+func desktopUIFS() fs.FS {
 	if dir := os.Getenv("MARKTOAST_UI_DIR"); dir != "" {
-		return dir
-	}
-	if info, err := os.Stat("frontend"); err == nil && info.IsDir() {
-		if abs, err := filepath.Abs("frontend"); err == nil {
-			return abs
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return os.DirFS(dir)
 		}
 	}
-	if exe, err := os.Executable(); err == nil {
-		candidate := filepath.Join(filepath.Dir(exe), "frontend")
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate
-		}
-	}
-	return ""
+	return webui.FS()
 }
 
-// waitForHub gives the hub a moment to bind before the window navigates.
-func waitForHub(url string, timeout time.Duration) {
+// waitForHub verifies the /health payload instead of accepting any HTTP
+// response on the configured port.
+func waitForHub(baseURL string, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
+	client := &http.Client{Timeout: 500 * time.Millisecond}
 	for time.Now().Before(deadline) {
-		resp, err := http.Get(url)
-		if err == nil {
-			_ = resp.Body.Close()
-			return
+		response, err := client.Get(baseURL + "health")
+		if err == nil && response.StatusCode == http.StatusOK {
+			var payload struct {
+				Status string `json:"status"`
+			}
+			decodeErr := json.NewDecoder(response.Body).Decode(&payload)
+			_ = response.Body.Close()
+			if decodeErr == nil && payload.Status == "ok" {
+				return true
+			}
+		} else if response != nil {
+			_ = response.Body.Close()
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	return false
 }

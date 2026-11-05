@@ -4,7 +4,6 @@ package importer
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -36,16 +35,21 @@ func ZCode(root, source string, dryRun bool) (Result, error) {
 		if err := store.Init(root); err != nil {
 			return result, err
 		}
+		unlock, err := store.LockWrite(root)
+		if err != nil {
+			return result, err
+		}
+		defer unlock()
 	}
 	projects := map[string]struct{}{}
 	err := filepath.WalkDir(projectsDir, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
-		if entry.IsDir() {
+		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
 			return nil
 		}
-		if filepath.Ext(path) != ".md" || entry.Name() == store.IndexFile {
+		if strings.ToLower(filepath.Ext(path)) != ".md" || entry.Name() == store.IndexFile {
 			return nil
 		}
 		rel, err := filepath.Rel(projectsDir, path)
@@ -57,7 +61,14 @@ func ZCode(root, source string, dryRun bool) (Result, error) {
 			return nil
 		}
 		project := parts[0]
-		dst := filepath.Join(root, "projects", project, "memory", entry.Name())
+		if err := store.ValidateProject(project); err != nil {
+			return err
+		}
+		dir, err := store.EnsureMemoryDir(root, project)
+		if err != nil {
+			return err
+		}
+		dst := filepath.Join(dir, entry.Name())
 		if _, err := os.Stat(dst); err == nil {
 			result.Skipped++
 			return nil
@@ -118,6 +129,16 @@ func Hermes(root, source string, dryRun bool) (Result, error) {
 			)
 		}
 	}
+	if !dryRun {
+		if err := store.Init(root); err != nil {
+			return result, err
+		}
+		unlock, err := store.LockWrite(root)
+		if err != nil {
+			return result, err
+		}
+		defer unlock()
+	}
 	seen := map[string]bool{}
 	seenBody := map[string]bool{}
 	existing := map[string]bool{}
@@ -153,9 +174,6 @@ func Hermes(root, source string, dryRun bool) (Result, error) {
 			result.Facts++
 			if dryRun {
 				continue
-			}
-			if err := store.Init(root); err != nil {
-				return result, err
 			}
 			_, err := store.WriteFact(root, file.project, store.Fact{
 				Name:        name,
@@ -218,28 +236,27 @@ func truncate(value string, limit int) string {
 }
 
 func copyFile(src, dst string) error {
+	info, err := os.Lstat(src)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("import source is not a regular file: %s", src)
+	}
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	if len(data) > store.MaxFactBodyBytes+64*1024 {
+		return fmt.Errorf("import source is too large: %s", src)
+	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return err
 	}
-	in, err := os.Open(src)
-	if err != nil {
+	if err := store.AtomicWriteFile(dst, data, 0o600); err != nil {
 		return err
 	}
-	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		return err
-	}
-	if err := out.Close(); err != nil {
-		return err
-	}
-	if info, err := os.Stat(src); err == nil {
-		_ = os.Chtimes(dst, info.ModTime(), info.ModTime())
-	}
+	_ = os.Chtimes(dst, info.ModTime(), info.ModTime())
 	return nil
 }
 

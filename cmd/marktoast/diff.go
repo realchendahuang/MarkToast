@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/realchendahuang/MarkToast/internal/gitx"
-	"github.com/realchendahuang/MarkToast/internal/index"
+	"github.com/realchendahuang/MarkToast/internal/service"
 	"github.com/realchendahuang/MarkToast/internal/store"
 )
 
@@ -88,20 +88,22 @@ func newRollbackCmd() *cobra.Command {
 			if !yes {
 				return fmt.Errorf("rollback rewrites %s; re-run with --yes", rel)
 			}
-			if commit == "" {
-				if out, err := gitx.Run(cfg.Root, "checkout", "--", rel); err != nil {
-					return fmt.Errorf("%s: %w", strings.TrimSpace(out), err)
+			targetHash := commit
+			if targetHash == "" {
+				commits, err := gitx.FileLog(cfg.Root, rel, 1)
+				if err != nil || len(commits) == 0 {
+					return fmt.Errorf("no commit found for %s", rel)
 				}
-			} else {
-				if _, err := gitx.RestoreFile(cfg.Root, commit, rel); err != nil {
+				targetHash = commits[0].Hash
+			}
+			_, project, name, err := service.New(cfg.Root).Restore(fact.Path, targetHash)
+			if err != nil {
+				return err
+			}
+			if gitx.Available() {
+				if _, err := gitx.CommitAll(cfg.Root, fmt.Sprintf("restore(%s): %s", project, name)); err != nil {
 					return err
 				}
-			}
-			if err := store.WriteIndexes(cfg.Root); err != nil {
-				return err
-			}
-			if _, err := index.Rebuild(cfg.Root); err != nil {
-				return err
 			}
 			fmt.Printf("✔ restored %s\n", fact.Name)
 			return nil

@@ -35,8 +35,14 @@ func LoadAliases(root string) (map[string]string, error) {
 	return aliases, nil
 }
 
-// SaveAliases writes the display-name map atomically enough for local use.
+// SaveAliases writes the display-name map atomically.
 func SaveAliases(root string, aliases map[string]string) error {
+	unlock, err := LockWrite(root)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	clean := map[string]string{}
 	for key, value := range aliases {
 		key = strings.TrimSpace(key)
@@ -44,18 +50,26 @@ func SaveAliases(root string, aliases map[string]string) error {
 		if key == "" || value == "" {
 			continue
 		}
-		if len(value) > 80 {
-			value = value[:80]
+		if err := ValidateProject(key); err != nil {
+			continue
 		}
+		value = truncateRunes(value, 80)
 		clean[key] = value
 	}
 	data, err := json.MarshalIndent(clean, "", "  ")
 	if err != nil {
 		return err
 	}
-	dir := filepath.Join(root, MetaDir)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if _, err := EnsureMetaDir(root); err != nil {
 		return err
 	}
-	return os.WriteFile(AliasesPath(root), append(data, '\n'), 0o644)
+	return AtomicWriteFile(AliasesPath(root), append(data, '\n'), 0o600)
+}
+
+func truncateRunes(value string, limit int) string {
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	return string(runes[:limit])
 }

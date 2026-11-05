@@ -3,11 +3,9 @@
 package hub
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -18,119 +16,21 @@ import (
 	"time"
 
 	"github.com/realchendahuang/MarkToast/internal/adapter"
-	"github.com/realchendahuang/MarkToast/internal/backup"
 	"github.com/realchendahuang/MarkToast/internal/gitx"
 	"github.com/realchendahuang/MarkToast/internal/harness"
 	"github.com/realchendahuang/MarkToast/internal/index"
 	"github.com/realchendahuang/MarkToast/internal/ingest"
-	"github.com/realchendahuang/MarkToast/internal/plugin"
+	"github.com/realchendahuang/MarkToast/internal/service"
 	"github.com/realchendahuang/MarkToast/internal/store"
 	"github.com/realchendahuang/MarkToast/internal/version"
 )
 
-// Options configures the local hub.
-type Options struct {
-	Addr        string
-	Root        string
-	FrontendDir string
-	AutoCommit  bool
-	Debounce    time.Duration
-	Committer   *committer
-	Plugins     *plugin.Host
-}
-
-// Serve starts the HTTP hub and blocks.
-func Serve(o Options) error {
-	if o.Addr == "" {
-		o.Addr = "127.0.0.1:3777"
-	}
-	if o.AutoCommit {
-		o.Committer = newCommitter(o.Root, o.Debounce)
-		defer o.Committer.Flush()
-	}
-	mcpServer := NewMCPServer(o.Root)
-	token, _ := EnsureToken(o.Root)
-	plugins, pluginErr := plugin.Load(o.Root)
-	if pluginErr != nil {
-		log.Printf("marktoast: plugin load: %v", pluginErr)
-	}
-	o.Plugins = plugins
-	if plugins != nil {
-		defer plugins.Close()
-	}
-	if path, created, err := backup.EnsureDaily(o.Root); err != nil {
-		log.Printf("marktoast: daily backup failed: %v", err)
-	} else if created {
-		log.Printf("marktoast: daily backup written to %s", path)
-	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": version.Version})
-	})
-	mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) { handleStatus(w, r, o) })
-	mux.HandleFunc("/api/search", func(w http.ResponseWriter, r *http.Request) { handleSearch(w, r, o) })
-	mux.HandleFunc("/api/memory", func(w http.ResponseWriter, r *http.Request) { handleMemory(w, r, o) })
-	mux.HandleFunc("/api/memories", func(w http.ResponseWriter, r *http.Request) { handleMemories(w, r, o) })
-	mux.HandleFunc("/api/projects", func(w http.ResponseWriter, r *http.Request) { handleProjects(w, r, o) })
-	mux.HandleFunc("/api/adapters", func(w http.ResponseWriter, r *http.Request) { handleAdapters(w, r) })
-	mux.HandleFunc("/api/adapters/action", func(w http.ResponseWriter, r *http.Request) { handleAdapterAction(w, r, o) })
-	mux.HandleFunc("/api/git/log", func(w http.ResponseWriter, r *http.Request) { handleGitLog(w, r, o) })
-	mux.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) { handleSettings(w, r, o) })
-	mux.HandleFunc("/api/reindex", func(w http.ResponseWriter, r *http.Request) { handleReindex(w, r, o) })
-	mux.HandleFunc("/api/aliases", func(w http.ResponseWriter, r *http.Request) { handleAliases(w, r, o) })
-	mux.HandleFunc("/api/import", func(w http.ResponseWriter, r *http.Request) { handleImport(w, r, o) })
-	mux.HandleFunc("/api/backup", func(w http.ResponseWriter, r *http.Request) { handleBackup(w, r, o) })
-	mux.HandleFunc("/api/inbox", func(w http.ResponseWriter, r *http.Request) { handleInbox(w, r, o) })
-	mux.HandleFunc("/api/inbox/candidate", func(w http.ResponseWriter, r *http.Request) { handleInboxCandidate(w, r, o) })
-	mux.HandleFunc("/api/inbox/promote", func(w http.ResponseWriter, r *http.Request) { handleInboxPromote(w, r, o) })
-	mux.HandleFunc("/api/inbox/dismiss", func(w http.ResponseWriter, r *http.Request) { handleInboxDismiss(w, r, o) })
-	mux.HandleFunc("/api/memory/history", func(w http.ResponseWriter, r *http.Request) { handleMemoryHistory(w, r, o) })
-	mux.HandleFunc("/api/memory/diff", func(w http.ResponseWriter, r *http.Request) { handleMemoryDiff(w, r, o) })
-	mux.HandleFunc("/api/memory/restore", func(w http.ResponseWriter, r *http.Request) { handleMemoryRestore(w, r, o) })
-	mux.Handle("/mcp", MCPHTTPHandler(mcpServer, token))
-
-	if o.FrontendDir != "" {
-		if info, err := os.Stat(o.FrontendDir); err == nil && info.IsDir() {
-			mux.Handle("/", http.FileServer(http.Dir(o.FrontendDir)))
-		}
-	}
-
-	srv := &http.Server{Addr: o.Addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-	log.Printf("marktoast hub listening on http://%s", o.Addr)
-	log.Printf("  memory root: %s", o.Root)
-	if o.FrontendDir != "" {
-		log.Printf("  web UI:      http://%s/", o.Addr)
-	} else {
-		log.Printf("  web UI:      (frontend/ not found; API only)")
-	}
-	log.Printf("  MCP:         http://%s/mcp", o.Addr)
-	return srv.ListenAndServe()
-}
-
-// EnsureToken returns the hub bearer token, creating it if needed.
-func EnsureToken(root string) (string, error) {
-	path := filepath.Join(root, store.MetaDir, "token")
-	if data, err := os.ReadFile(path); err == nil {
-		return strings.TrimSpace(string(data)), nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return "", err
-	}
-	buf := make([]byte, 24)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	token := hex.EncodeToString(buf)
-	if err := os.WriteFile(path, []byte(token+"\n"), 0o600); err != nil {
-		return "", err
-	}
-	return token, nil
-}
-
 func handleStatus(w http.ResponseWriter, r *http.Request, o Options) {
 	adapters, _ := adapter.All("")
-	facts, _ := store.ListFacts(o.Root)
+	facts, _, listErr := index.ListPage(o.Root, index.ListOptions{Limit: 0})
+	if listErr != nil {
+		facts, _ = store.ListFacts(o.Root)
+	}
 	counts := map[string]int{}
 	for _, f := range facts {
 		counts[f.Project]++
@@ -174,11 +74,14 @@ func handleStatus(w http.ResponseWriter, r *http.Request, o Options) {
 
 func handleSearch(w http.ResponseWriter, r *http.Request, o Options) {
 	q := r.URL.Query().Get("q")
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	results, err := index.Search(o.Root, q, index.Options{
+	limit := queryInt(r, "limit", 20, 1, 100)
+	offset := queryInt(r, "offset", 0, 0, 1<<30)
+	results, total, err := index.SearchPage(o.Root, q, index.Options{
 		Project: r.URL.Query().Get("project"),
 		Type:    r.URL.Query().Get("type"),
 		Limit:   limit,
+		Offset:  offset,
+		Sort:    r.URL.Query().Get("sort"),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -197,7 +100,10 @@ func handleSearch(w http.ResponseWriter, r *http.Request, o Options) {
 			"score":       res.Score,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"query": q, "results": out, "count": len(out)})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"query": q, "results": out, "count": len(out), "total": total,
+		"offset": offset, "limit": limit,
+	})
 }
 
 func handleMemory(w http.ResponseWriter, r *http.Request, o Options) {
@@ -222,7 +128,7 @@ func handleMemory(w http.ResponseWriter, r *http.Request, o Options) {
 		})
 	case http.MethodPost:
 		var args saveArgs
-		if err := json.NewDecoder(r.Body).Decode(&args); err != nil {
+		if err := decodeJSONBody(w, r, &args); err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
@@ -233,31 +139,26 @@ func handleMemory(w http.ResponseWriter, r *http.Request, o Options) {
 		if args.Project == "" {
 			args.Project = store.GlobalProject
 		}
-		path, err := store.WriteFact(o.Root, args.Project, store.Fact{
+		path, err := service.New(o.Root).Save(args.Project, store.Fact{
 			Name:        args.Name,
 			Description: args.Description,
 			Type:        args.Type,
 			Body:        args.Body,
 		})
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
+			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		if err := upsertIndex(o.Root, path); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
+		commitWarning := ""
+		if err := commit(o, fmt.Sprintf("mem(%s): save %s", args.Project, args.Name)); err != nil {
+			commitWarning = err.Error()
 		}
-		if err := store.WriteIndexes(o.Root); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-		commit(o, fmt.Sprintf("mem(%s): save %s", args.Project, args.Name))
 		if o.Plugins != nil {
 			o.Plugins.Emit("memory.saved", map[string]any{
 				"path": path, "project": args.Project, "name": args.Name, "type": args.Type,
 			})
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"path": path})
+		writeJSON(w, http.StatusOK, map[string]any{"path": path, "commitWarning": commitWarning})
 	default:
 		w.Header().Set("Allow", "GET, POST")
 		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
@@ -266,16 +167,23 @@ func handleMemory(w http.ResponseWriter, r *http.Request, o Options) {
 
 func handleMemories(w http.ResponseWriter, r *http.Request, o Options) {
 	project := r.URL.Query().Get("project")
-	facts, err := store.ListFacts(o.Root)
+	typ := r.URL.Query().Get("type")
+	limit := queryInt(r, "limit", 0, 0, 500)
+	offset := queryInt(r, "offset", 0, 0, 1<<30)
+	sortBy := strings.ToLower(r.URL.Query().Get("sort"))
+	facts, total, err := index.ListPage(o.Root, index.ListOptions{
+		Project: project,
+		Type:    typ,
+		Limit:   limit,
+		Offset:  offset,
+		Sort:    sortBy,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	out := make([]map[string]any, 0, len(facts))
 	for _, f := range facts {
-		if project != "" && f.Project != project {
-			continue
-		}
 		out = append(out, map[string]any{
 			"path":        f.Path,
 			"name":        f.Name,
@@ -285,11 +193,16 @@ func handleMemories(w http.ResponseWriter, r *http.Request, o Options) {
 			"updated":     f.Updated.Format(time.RFC3339),
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"memories": out, "count": len(out)})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"memories": out, "count": len(out), "total": total, "offset": offset, "limit": limit,
+	})
 }
 
 func handleProjects(w http.ResponseWriter, r *http.Request, o Options) {
-	facts, err := store.ListFacts(o.Root)
+	facts, _, err := index.ListPage(o.Root, index.ListOptions{Limit: 0})
+	if err != nil {
+		facts, err = store.ListFacts(o.Root)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -360,6 +273,38 @@ func handleGitLog(w http.ResponseWriter, r *http.Request, o Options) {
 	writeJSON(w, http.StatusOK, map[string]any{"commits": commits})
 }
 
+func queryInt(r *http.Request, key string, fallback, min, max int) int {
+	value, err := strconv.Atoi(r.URL.Query().Get(key))
+	if err != nil {
+		return fallback
+	}
+	if value < min {
+		return min
+	}
+	if value > max {
+		return max
+	}
+	return value
+}
+
+const maxJSONBody = store.MaxFactBodyBytes + (2 << 20)
+
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBody)
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(dst); err != nil {
+		return err
+	}
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("request body must contain one JSON value")
+		}
+		return err
+	}
+	return nil
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
@@ -382,7 +327,7 @@ func handleAdapterAction(w http.ResponseWriter, r *http.Request, o Options) {
 		ID     string `json:"id"`
 		Action string `json:"action"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := decodeJSONBody(w, r, &payload); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -499,24 +444,23 @@ func handleInboxPromote(w http.ResponseWriter, r *http.Request, o Options) {
 		Path    string `json:"path"`
 		Project string `json:"project"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := decodeJSONBody(w, r, &payload); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	path, err := ingest.Promote(o.Root, payload.Path, payload.Project)
+	path, err := service.New(o.Root).PromoteInbox(payload.Path, payload.Project)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := upsertIndex(o.Root, path); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
+	commitWarning := ""
+	if err := commit(o, fmt.Sprintf("inbox: promote %s", filepath.Base(path))); err != nil {
+		commitWarning = err.Error()
 	}
-	commit(o, fmt.Sprintf("inbox: promote %s", filepath.Base(path)))
 	if o.Plugins != nil {
 		o.Plugins.Emit("inbox.promoted", map[string]any{"path": path})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"path": path})
+	writeJSON(w, http.StatusOK, map[string]any{"path": path, "commitWarning": commitWarning})
 }
 
 func handleInboxDismiss(w http.ResponseWriter, r *http.Request, o Options) {
@@ -528,7 +472,7 @@ func handleInboxDismiss(w http.ResponseWriter, r *http.Request, o Options) {
 	var payload struct {
 		Path string `json:"path"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := decodeJSONBody(w, r, &payload); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -536,8 +480,11 @@ func handleInboxDismiss(w http.ResponseWriter, r *http.Request, o Options) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	commit(o, "inbox: dismiss candidate")
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	commitWarning := ""
+	if err := commit(o, "inbox: dismiss candidate"); err != nil {
+		commitWarning = err.Error()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "commitWarning": commitWarning})
 }
 
 func handleInboxCandidate(w http.ResponseWriter, r *http.Request, o Options) {
@@ -553,7 +500,7 @@ func handleInboxCandidate(w http.ResponseWriter, r *http.Request, o Options) {
 		Agent       string `json:"agent"`
 		Session     string `json:"session"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := decodeJSONBody(w, r, &payload); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}

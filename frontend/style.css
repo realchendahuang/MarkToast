@@ -506,6 +506,22 @@ a { color: inherit; text-decoration: none; }
 .markdown-body pre { margin: .8em 0; padding: 10px 12px; overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
 .markdown-body pre code { padding: 0; border: 0; background: none; font-size: 10.5px; line-height: 1.6; }
 .markdown-body a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.body-truncation-note {
+  margin-bottom: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--amber-soft);
+  border-radius: 7px;
+  background: var(--amber-soft);
+  color: var(--amber);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.load-more-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 2px 2px calc(22px + env(safe-area-inset-bottom, 0px));
+}
+.load-more { min-width: 112px; }
 .expanded-error { display: flex; align-items: center; gap: 9px; min-height: 58px; color: var(--red); font-size: 11.5px; }
 .expanded-error .ic { width: 16px; height: 16px; }
 .expanded-error span { flex: 1; }
@@ -580,6 +596,7 @@ a { color: inherit; text-decoration: none; }
 .dialog {
   width: min(680px, calc(100vw - 36px));
   max-height: min(780px, calc(100vh - 36px));
+  max-height: min(780px, calc(100dvh - 36px));
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -588,7 +605,7 @@ a { color: inherit; text-decoration: none; }
   backdrop-filter: blur(22px) saturate(1.15);
   animation: dialog-in .2s var(--ease);
 }
-.dialog form { display: flex; max-height: min(780px, calc(100vh - 36px)); flex-direction: column; }
+.dialog form { display: flex; max-height: min(780px, calc(100vh - 36px)); max-height: min(780px, calc(100dvh - 36px)); flex-direction: column; }
 .dialog-head { display: flex; flex: none; align-items: center; justify-content: space-between; height: 51px; padding: 0 12px 0 16px; border-bottom: 1px solid var(--line-2); }
 .dialog-title-wrap { display: flex; align-items: center; gap: 8px; }
 .dialog-title-wrap .logo { color: var(--fg); }
@@ -714,8 +731,8 @@ a { color: inherit; text-decoration: none; }
   .adapter-row > .pill { margin-left: 32px; }
   .history-hash { width: 62px; overflow: hidden; text-overflow: ellipsis; }
   .history-subject { white-space: normal; text-align: left; }
-  .dialog { width: calc(100vw - 20px); max-height: calc(100vh - 20px); }
-  .dialog form { max-height: calc(100vh - 20px); }
+  .dialog { width: calc(100vw - 20px); max-height: calc(100vh - 20px); max-height: calc(100dvh - 20px); }
+  .dialog form { max-height: calc(100vh - 20px); max-height: calc(100dvh - 20px); }
   .form-grid { grid-template-columns: 1fr; }
   .dialog-body { padding: 13px; }
   .dialog-foot { align-items: flex-end; padding: 9px 12px; }
@@ -940,11 +957,13 @@ a { color: inherit; text-decoration: none; }
 .memory-history h3 { margin-bottom: 8px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
 .memory-commit {
   display: flex;
+  width: 100%;
   align-items: center;
   gap: 10px;
   padding: 6px 8px;
   border-radius: 6px;
   cursor: pointer;
+  text-align: left;
 }
 .memory-commit:hover { background: var(--pill); }
 .memory-commit.on { background: var(--sel); }
@@ -1121,6 +1140,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   padding-left: var(--side-w);
   overflow: hidden;
 }
@@ -1235,7 +1255,18 @@ body.side-collapsed #side-toggle-top { display: inline-flex; }
 }
 
 /* ---- Magpie quiet pages and sidebar metrics ----------------------------- */
-.view-head { display: none !important; }
+.view-head {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
 .view-inner { max-width: 1200px; }
 .view { padding: 2px max(0px, calc(16px - var(--bar, 0px))) 8px 16px; animation: fade-in .18s var(--ease); }
 .view-panel:not(#view-memories) { padding-top: 8px; }
@@ -1297,7 +1328,7 @@ body.desktop .modal { top: 50px; padding: 16px 24px 24px; }
   box-shadow: 0 0 0 1px var(--line), 0 24px 60px rgba(0, 0, 0, .32), 0 2px 8px rgba(0, 0, 0, .12);
   backdrop-filter: none;
 }
-.dialog form { max-height: min(780px, calc(100vh - 36px)); }
+.dialog form { max-height: min(780px, calc(100vh - 36px)); max-height: min(780px, calc(100dvh - 36px)); }
 .dialog-head { height: 48px; padding: 0 14px 0 18px; }
 .dialog-body { padding: 14px 18px; gap: 10px; }
 .dialog-foot { min-height: 48px; padding: 8px 18px; }
@@ -1830,4 +1861,51 @@ body.desktop .side-top { padding-left: 78px; padding-right: 10px; gap: 8px; }
   width: .5px;
   background: var(--line);
   pointer-events: none;
+}
+
+/* ---- viewport safe areas and touch targets ------------------------------ */
+.view { padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
+.side-foot { padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+.dialog-foot { padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
+.toast-region { bottom: calc(18px + env(safe-area-inset-bottom, 0px)); }
+
+@media (max-width: 640px), (pointer: coarse) {
+  button { min-width: 40px; min-height: 40px; }
+  button.icon,
+  .icon,
+  .top .icon,
+  .side-toggle,
+  .search-toggle,
+  .search-clear,
+  .dialog-head .icon,
+  .memory-actions .icon,
+  .copy-path {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    min-height: 40px;
+  }
+  .top .side-toggle { display: none; }
+  body.side-collapsed .top #side-toggle-top { display: inline-flex; }
+  .top .search-shell,
+  .top .search-shell .search-toggle {
+    min-height: 40px;
+    height: 40px;
+  }
+  .top .search-shell .search-toggle {
+    width: 40px;
+    min-width: 40px;
+  }
+  .filter-control,
+  .sort-control {
+    min-height: 40px;
+    height: 40px;
+  }
+  .seg button,
+  .side-row,
+  .side-foot-row,
+  .memory-commit {
+    min-height: 40px;
+  }
+  .toast-region { bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
 }

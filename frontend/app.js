@@ -5,6 +5,12 @@
 const $ = (id) => document.getElementById(id);
 const tr = (text) => (window.MarkToastI18n ? window.MarkToastI18n.t(text) : text);
 
+const API_TIMEOUT_MS = 15_000;
+const MAX_RENDERED_BODY_CHARS = 200_000;
+const MEMORY_PAGE_SIZE = 50;
+const SEARCH_PAGE_SIZE = 20;
+const MAX_DETAIL_CACHE_ENTRIES = 80;
+
 const state = {
   status: null,
   root: "",
@@ -14,6 +20,12 @@ const state = {
   query: "",
   sort: "relevance",
   results: [],
+  total: 0,
+  totalKnown: false,
+  hasMore: false,
+  offset: 0,
+  limit: MEMORY_PAGE_SIZE,
+  loadingMore: false,
   selectedPath: "",
   details: new Map(),
   detailErrors: new Map(),
@@ -37,6 +49,7 @@ const state = {
   },
   searchController: null,
   searchTimer: 0,
+  searchGeneration: 0,
   requestId: 0,
   lastFocus: null,
 };
@@ -97,7 +110,9 @@ function applyTheme(preference = themePreference()) {
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute("content", dark ? "#1a1a1e" : "#f4f4f6");
   document.querySelectorAll("[data-theme-choice]").forEach((button) => {
-    button.classList.toggle("on", button.dataset.themeChoice === preference);
+    const active = button.dataset.themeChoice === preference;
+    button.classList.toggle("on", active);
+    button.setAttribute("aria-pressed", String(active));
   });
 }
 
@@ -181,25 +196,121 @@ function relativeDate(value) {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    headers: {
-      Accept: "application/json",
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
-      ...options.headers,
-    },
-    ...options,
-  });
-  if (!response.ok) {
-    let detail = "";
-    try {
-      const payload = await response.json();
-      detail = payload.error || payload.message || "";
-    } catch {
-      // The hub sometimes returns a plain HTTP error.
-    }
-    throw new Error(detail || `HTTP ${response.status} ${response.statusText}`.trim());
+  const {
+    headers: callerHeaders,
+    signal: callerSignal,
+    timeoutMs: requestedTimeout,
+    ...requestOptions
+  } = options;
+  const timeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout > 0 ? requestedTimeout : API_TIMEOUT_MS;
+  const headers = new Headers(callerHeaders || {});
+  if (!headers.has("Accept")) headers.set("Accept", "application/json");
+  if (requestOptions.body !== undefined && requestOptions.body !== null && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
   }
-  return response.json();
+
+  const controller = new AbortController();
+  let timedOut = false;
+  const abortFromCaller = () => {
+    if (!controller.signal.aborted) controller.abort(callerSignal?.reason);
+  };
+  if (callerSignal) {
+    if (callerSignal.aborted) abortFromCaller();
+    else callerSignal.addEventListener("abort", abortFromCaller, { once: true });
+  }
+  const timeoutId = window.setTimeout(() => {
+    timedOut = true;
+    if (!controller.signal.aborted) controller.abort();
+  }, timeoutMs);
+
+  const makeError = (message, name, status) => {
+    const error = new Error(message);
+    error.name = name;
+    if (status) error.status = status;
+    return error;
+  };
+
+  try {
+    let response;
+    try {
+      response = await fetch(path, {
+        ...requestOptions,
+        headers,
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (timedOut) throw makeError("请求超时，请稍后重试。", "TimeoutError");
+      if (callerSignal?.aborted || error?.name === "AbortError") {
+        throw makeError("请求已取消。", "AbortError");
+      }
+      throw error;
+    }
+
+    if (!response.ok) {
+      let detail = "";
+      try {
+        if (typeof response.text === "function") {
+          const text = await response.text();
+          if (text.trim()) {
+            try {
+              const payload = JSON.parse(text);
+              detail = String(payload?.error || payload?.message || "");
+            } catch {
+              detail = text.trim();
+            }
+          }
+        } else if (typeof response.json === "function") {
+          const payload = await response.json();
+          detail = String(payload?.error || payload?.message || "");
+        }
+      } catch {
+        // The hub sometimes returns an empty or unreadable error body.
+      }
+      let message = detail || `HTTP ${response.status} ${response.statusText}`.trim();
+      if (response.status === 401) message = "未授权，请重新连接本地 hub。";
+      else if (response.status === 403) message = "没有权限执行此操作。";
+      else if (response.status >= 500 && response.status <= 599) message = "本地 hub 暂时不可用，请稍后重试。";
+      const error = makeError(message, "ApiError", response.status);
+      error.detail = detail;
+      throw error;
+    }
+
+    if (response.status === 204 || response.status === 205) return null;
+    if (typeof response.text !== "function") {
+      if (typeof response.json === "function") {
+        try {
+          return await response.json();
+        } catch {
+          throw makeError("本地 hub 返回了无法解析的响应。", "ParseError", response.status);
+        }
+      }
+      return null;
+    }
+    let text;
+    try {
+      text = await response.text();
+    } catch (error) {
+      if (timedOut) throw makeError("请求超时，请稍后重试。", "TimeoutError");
+      if (callerSignal?.aborted || error?.name === "AbortError") {
+        throw makeError("请求已取消。", "AbortError");
+      }
+      throw error;
+    }
+    if (!text.trim()) return null;
+    const contentType = (response.headers?.get?.("content-type") || "").toLowerCase();
+    const looksLikeJson = /^[\s]*[\[{]/.test(text);
+    if (contentType.includes("json") || looksLikeJson) {
+      try {
+        return JSON.parse(text);
+      } catch {
+        throw makeError("本地 hub 返回了无法解析的响应。", "ParseError", response.status);
+      }
+    }
+    return text;
+  } finally {
+    window.clearTimeout(timeoutId);
+    if (callerSignal) callerSignal.removeEventListener("abort", abortFromCaller);
+  }
 }
 
 function setHubState(kind, text) {
@@ -227,6 +338,15 @@ function toast(message, kind = "success") {
     node.style.transform = "translateY(5px)";
     window.setTimeout(() => node.remove(), 180);
   }, 3400);
+}
+
+function toastDataResult(result, successText) {
+  const warning = String(result?.commitWarning || "").trim();
+  if (warning) {
+    toast(`${successText}，但 Git 提交失败：${warning}`, "error");
+    return;
+  }
+  toast(successText);
 }
 
 function setButtonLoading(button, loading, loadingText = "处理中…") {
@@ -345,11 +465,14 @@ function renderProjects(projects) {
       const button = element("button", `side-row project-row${state.project === project.key ? " is-active" : ""}`);
       button.type = "button";
       button.dataset.project = project.key;
+      button.dataset.noI18n = "true";
       button.title = project.key;
       button.setAttribute("aria-pressed", String(state.project === project.key));
+      const projectName = element("span", "side-name", projectLabel(project.key));
+      projectName.dataset.noI18n = "true";
       button.append(
         icon("folder"),
-        element("span", "side-name", projectLabel(project.key)),
+        projectName,
         element("span", "side-count", project.facts ?? 0),
       );
       button.addEventListener("click", () => selectProject(project.key));
@@ -363,15 +486,31 @@ function renderProjectOptions(projects) {
   const all = element("option", "", "全部项目");
   all.value = "";
   els.projectFilter.appendChild(all);
+  const projectOptions = $("memory-project-options");
+  if (projectOptions) {
+    clear(projectOptions);
+    const globalOption = document.createElement("option");
+    globalOption.value = "global";
+    globalOption.textContent = "global";
+    projectOptions.appendChild(globalOption);
+  }
   projects.forEach((project) => {
     const option = element("option", "", projectLabel(project.key));
     option.value = project.key;
+    option.dataset.noI18n = "true";
     els.projectFilter.appendChild(option);
+    if (projectOptions) {
+      const suggestion = document.createElement("option");
+      suggestion.value = project.key;
+      suggestion.textContent = projectLabel(project.key);
+      projectOptions.appendChild(suggestion);
+    }
   });
   els.projectFilter.value = projects.some((project) => project.key === current) ? current : "";
 }
 
 function selectProject(project) {
+  cancelPendingSearch();
   state.project = project;
   state.query = "";
   els.search.value = "";
@@ -379,8 +518,8 @@ function selectProject(project) {
   els.projectFilter.value = project;
   renderProjects(state.status?.projects || []);
   $("all-memories").classList.toggle("is-active", !project);
-  switchView("memories");
-  loadMemories({ preserveSelection: false });
+  switchView("memories", { autoLoadMemories: false });
+  loadMemories({ preserveSelection: true });
 }
 
 // positionSideHighlight slides one white row shape to the active sidebar row,
@@ -412,8 +551,16 @@ function positionSideHighlight() {
   }
 }
 
-function updateSidebarIcons() {
+function syncSidebarControls() {
   const collapsed = document.body.classList.contains("side-collapsed");
+  const label = collapsed ? "展开侧栏" : "收起侧栏";
+  const topToggle = document.getElementById("side-toggle-top");
+  if (topToggle) topToggle.hidden = !collapsed;
+  document.querySelectorAll("#side-toggle, #side-toggle-top").forEach((button) => {
+    button.setAttribute("aria-label", label);
+    button.setAttribute("title", label);
+    button.setAttribute("aria-expanded", String(!collapsed));
+  });
   document.querySelectorAll("#side-toggle use, #side-toggle-top use").forEach((use) => {
     use.setAttribute("href", collapsed ? "#icon-sidebar-open" : "#icon-sidebar");
   });
@@ -422,6 +569,9 @@ function updateSidebarIcons() {
 function updateBreadcrumb() {
   const crumb = document.getElementById("breadcrumb-current");
   if (!crumb) return;
+  const userProject = state.view === "memories" && !state.query && Boolean(state.project);
+  if (userProject) crumb.dataset.noI18n = "true";
+  else delete crumb.dataset.noI18n;
   if (state.view !== "memories") crumb.textContent = VIEW_LABELS[state.view] || "全部记忆";
   else if (state.query) crumb.textContent = "搜索结果";
   else if (state.project) crumb.textContent = projectLabel(state.project);
@@ -429,7 +579,8 @@ function updateBreadcrumb() {
 }
 
 function updateHeading() {
-  $("sort-label").textContent = state.sort === "updated" ? "最近更新" : state.sort === "title" ? "标题" : "相关度";
+  const effectiveSort = !state.query && state.sort === "relevance" ? "updated" : state.sort;
+  $("sort-label").textContent = effectiveSort === "updated" ? "最近更新" : effectiveSort === "title" ? "标题" : "相关度";
   updateBreadcrumb();
 }
 
@@ -452,45 +603,124 @@ function renderMemoryLoading(count = 5) {
   els.resultRegion.appendChild(list);
 }
 
-async function loadMemories({ preserveSelection = true, silent = false } = {}) {
+function currentPageLimit() {
+  return state.query ? SEARCH_PAGE_SIZE : MEMORY_PAGE_SIZE;
+}
+
+function currentApiSort() {
+  if (!state.query) return state.sort === "title" ? "title" : "updated";
+  return state.sort === "title" || state.sort === "updated" ? state.sort : "relevance";
+}
+
+function mergePageResults(existing, incoming) {
+  const seen = new Set(existing.map((item) => item.path).filter(Boolean));
+  const merged = existing.slice();
+  incoming.forEach((item) => {
+    const key = item.path;
+    if (key && seen.has(key)) return;
+    if (key) seen.add(key);
+    merged.push(item);
+  });
+  return merged;
+}
+
+async function loadMemories({ preserveSelection = true, silent = false, append = false } = {}) {
   const requestId = ++state.requestId;
   if (state.searchController) state.searchController.abort();
   state.searchController = new AbortController();
   updateHeading();
-  if (!silent) renderMemoryLoading();
+  const limit = currentPageLimit();
+  const offset = append ? state.offset : 0;
+  if (append) {
+    state.loadingMore = true;
+    renderMemories();
+  } else {
+    state.loadingMore = false;
+    state.offset = 0;
+    state.hasMore = false;
+    if (!silent) renderMemoryLoading();
+  }
   els.resultRegion.setAttribute("aria-busy", "true");
 
   const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  params.set("offset", String(offset));
+  params.set("sort", currentApiSort());
   let endpoint;
   if (state.query) {
     params.set("q", state.query);
-    params.set("limit", "20");
     if (state.project) params.set("project", state.project);
     if (state.type) params.set("type", state.type);
     endpoint = `/api/search?${params.toString()}`;
   } else {
     if (state.project) params.set("project", state.project);
-    endpoint = `/api/memories${params.size ? `?${params.toString()}` : ""}`;
+    if (state.type) params.set("type", state.type);
+    endpoint = `/api/memories?${params.toString()}`;
   }
 
   try {
     const data = await api(endpoint, { signal: state.searchController.signal });
     if (requestId !== state.requestId) return;
-    let results = Array.isArray(data.results) ? data.results : Array.isArray(data.memories) ? data.memories : [];
-    if (state.type) results = results.filter((item) => String(item.type || "").toLowerCase() === state.type);
-    state.results = sortResults(results);
-    if (!preserveSelection || !state.results.some((item) => item.path === state.selectedPath)) {
+    const hasPaginationMeta = Boolean(
+      data && typeof data === "object" &&
+      ["total", "offset", "limit"].some((key) => Object.prototype.hasOwnProperty.call(data, key)),
+    );
+    let pageResults = Array.isArray(data?.results)
+      ? data.results
+      : Array.isArray(data?.memories)
+        ? data.memories
+        : [];
+    if (!hasPaginationMeta && state.type) {
+      pageResults = pageResults.filter((item) => String(item.type || "").toLowerCase() === state.type);
+    }
+    if (!hasPaginationMeta) pageResults = sortResults(pageResults);
+
+    const totalNumber = Number(data?.total);
+    const totalKnown = Boolean(
+      data && data.total !== undefined && data.total !== null && Number.isFinite(totalNumber) && totalNumber >= 0,
+    );
+    const responseOffsetRaw = Number(data?.offset);
+    const responseOffset = Number.isFinite(responseOffsetRaw) ? responseOffsetRaw : offset;
+    const receivedCount = pageResults.length;
+    const previousCount = state.results.length;
+    const merged = append ? mergePageResults(state.results, pageResults) : pageResults;
+    state.results = merged;
+    state.totalKnown = totalKnown;
+    state.total = totalKnown ? totalNumber : merged.length;
+    state.limit = limit;
+    state.offset = responseOffset + receivedCount;
+    state.hasMore = totalKnown ? state.offset < totalNumber : receivedCount >= limit;
+    if (append && (receivedCount === 0 || merged.length === previousCount)) state.hasMore = false;
+
+    const selectedCanStay = Boolean(
+      state.selectedPath && state.results.some((item) => item.path === state.selectedPath),
+    );
+    if (!preserveSelection || !selectedCanStay) {
       state.selectedPath = "";
       state.detailLoading = false;
       hideMemoryDetail();
     }
+    state.loadingMore = false;
     renderMemories();
-    els.resultRegion.setAttribute("aria-busy", "false");
   } catch (error) {
     if (error.name === "AbortError" || requestId !== state.requestId) return;
-    state.results = [];
-    renderMemoryError(error);
-    els.resultRegion.setAttribute("aria-busy", "false");
+    state.loadingMore = false;
+    if (append) {
+      toast(formatError(error), "error");
+      renderMemories();
+    } else {
+      state.results = [];
+      state.total = 0;
+      state.totalKnown = false;
+      state.hasMore = false;
+      state.offset = 0;
+      renderMemoryError(error);
+    }
+  } finally {
+    if (requestId === state.requestId) {
+      state.loadingMore = false;
+      els.resultRegion.setAttribute("aria-busy", "false");
+    }
   }
 }
 
@@ -506,9 +736,22 @@ function sortResults(results) {
   return copy;
 }
 
+function appendLoadMoreButton() {
+  if (!state.hasMore) return;
+  const wrap = element("div", "load-more-wrap");
+  const button = element("button", "button quiet load-more", state.loadingMore ? "加载中…" : "加载更多");
+  button.type = "button";
+  button.disabled = state.loadingMore;
+  button.addEventListener("click", () => {
+    if (!state.loadingMore) loadMemories({ preserveSelection: true, silent: true, append: true });
+  });
+  wrap.appendChild(button);
+  els.resultRegion.appendChild(wrap);
+}
+
 function renderMemories() {
   clear(els.resultRegion);
-  els.resultTotal.textContent = String(state.results.length);
+  els.resultTotal.textContent = state.totalKnown ? String(state.total) : String(state.results.length);
   if (!state.selectedPath) hideMemoryDetail();
   if (!state.results.length) {
     const list = element("div", "list");
@@ -548,8 +791,10 @@ function renderMemories() {
 
     const foot = element("div", "card-foot");
     const project = element("span", "card-project", result.project ? projectLabel(result.project) : "未归类");
-    project.dataset.noI18n = result.project ? "true" : "false";
-    if (result.project) project.title = result.project;
+    if (result.project) {
+      project.dataset.noI18n = "true";
+      project.title = result.project;
+    }
     const openIcon = element("span", "card-open");
     openIcon.appendChild(icon("chevron-right"));
     foot.append(project, openIcon);
@@ -559,7 +804,36 @@ function renderMemories() {
     grid.appendChild(card);
   });
   els.resultRegion.appendChild(grid);
+  appendLoadMoreButton();
   if (memoryDetailOpen()) renderMemoryDetail();
+}
+
+function isAnyModalOpen() {
+  return [els.modal, els.detailModal].some((modal) => Boolean(modal && !modal.hidden));
+}
+
+function syncPageInert() {
+  const open = isAnyModalOpen();
+  [document.querySelector("header.top"), document.querySelector("aside.sidebar"), document.querySelector("main.view")]
+    .filter(Boolean)
+    .forEach((node) => {
+      node.inert = open;
+      if (open) node.setAttribute("inert", "");
+      else node.removeAttribute("inert");
+    });
+  document.body.classList.toggle("modal-open", open);
+}
+
+function showModal(modal) {
+  if (!modal) return;
+  modal.hidden = false;
+  syncPageInert();
+}
+
+function hideModal(modal) {
+  if (!modal) return;
+  modal.hidden = true;
+  syncPageInert();
 }
 
 function memoryDetailOpen() {
@@ -567,7 +841,7 @@ function memoryDetailOpen() {
 }
 
 function hideMemoryDetail() {
-  if (els.detailModal && !els.detailModal.hidden) els.detailModal.hidden = true;
+  if (els.detailModal && !els.detailModal.hidden) hideModal(els.detailModal);
   state.detailLoading = false;
 }
 
@@ -582,6 +856,7 @@ function renderMemoryDetail() {
   const detail = state.details.get(path);
   const title = (detail && detail.name) || result.name || fileName(path);
   if (els.detailTitle) {
+    els.detailTitle.dataset.noI18n = "true";
     els.detailTitle.textContent = title;
     els.detailTitle.title = path || title;
   }
@@ -591,7 +866,7 @@ function renderMemoryDetail() {
 
 function openMemoryDetail() {
   if (!els.detailModal) return;
-  els.detailModal.hidden = false;
+  showModal(els.detailModal);
   renderMemoryDetail();
   requestAnimationFrame(() => {
     $("close-detail")?.focus({ preventScroll: true });
@@ -681,15 +956,34 @@ function renderExpandedMemory(result) {
   meta.appendChild(actions);
   box.appendChild(meta);
 
+  const fullBody = String(detail.body || "");
+  const visibleBody = fullBody.slice(0, MAX_RENDERED_BODY_CHARS);
+  if (fullBody.length > MAX_RENDERED_BODY_CHARS) {
+    box.appendChild(element(
+      "p",
+      "body-truncation-note",
+      `正文较长，仅显示前 ${MAX_RENDERED_BODY_CHARS.toLocaleString("en-US")} 个字符。`,
+    ));
+  }
   const body = element("div", "markdown-body");
-  renderMarkdown(body, detail.body || "");
-  if (!body.textContent.trim()) body.appendChild(element("p", "muted", "没有正文。"));
+  renderMarkdown(body, visibleBody);
+  if (!fullBody.trim()) body.appendChild(element("p", "muted", "没有正文。"));
   box.appendChild(body);
   const currentPath = detail.path || result.path;
   if (state.memoryHistory.open && state.memoryHistory.path === currentPath) {
     box.appendChild(renderMemoryHistory(currentPath));
   }
   return box;
+}
+
+function cacheMemoryDetail(path, detail) {
+  state.details.delete(path);
+  state.details.set(path, detail);
+  while (state.details.size > MAX_DETAIL_CACHE_ENTRIES) {
+    const oldest = state.details.keys().next().value;
+    if (oldest === undefined) break;
+    state.details.delete(oldest);
+  }
 }
 
 async function selectMemory(path, force = false) {
@@ -707,7 +1001,7 @@ async function selectMemory(path, force = false) {
 
   try {
     const detail = await api(`/api/memory?path=${encodeURIComponent(path)}`);
-    state.details.set(path, detail);
+    cacheMemoryDetail(path, detail);
     state.detailErrors.delete(path);
     if (state.selectedPath === path && state.view === "memories") {
       state.detailLoading = false;
@@ -872,6 +1166,7 @@ async function runAdapterAction(adapter, button) {
     const data = await api("/api/adapters/action", {
       method: "POST",
       body: JSON.stringify({ id: adapter.id, action: "install" }),
+      timeoutMs: 60_000,
     });
     toast(data.installed ? "ZCode 已接入" : "配置已更新");
     await loadAdapters();
@@ -889,6 +1184,7 @@ async function stageAdapter(adapter, button) {
     const data = await api("/api/adapters/action", {
       method: "POST",
       body: JSON.stringify({ id: adapter.id, action: "stage" }),
+      timeoutMs: 60_000,
     });
     try {
       await navigator.clipboard.writeText(data.dir);
@@ -965,11 +1261,11 @@ function renderInbox() {
 
 async function promoteCandidate(candidate) {
   try {
-    await api("/api/inbox/promote", {
+    const result = await api("/api/inbox/promote", {
       method: "POST",
       body: JSON.stringify({ path: candidate.path }),
     });
-    toast("已保留");
+    toastDataResult(result, "已保留");
     await loadStatus();
     await loadInbox();
   } catch (error) {
@@ -980,11 +1276,11 @@ async function promoteCandidate(candidate) {
 async function dismissCandidate(candidate) {
   if (!window.confirm(tr("丢弃这条候选记忆？"))) return;
   try {
-    await api("/api/inbox/dismiss", {
+    const result = await api("/api/inbox/dismiss", {
       method: "POST",
       body: JSON.stringify({ path: candidate.path }),
     });
-    toast("已丢弃");
+    toastDataResult(result, "已丢弃");
     await loadStatus();
     await loadInbox();
   } catch (error) {
@@ -1034,6 +1330,7 @@ function renderAdapters() {
       const row = element("div", "row adapter-row");
       row.append(icon("plug", "ic adapter-icon"));
       const who = element("div", "who");
+      who.dataset.noI18n = "true";
       who.append(
         element("div", "name", adapter.title || adapter.id || "Adapter"),
         element("div", "sub", adapter.notes || adapter.id || ""),
@@ -1154,6 +1451,7 @@ function showSettingsPage(name) {
     const on = tab.dataset.set === target;
     tab.classList.toggle("on", on);
     tab.setAttribute("aria-selected", String(on));
+    tab.tabIndex = on ? 0 : -1;
   });
   document.querySelectorAll("#view-settings .set-page").forEach((page) => {
     page.hidden = page.id !== `setPage-${target}`;
@@ -1192,7 +1490,8 @@ function resetSettingsSearch() {
   applySettingsSearch("");
 }
 
-function switchView(view) {
+function switchView(view, { autoLoadMemories = true } = {}) {
+  cancelPendingSearch();
   state.view = view;
   document.body.classList.toggle("view-settings", view === "settings");
   if (view !== "memories") {
@@ -1229,7 +1528,7 @@ function switchView(view) {
   } else {
     resetSettingsSearch();
   }
-  if (view === "memories" && !state.results.length) loadMemories();
+  if (view === "memories" && !state.results.length && autoLoadMemories) loadMemories();
 }
 
 // animateTopNavFromSidebar mirrors Magpie's navMorph: the sidebar menu lands
@@ -1336,6 +1635,7 @@ function positionSegThumb() {
 }
 
 function clearFilters() {
+  cancelPendingSearch();
   state.query = "";
   state.project = "";
   state.type = "";
@@ -1347,33 +1647,36 @@ function clearFilters() {
   els.typeFilter.value = "";
   renderProjects(state.status?.projects || []);
   $("all-memories").classList.add("is-active");
-  loadMemories({ preserveSelection: false });
+  loadMemories({ preserveSelection: true });
 }
 
 function openDialog() {
   state.lastFocus = document.activeElement;
   clear(els.formError);
   els.formError.hidden = true;
-  $("memory-project").value = state.project || "";
+  $("memory-project").value = state.project || "global";
   $("memory-type").value = state.type || "project";
   $("memory-name").value = "";
   $("memory-description").value = "";
   $("memory-body").value = "";
   els.modal.classList.remove("closing");
-  els.modal.hidden = false;
-  document.body.classList.add("modal-open");
+  showModal(els.modal);
   window.setTimeout(() => $("memory-project").focus(), 30);
 }
 
 function closeDialog() {
   if (els.modal.hidden || els.modal.classList.contains("closing")) return;
   els.modal.classList.add("closing");
-  document.body.classList.remove("modal-open");
+  const restoreFocus = state.lastFocus;
+  state.lastFocus = null;
   window.setTimeout(() => {
-    els.modal.hidden = true;
+    if (!els.modal.classList.contains("closing")) return;
+    hideModal(els.modal);
     els.modal.classList.remove("closing");
+    if (!isAnyModalOpen() && restoreFocus && typeof restoreFocus.focus === "function") {
+      restoreFocus.focus();
+    }
   }, 260);
-  if (state.lastFocus && typeof state.lastFocus.focus === "function") state.lastFocus.focus();
 }
 
 async function submitMemory(event) {
@@ -1395,7 +1698,7 @@ async function submitMemory(event) {
       body: JSON.stringify(payload),
     });
     closeDialog();
-    toast("记忆已保存");
+    toastDataResult(result, "记忆已保存");
     await loadStatus();
     state.project = payload.project;
     state.type = "";
@@ -1428,29 +1731,48 @@ async function refreshCurrent() {
   const button = $("refresh-view");
   button.disabled = true;
   let refreshed = false;
-  if (state.view === "memories") {
-    const status = await loadStatus();
-    if (status) {
-      await loadMemories({ preserveSelection: false });
+  cancelPendingSearch();
+  const selectedPath = state.selectedPath;
+  state.details.clear();
+  state.detailErrors.clear();
+  state.detailLoading = false;
+  try {
+    if (state.view === "memories") {
+      const status = await loadStatus();
+      if (status) {
+        await loadMemories({ preserveSelection: true });
+        if (selectedPath && state.selectedPath === selectedPath) {
+          await selectMemory(selectedPath, true);
+        }
+        refreshed = true;
+      }
+    } else if (state.view === "adapters") {
+      await loadStatus();
+      state.adapters = [];
+      refreshed = await loadAdapters();
+    } else if (state.view === "history") {
+      await loadStatus();
+      refreshed = await loadHistory();
+    } else if (state.view === "settings") {
+      await loadStatus();
+      await loadSettings();
       refreshed = true;
+    } else {
+      refreshed = Boolean(await loadStatus());
     }
-  } else if (state.view === "adapters") {
-    await loadStatus();
-    state.adapters = [];
-    refreshed = await loadAdapters();
-  } else if (state.view === "history") {
-    await loadStatus();
-    refreshed = await loadHistory();
-  } else if (state.view === "settings") {
-    await loadStatus();
-    await loadSettings();
-    refreshed = true;
-  } else {
-    refreshed = Boolean(await loadStatus());
+  } finally {
+    button.disabled = false;
   }
-  button.disabled = false;
   if (refreshed) toast("已刷新");
   else toast("刷新失败，请确认本地 hub 正在运行", "error");
+}
+
+function cancelPendingSearch() {
+  if (state.searchTimer) {
+    window.clearTimeout(state.searchTimer);
+    state.searchTimer = 0;
+  }
+  state.searchGeneration += 1;
 }
 
 function openSearch(focus = true) {
@@ -1491,14 +1813,19 @@ function bindEvents() {
     state.query = query;
     state.selectedPath = "";
     els.searchClear.hidden = !query;
-    window.clearTimeout(state.searchTimer);
+    const generation = ++state.searchGeneration;
+    if (state.searchTimer) window.clearTimeout(state.searchTimer);
     state.searchTimer = window.setTimeout(() => {
-      if (state.view !== "memories") switchView("memories");
+      state.searchTimer = 0;
+      if (generation !== state.searchGeneration) return;
+      if (state.view !== "memories" && document.activeElement !== els.search) return;
+      if (state.view !== "memories") switchView("memories", { autoLoadMemories: false });
       loadMemories({ preserveSelection: false });
     }, 240);
   });
 
   els.searchClear.addEventListener("click", () => {
+    cancelPendingSearch();
     els.search.value = "";
     state.query = "";
     state.selectedPath = "";
@@ -1518,6 +1845,7 @@ function bindEvents() {
     if (event.key !== "Escape") return;
     if (els.search.value.trim()) {
       event.preventDefault();
+      cancelPendingSearch();
       els.search.value = "";
       state.query = "";
       state.selectedPath = "";
@@ -1531,6 +1859,7 @@ function bindEvents() {
 
   document.addEventListener("keydown", (event) => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      if (isAnyModalOpen()) return;
       event.preventDefault();
       focusSearch();
     }
@@ -1557,21 +1886,27 @@ function bindEvents() {
     selectProject("");
   });
   els.projectFilter.addEventListener("change", () => {
+    cancelPendingSearch();
     state.project = els.projectFilter.value;
     renderProjects(state.status?.projects || []);
     $("all-memories").classList.toggle("is-active", !state.project);
-    loadMemories({ preserveSelection: false });
+    loadMemories({ preserveSelection: true });
   });
   els.typeFilter.addEventListener("change", () => {
+    cancelPendingSearch();
     state.type = els.typeFilter.value;
-    loadMemories({ preserveSelection: false });
+    loadMemories({ preserveSelection: true });
   });
 
   $("sort-button").addEventListener("click", () => {
-    state.sort = state.sort === "relevance" ? "updated" : state.sort === "updated" ? "title" : "relevance";
+    cancelPendingSearch();
+    if (state.query) {
+      state.sort = state.sort === "relevance" ? "updated" : state.sort === "updated" ? "title" : "relevance";
+    } else {
+      state.sort = state.sort === "title" ? "updated" : "title";
+    }
     updateHeading();
-    state.results = sortResults(state.results);
-    renderMemories();
+    loadMemories({ preserveSelection: true });
   });
 
   $("new-memory-top").addEventListener("click", openDialog);
@@ -1584,8 +1919,23 @@ function bindEvents() {
   $("reindex").addEventListener("click", rebuildIndex);
   $("backup-now").addEventListener("click", backupNow);
   $("save-aliases").addEventListener("click", saveAliases);
-  document.querySelectorAll("#set-tabs [data-set]").forEach((tab) => {
+  const settingsTabs = [...document.querySelectorAll("#set-tabs [data-set]")];
+  settingsTabs.forEach((tab) => {
     tab.addEventListener("click", () => showSettingsPage(tab.dataset.set));
+  });
+  $("set-tabs").addEventListener("keydown", (event) => {
+    const currentIndex = settingsTabs.indexOf(document.activeElement);
+    if (currentIndex < 0) return;
+    let nextIndex = currentIndex;
+    if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % settingsTabs.length;
+    else if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + settingsTabs.length) % settingsTabs.length;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = settingsTabs.length - 1;
+    else return;
+    event.preventDefault();
+    const next = settingsTabs[nextIndex];
+    showSettingsPage(next.dataset.set);
+    next.focus();
   });
   $("set-q").addEventListener("input", () => applySettingsSearch($("set-q").value));
   $("set-q").addEventListener("search", () => applySettingsSearch($("set-q").value));
@@ -1660,14 +2010,10 @@ function bindEvents() {
       try {
         localStorage.setItem("marktoast-sidebar", collapsed ? "collapsed" : "open");
       } catch (error) {}
-      const topToggle = document.getElementById("side-toggle-top");
-      if (topToggle) topToggle.hidden = !collapsed;
-      updateSidebarIcons();
+      syncSidebarControls();
       if (collapsed) animateTopNavFromSidebar(sideRect);
       if (!collapsed && wasCollapsed) animateTopNavToSidebar(topRect);
       window.setTimeout(positionSideHighlight, 0);
-      button.setAttribute("aria-label", collapsed ? "展开侧栏" : "收起侧栏");
-      button.title = collapsed ? "展开侧栏" : "收起侧栏";
     });
   });
   document.querySelectorAll(".brand").forEach((brand) => {
@@ -1789,6 +2135,7 @@ async function importSource(from, button) {
     const data = await api("/api/import", {
       method: "POST",
       body: JSON.stringify({ from }),
+      timeoutMs: 120_000,
     });
     const fresh = data.facts || 0;
     const skipped = data.skipped || 0;
@@ -1798,6 +2145,7 @@ async function importSource(from, button) {
     await loadSettings();
   } catch (error) {
     toast(formatError(error), "error");
+  } finally {
     if (button.isConnected) {
       button.disabled = false;
       button.textContent = label;
@@ -1809,7 +2157,7 @@ async function backupNow() {
   const button = $("backup-now");
   button.disabled = true;
   try {
-    const data = await api("/api/backup", { method: "POST" });
+    const data = await api("/api/backup", { method: "POST", timeoutMs: 120_000 });
     $("settings-backup").textContent = data.path || "—";
     $("settings-backup").title = data.path || "";
     toast("备份已创建");
@@ -1824,7 +2172,7 @@ async function rebuildIndex() {
   const button = $("reindex");
   button.disabled = true;
   try {
-    const data = await api("/api/reindex", { method: "POST" });
+    const data = await api("/api/reindex", { method: "POST", timeoutMs: 120_000 });
     toast(`索引已重建 · ${data.facts || 0} 条`);
     await loadSettings();
     await loadStatus();
@@ -1867,7 +2215,9 @@ function renderMemoryHistory(path) {
   }
   const list = element("div", "memory-commits");
   history.commits.forEach((commit) => {
-    const row = element("div", `memory-commit${commit.hash === history.selectedHash ? " on" : ""}`);
+    const row = element("button", `memory-commit${commit.hash === history.selectedHash ? " on" : ""}`);
+    row.type = "button";
+    row.setAttribute("aria-pressed", String(commit.hash === history.selectedHash));
     row.append(
       element("code", "", String(commit.hash || "").slice(0, 8)),
       element("span", "", commitLabel(commit.subject || "")),
@@ -1952,12 +2302,12 @@ async function restoreMemoryVersion(path, hash) {
   history.restoring = true;
   renderMemories();
   try {
-    await api("/api/memory/restore", {
+    const result = await api("/api/memory/restore", {
       method: "POST",
       body: JSON.stringify({ path, hash }),
     });
     state.details.delete(path);
-    toast("已恢复");
+    toastDataResult(result, "已恢复");
     await selectMemory(path, true);
     const data = await api(`/api/memory/history?path=${encodeURIComponent(path)}`);
     history.commits = data.commits || [];
@@ -1975,6 +2325,9 @@ async function restoreMemoryVersion(path, hash) {
 }
 
 async function init() {
+  syncSidebarControls();
+  syncPageInert();
+  showSettingsPage(document.querySelector("#set-tabs .on")?.dataset.set || "general");
   bindEvents();
   renderMemoryLoading();
   applyTheme();

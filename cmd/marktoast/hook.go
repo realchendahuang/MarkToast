@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 
@@ -37,7 +38,12 @@ func newHookCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			payload, _ := io.ReadAll(os.Stdin)
+			const maxHookPayload = 1 << 20
+			limited := &io.LimitedReader{R: os.Stdin, N: maxHookPayload + 1}
+			payload, _ := io.ReadAll(limited)
+			if len(payload) > maxHookPayload {
+				payload = payload[:maxHookPayload]
+			}
 			fields := map[string]any{}
 			_ = json.Unmarshal(payload, &fields)
 			cwd := stringField(fields, "cwd", "workspace", "working_directory")
@@ -108,7 +114,7 @@ func sessionContext(root, project, cwd string) string {
 	body := strings.Join(lines, "\n")
 	const limit = 6000
 	if len(body) > limit {
-		body = body[:limit] + "\n…(truncated; use memory_search for more)"
+		body = truncateUTF8(body, limit) + "\n…(truncated; use memory_search for more)"
 	}
 	return "## MarkToast memory\n\n" + body + "\n\nUse the `memory_search` tool for anything not shown here."
 }
@@ -131,7 +137,7 @@ func appendEvent(root, event, agent, sessionID, cwd string, payload []byte) erro
 	}
 	trimmed := payload
 	if len(trimmed) > 8000 {
-		trimmed = trimmed[:8000]
+		trimmed = []byte(truncateUTF8(string(trimmed), 8000))
 	}
 	record["payload"] = string(trimmed)
 	data, err := json.Marshal(record)
@@ -156,4 +162,15 @@ func stringField(m map[string]any, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func truncateUTF8(value string, maxBytes int) string {
+	if len(value) <= maxBytes {
+		return value
+	}
+	value = value[:maxBytes]
+	for !utf8.ValidString(value) && len(value) > 0 {
+		value = value[:len(value)-1]
+	}
+	return value
 }

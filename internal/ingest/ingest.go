@@ -60,9 +60,7 @@ func Extract(agent, event string, payload []byte) []Candidate {
 		return nil
 	}
 	body := redact.String(strings.TrimSpace(text))
-	if len(body) > 20000 {
-		body = body[:20000]
-	}
+	body = truncate(body, 20000)
 	name := candidateName(body)
 	if name == "" {
 		return nil
@@ -130,8 +128,16 @@ func truncate(value string, limit int) string {
 // Write stores unique candidates under <root>/inbox. It returns the files
 // written and silently skips bodies already present.
 func Write(root string, candidates []Candidate) ([]string, error) {
+	unlock, err := store.LockWrite(root)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	dir := filepath.Join(root, InboxDir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	if err := ensureDirWithinRoot(root, dir); err != nil {
 		return nil, err
 	}
 	written := make([]string, 0, len(candidates))
@@ -139,6 +145,9 @@ func Write(root string, candidates []Candidate) ([]string, error) {
 		key := bodyKey(candidate.Body)
 		matches, _ := filepath.Glob(filepath.Join(dir, "*-"+key+".md"))
 		if len(matches) > 0 {
+			continue
+		}
+		if _, err := os.Lstat(filepath.Join(dir, candidate.Created.UTC().Format("20060102-150405")+"-"+key+".md")); err == nil {
 			continue
 		}
 		meta := frontmatter{
@@ -154,7 +163,7 @@ func Write(root string, candidates []Candidate) ([]string, error) {
 		}
 		content := "---\n" + string(head) + "---\n\n" + candidate.Body + "\n"
 		name := candidate.Created.UTC().Format("20060102-150405") + "-" + key + ".md"
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+		if err := store.AtomicWriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
 			return written, err
 		}
 		written = append(written, filepath.Join(InboxDir, name))
@@ -224,6 +233,11 @@ func ParseFile(path string) (Candidate, error) {
 
 // Promote turns a candidate into a real fact and removes it from the inbox.
 func Promote(root, relPath, project string) (string, error) {
+	unlock, err := store.LockWrite(root)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
 	path, err := candidatePath(root, relPath)
 	if err != nil {
 		return "", err
@@ -244,10 +258,10 @@ func Promote(root, relPath, project string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := os.Remove(path); err != nil {
+	if err := store.WriteIndexes(root); err != nil {
 		return "", err
 	}
-	if err := store.WriteIndexes(root); err != nil {
+	if err := os.Remove(path); err != nil {
 		return "", err
 	}
 	return factPath, nil
@@ -255,6 +269,11 @@ func Promote(root, relPath, project string) (string, error) {
 
 // Dismiss deletes a candidate without promoting it.
 func Dismiss(root, relPath string) error {
+	unlock, err := store.LockWrite(root)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	path, err := candidatePath(root, relPath)
 	if err != nil {
 		return err
@@ -279,8 +298,48 @@ func candidatePath(root, relPath string) (string, error) {
 		return "", err
 	}
 	inbox := filepath.Join(rootAbs, InboxDir)
-	if abs != inbox && !strings.HasPrefix(abs, inbox+string(filepath.Separator)) {
+	if abs == inbox || !strings.HasPrefix(abs, inbox+string(filepath.Separator)) {
 		return "", fmt.Errorf("candidate is outside the inbox")
 	}
+	if !strings.HasSuffix(strings.ToLower(abs), ".md") {
+		return "", fmt.Errorf("candidate is not a Markdown file")
+	}
+	if err := ensureDirWithinRoot(rootAbs, inbox); err != nil {
+		return "", err
+	}
+	realInbox, err := filepath.EvalSymlinks(inbox)
+	if err != nil {
+		return "", err
+	}
+	realParent, err := filepath.EvalSymlinks(filepath.Dir(abs))
+	if err != nil {
+		return "", err
+	}
+	if realParent != realInbox && !strings.HasPrefix(realParent, realInbox+string(filepath.Separator)) {
+		return "", fmt.Errorf("candidate escapes the inbox")
+	}
+	info, err := os.Lstat(abs)
+	if err != nil {
+		return "", err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return "", fmt.Errorf("candidate must be a regular file")
+	}
 	return abs, nil
+}
+
+func ensureDirWithinRoot(root, dir string) error {
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
+	realDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(realRoot, realDir)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return fmt.Errorf("inbox escapes memory repository")
+	}
+	return nil
 }

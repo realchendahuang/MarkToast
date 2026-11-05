@@ -11,7 +11,7 @@ ZCode, Hermes and DSH first — Codex, Claude Code, Pi and the rest next.
 ![Wails](https://img.shields.io/badge/Wails-v3-DF0000?logo=wails&logoColor=white)
 ![macOS](https://img.shields.io/badge/macOS-first-000000?logo=apple&logoColor=white)
 ![Status](https://img.shields.io/badge/status-pre--alpha-d8b26a)
-![License](https://img.shields.io/badge/license-MIT%20(later)-lightgrey)
+![License](https://img.shields.io/badge/license-MIT-green)
 
 [中文](README.zh-CN.md) · [Brand](docs/BRAND.md) · [Product](docs/PRODUCT.md) · [Tech stack](docs/TECH-STACK.md) · [Architecture](docs/ARCHITECTURE.md) · [Roadmap](docs/ROADMAP.md) · [Credits](docs/CREDITS.md)
 
@@ -54,7 +54,7 @@ MarkToast treats memory as what it should be: **a repository you own.**
                         │  projects/<key>/memory/      │    (Git-versioned, human-readable)
                         │  global/                     │
                         └──────────────┬───────────────┘
-                                       │  watchers / atomic writes / flock
+                                       │  atomic writes / per-root lock / stale-index refresh
                         ┌──────────────┴───────────────┐
                         │        core (Go)             │
                         │  store · index (FTS5+CJK)    │
@@ -62,7 +62,7 @@ MarkToast treats memory as what it should be: **a repository you own.**
                         │  hub (HTTP + MCP)            │
                         └──────┬───────────────┬───────┘
                                │               │
-                      CLI `marktoast`     Wails v3 desktop (M4)
+                      CLI `marktoast`     Wails v3 desktop (embedded UI)
                                │
              ┌─────────────────┴──────────────────┐
              │  adapters (YAML descriptors)       │
@@ -85,37 +85,63 @@ MarkToast treats memory as what it should be: **a repository you own.**
 4. `marktoast serve` exposes the local hub; each harness adapter projects the
    index into that harness's own instruction/memory surface.
 5. `git log` is your memory's history. `git revert` is your undo.
+6. The local hub binds to loopback only. Browser API calls use an HttpOnly,
+   SameSite session cookie plus Host/Origin checks; script clients and MCP use
+   a bearer token stored under `.marktoast/`.
 
 ## Status
 
-**Private pre-alpha — core loop shipped (M1–M3), desktop shell next (M4).**
+**Private pre-alpha — core loop, hardened local hub, embedded-UI desktop shell,
+CI and signed-release validation are implemented.**
 
 - [x] Go module + CLI (`version`, `init`, `add`, `get`, `search`, `reindex`,
       `log`, `status`, `hook`, `mcp`, `adapters`, `serve`, `ui`)
 - [x] SQLite FTS5 index with a dependency-free CJK bigram tokenizer
       (two-character Chinese queries work; OR + BM25 ranking)
-- [x] Markdown repository with Git commits; the hub batches writes into a
-      debounced commit (5s quiet period)
+- [x] Markdown repository with atomic writes, per-root advisory locks,
+      collision-safe filenames, Git commits limited to managed memory paths,
+      and debounced auto-commit flush on shutdown
 - [x] Adapter descriptors with hooks/MCP/session schema; idempotent ZCode
       installer (hooks + MCP, preserves third-party entries); DSH/Hermes staged
-- [x] Local hub: status/search/memory/memories/projects/adapters/git-log API;
-      MCP server over stdio and streamable HTTP (`memory_search/get/save/list`)
+- [x] Loopback-only local hub with cookie/bearer authentication, CSRF and Host
+      checks, paginated status/search/memory/memories/projects/adapters/git-log
+      APIs; MCP over stdio and streamable HTTP (`memory_search/get/save/list`)
 - [x] Web UI follows Magpie's design language (MIT): its design tokens (light default +
 auto dark, indigo accent), 212px sidebar, breadcrumb header, white list cards and
 rows, **its motion** (view fade-up, segmented thumb glide 280ms, row fold 420ms,
 dialog in/out, skeleton shimmer, reduced-motion), modal, Cmd/Ctrl+K
-- [x] Wails v3.1 desktop shell (`make desktop`; opens the same hub in a native window)
+- [x] Wails v3.1 desktop shell with embedded web UI (`make desktop`; opens the same hub in a native window)
 - [ ] More adapters
 
 See [docs/ROADMAP.md](docs/ROADMAP.md).
 
-## Quick start (development)
+## Install
+
+The canonical CLI entry point is `cmd/marktoast` (there is no root-level
+`main.go`). From a checkout:
 
 ```bash
-make build
+go install ./cmd/marktoast
+```
+
+Or install the latest tagged module version:
+
+```bash
+go install github.com/realchendahuang/MarkToast/cmd/marktoast@latest
+```
+
+## Quick start (development)
+
+Requirements: Go 1.26+, git, and Node.js 20+ for the JavaScript syntax check in
+`make verify`. macOS is the primary target; building the Wails desktop shell also
+needs Xcode command-line tools. The web UI is embedded in the native app, so
+there is no separate frontend build step.
+
+```bash
+make verify                                  # fmt, tidy, vet, race tests, JS syntax, build
 ./bin/marktoast version
 ./bin/marktoast init                         # creates ~/Memory + git repo
-./bin/marktoast import zcode                  # import existing harness memories
+./bin/marktoast import zcode                 # import existing harness memories
 ./bin/marktoast backup                       # tar.gz snapshot
 ./bin/marktoast doctor                       # diagnose the installation
 ./bin/marktoast update                       # check GitHub Releases
@@ -124,18 +150,16 @@ make build
   --description "2026-09 发版回滚原因" --type project --body "发版后首页闪屏，决定回滚。"
 ./bin/marktoast search "回滚"
 ./bin/marktoast tui                          # terminal UI
-./bin/marktoast serve                        # http://127.0.0.1:3777 (web UI)
-make desktop && ./bin/marktoast-desktop              # native Wails window
+./bin/marktoast serve                        # embedded web UI at http://127.0.0.1:3777
+make desktop                                 # native Wails shell, embedded UI
+./bin/marktoast-desktop
 ./bin/marktoast mcp                          # stdio MCP server for harnesses
 ./bin/marktoast diff release-rollback        # show the last patch
 ./bin/marktoast rollback release-rollback --yes
 ./bin/marktoast adapters install zcode       # dry run; add --apply to write
 cp -R adapters/hermes/marktoast ~/.hermes/plugins/marktoast  # Hermes provider
-make install                                # CLI + MarkToast.app
+make install                                 # CLI + MarkToast.app (install script builds)
 ```
-
-Requirements: Go 1.26+, git. macOS first; Windows/Linux keep building but are
-not v1 targets.
 
 ## Standing on shoulders · 致敬
 
@@ -173,10 +197,9 @@ MarkToast is built in public debt to these projects — see
 | [Reuse research](docs/RESEARCH-REUSE.md) | What we reuse from the open-source memory ecosystem (and what we must not) |
 | [Harness integration](docs/HARNESS-INTEGRATION.md) | Reference matrix for hooking ZCode / DSH / Hermes / Claude Code / Codex |
 | [Credits](docs/CREDITS.md) | Who we learned from, and under which license |
-| [Desktop](docs/DESKTOP.md) | Wails v3 plan (M4) |
+| [Desktop](docs/DESKTOP.md) | Wails v3 desktop shell, packaging, and release notes |
 | [Adapters](adapters/README.md) | How to add a harness |
 
 ## License
 
 MIT (see [LICENSE](LICENSE)). The project stays private during development.
-in [docs/TECH-STACK.md](docs/TECH-STACK.md).

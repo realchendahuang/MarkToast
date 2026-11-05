@@ -4,13 +4,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/realchendahuang/MarkToast/internal/gitx"
-	"github.com/realchendahuang/MarkToast/internal/index"
+	"github.com/realchendahuang/MarkToast/internal/service"
 	"github.com/realchendahuang/MarkToast/internal/store"
 )
 
@@ -46,19 +44,13 @@ the project index and commits the change. The body can be passed with --body,
 			if err != nil {
 				return err
 			}
-			path, err := store.WriteFact(cfg.Root, key, store.Fact{
+			path, err := service.New(cfg.Root).Save(key, store.Fact{
 				Name:        name,
 				Description: description,
 				Type:        typ,
 				Body:        text,
 			})
 			if err != nil {
-				return err
-			}
-			if err := reindexFact(cfg.Root, path); err != nil {
-				return err
-			}
-			if err := store.WriteIndexes(cfg.Root); err != nil {
 				return err
 			}
 			if gitx.Available() {
@@ -177,39 +169,12 @@ func readBody(body, bodyFile string) (string, error) {
 	}
 	info, err := os.Stdin.Stat()
 	if err == nil && info.Mode()&os.ModeCharDevice == 0 {
-		data, err := io.ReadAll(os.Stdin)
+		limited := &io.LimitedReader{R: os.Stdin, N: store.MaxFactBodyBytes + 1}
+		data, err := io.ReadAll(limited)
+		if err == nil && len(data) > store.MaxFactBodyBytes {
+			return "", fmt.Errorf("fact body exceeds %d bytes", store.MaxFactBodyBytes)
+		}
 		return string(data), err
 	}
 	return "", nil
-}
-
-// reindexFact indexes a single fact (or rebuilds when that fails).
-func reindexFact(root, path string) error {
-	d, err := index.Open(root)
-	if err != nil {
-		return err
-	}
-	defer d.Close()
-	fact, err := store.ParseFile(path)
-	if err != nil {
-		return err
-	}
-	fact.Project = projectOf(root, path)
-	return d.Upsert(fact)
-}
-
-// projectOf derives the project key from a fact path.
-func projectOf(root, path string) string {
-	rel, err := filepath.Rel(root, path)
-	if err != nil {
-		return ""
-	}
-	parts := strings.Split(rel, string(filepath.Separator))
-	if len(parts) >= 3 && parts[0] == "projects" {
-		return parts[1]
-	}
-	if len(parts) >= 2 && parts[0] == store.GlobalProject {
-		return store.GlobalProject
-	}
-	return ""
 }

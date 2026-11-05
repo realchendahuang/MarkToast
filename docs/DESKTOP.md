@@ -18,24 +18,24 @@ make desktop
 ```
 
 - 壳内会启动 hub；如果 3777 已被 `marktoast serve` 占用，壳直接加载已存在的 hub。
-- UI 目录查找顺序：`MARKTOAST_UI_DIR` → `./frontend` → 可执行文件旁的 `frontend/`。
-- 开发前端时用 `marktoast serve` + 浏览器热刷新更快；壳用于最终体验验证。
+- UI 已通过 `go:embed` 编进 CLI/桌面二进制；开发时设置 `MARKTOAST_UI_DIR` 可覆盖为 live 目录。
+- 开发前端时用 `MARKTOAST_UI_DIR=./frontend marktoast serve` + 浏览器刷新更快；壳用于最终体验验证。
 
 ## 已实现
 
 - [x] 原生窗口（1280×820，可缩放，深色背景）加载 Web UI
 - [x] 单进程：壳内启动/连接 hub（HTTP + MCP 同进程）
 - [x] `--root` / `--addr` 参数；config 默认值复用
-- [x] Wails v3.1.0 锁版本；链接时的 macOS 版本警告来自上游对象文件，不影响运行
+- [x] Wails v3.1.0 锁版本；macOS 12.0 deployment target 与 CGO 构建已固定
 
 - [x] 菜单栏托盘（显示窗口 / 浏览器打开 / 退出）
 - [x] `.app` 打包脚本（`scripts/install.sh`、`make install`，含图标与 Info.plist）
 - [x] 应用图标（吐司）与 Dock 图标
 
-## 待办（M4 剩余）
+## 后续可选
 
-- [ ] 签名与公证（脚本已支持 `CODESIGN_IDENTITY` / `NOTARY_PROFILE`，需要证书）
+- [x] 签名/公证门禁（脚本已支持 `CODESIGN_IDENTITY` / `NOTARY_PROFILE`；实际发布仍需证书）
 - [ ] 自动更新（Wails updater）
-- [x] `make release` / `scripts/release.sh`（dist zip + SHA256）
+- [x] `make release` / `scripts/release.sh`（签名校验、zip/dmg、SHA256、版本断言）
 - [ ] 菜单里的"打开记忆仓库 / 重新索引"
 - [ ] About 面板

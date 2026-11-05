@@ -6,15 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/realchendahuang/MarkToast/internal/gitx"
 	"github.com/realchendahuang/MarkToast/internal/index"
+	"github.com/realchendahuang/MarkToast/internal/service"
 	"github.com/realchendahuang/MarkToast/internal/store"
 	"github.com/realchendahuang/MarkToast/internal/version"
 )
@@ -27,7 +25,7 @@ func NewMCPServer(root string) *mcp.Server {
 		Name:        "memory_search",
 		Description: "Search the user's durable memory repository. Returns ranked facts with snippets.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args searchArgs) (*mcp.CallToolResult, any, error) {
-		results, err := index.Search(root, args.Query, index.Options{
+		results, total, err := index.SearchPage(root, args.Query, index.Options{
 			Project: args.Project,
 			Type:    args.Type,
 			Limit:   args.Limit,
@@ -58,7 +56,7 @@ func NewMCPServer(root string) *mcp.Server {
 				Score:       r.Score,
 			})
 		}
-		return jsonResult(map[string]any{"results": out, "count": len(out)})
+		return jsonResult(map[string]any{"results": out, "count": len(out), "total": total})
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -91,7 +89,7 @@ func NewMCPServer(root string) *mcp.Server {
 		if strings.TrimSpace(args.Project) == "" {
 			args.Project = "global"
 		}
-		path, err := store.WriteFact(root, args.Project, store.Fact{
+		path, err := service.New(root).Save(args.Project, store.Fact{
 			Name:        args.Name,
 			Description: args.Description,
 			Type:        args.Type,
@@ -100,25 +98,21 @@ func NewMCPServer(root string) *mcp.Server {
 		if err != nil {
 			return nil, nil, err
 		}
-		if err := upsertIndex(root, path); err != nil {
-			return nil, nil, err
+		commitWarning := ""
+		if err := commit(Options{Root: root}, fmt.Sprintf("mem(%s): save %s", args.Project, args.Name)); err != nil {
+			commitWarning = err.Error()
 		}
-		if err := store.WriteIndexes(root); err != nil {
-			return nil, nil, err
-		}
-		if gitx.Available() {
-			if _, err := gitx.CommitAll(root, fmt.Sprintf("mem(%s): save %s", args.Project, args.Name)); err != nil {
-				return nil, nil, err
-			}
-		}
-		return jsonResult(map[string]any{"path": path, "project": args.Project, "name": args.Name})
+		return jsonResult(map[string]any{
+			"path": path, "project": args.Project, "name": args.Name,
+			"commitWarning": commitWarning,
+		})
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "memory_list",
 		Description: "List memory facts, optionally filtered by project.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listArgs) (*mcp.CallToolResult, any, error) {
-		facts, err := store.ListFacts(root)
+		facts, total, err := index.ListPage(root, index.ListOptions{Project: args.Project, Limit: 0})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -132,15 +126,12 @@ func NewMCPServer(root string) *mcp.Server {
 		}
 		out := make([]item, 0, len(facts))
 		for _, f := range facts {
-			if args.Project != "" && f.Project != args.Project {
-				continue
-			}
 			out = append(out, item{
 				Path: f.Path, Name: f.Name, Description: f.Description,
 				Project: f.Project, Type: f.Type, Updated: f.Updated.Format(time.RFC3339),
 			})
 		}
-		return jsonResult(map[string]any{"memories": out, "count": len(out)})
+		return jsonResult(map[string]any{"memories": out, "count": len(out), "total": total})
 	})
 
 	return server
@@ -157,11 +148,13 @@ func MCPHTTPHandler(server *mcp.Server, token string) http.Handler {
 		return server
 	}, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
 	if token == "" {
-		return h
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "MCP authentication is not configured", http.StatusServiceUnavailable)
+		})
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		auth := r.Header.Get("Authorization")
-		if auth != "Bearer "+token {
+		if !tokenEqual(bearerToken(r), token) {
+			w.Header().Set("WWW-Authenticate", "Bearer")
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -203,24 +196,9 @@ func jsonResult(v any) (*mcp.CallToolResult, any, error) {
 
 // readMemory resolves a path or name to a fact.
 func readMemory(root, path, name string) (string, store.Fact, error) {
+	svc := service.New(root)
 	if path != "" {
-		abs := path
-		if !filepath.IsAbs(abs) {
-			abs = filepath.Join(root, path)
-		}
-		if !underRoot(root, abs) {
-			return "", store.Fact{}, fmt.Errorf("path escapes memory repository")
-		}
-		fact, err := store.ParseFile(abs)
-		if err != nil {
-			return "", store.Fact{}, err
-		}
-		fact.Project = projectFromPath(root, abs)
-		raw, err := os.ReadFile(abs)
-		if err != nil {
-			return "", store.Fact{}, err
-		}
-		return string(raw), fact, nil
+		return svc.ReadMemoryFile(path)
 	}
 	if name == "" {
 		return "", store.Fact{}, fmt.Errorf("path or name is required")
@@ -231,53 +209,8 @@ func readMemory(root, path, name string) (string, store.Fact, error) {
 	}
 	for _, f := range facts {
 		if f.Name == name {
-			raw, err := os.ReadFile(f.Path)
-			if err != nil {
-				return "", store.Fact{}, err
-			}
-			return string(raw), f, nil
+			return svc.ReadMemoryFile(f.Path)
 		}
 	}
 	return "", store.Fact{}, fmt.Errorf("memory %q not found", name)
-}
-
-func underRoot(root, path string) bool {
-	rootAbs, err := filepath.Abs(root)
-	if err != nil {
-		return false
-	}
-	pathAbs, err := filepath.Abs(path)
-	if err != nil {
-		return false
-	}
-	return pathAbs == rootAbs || strings.HasPrefix(pathAbs, rootAbs+string(filepath.Separator))
-}
-
-func projectFromPath(root, path string) string {
-	rel, err := filepath.Rel(root, path)
-	if err != nil {
-		return ""
-	}
-	parts := strings.Split(rel, string(filepath.Separator))
-	if len(parts) >= 2 && parts[0] == "projects" {
-		return parts[1]
-	}
-	if len(parts) >= 2 && parts[0] == "global" {
-		return "global"
-	}
-	return ""
-}
-
-func upsertIndex(root, path string) error {
-	d, err := index.Open(root)
-	if err != nil {
-		return err
-	}
-	defer d.Close()
-	fact, err := store.ParseFile(path)
-	if err != nil {
-		return err
-	}
-	fact.Project = projectFromPath(root, path)
-	return d.Upsert(fact)
 }
