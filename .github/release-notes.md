@@ -18,8 +18,8 @@ with the version, your OS, and what you did.
 | Windows, arm64 / x86_64 | `MarkToast-desktop-*-windows-<arch>.zip` | desktop app; needs the WebView2 runtime |
 | macOS, Linux, Windows | `marktoast-*-<os>-<arch>.tar.gz` (`.zip` on Windows) | CLI only, no window toolkit needed |
 
-Both macOS apps are **ad-hoc signed, not notarized**: there is no Developer ID
-in CI. Gatekeeper will refuse the first launch. Either right-click → *Open*,
+Both macOS apps are **ad-hoc signed, not notarized**: these builds use no
+Developer ID. Gatekeeper will refuse the first launch. Either right-click → *Open*,
 or:
 
 ```bash
