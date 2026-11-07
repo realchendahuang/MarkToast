@@ -31,9 +31,23 @@ _MAX_BODY = 20000
 _GLYPH = "🍞"
 
 
-def _request(url: str, *, data: dict[str, Any] | None = None, timeout: float = 2.0) -> Any:
+def _load_token(root: Path) -> str:
+    """Hub bearer token: MARKTOAST_TOKEN wins, else <root>/.marktoast/token."""
+    token = os.environ.get("MARKTOAST_TOKEN", "").strip()
+    if token:
+        return token
+    try:
+        return (root / ".marktoast" / "token").read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+def _request(
+    url: str, *, data: dict[str, Any] | None = None, token: str = "", timeout: float = 2.0
+) -> Any:
     payload = None
     headers = {"Accept": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     if data is not None:
         payload = json.dumps(data, ensure_ascii=False).encode("utf-8")
         headers["Content-Type"] = "application/json"
@@ -49,6 +63,7 @@ class MarkToastMemoryProvider(MemoryProvider):
     def __init__(self) -> None:
         self._root = Path(os.environ.get("MARKTOAST_ROOT", str(Path.home() / "Memory"))).expanduser()
         self._hub = os.environ.get("MARKTOAST_HUB", _DEFAULT_HUB).rstrip("/")
+        self._token = _load_token(self._root)
         self._session = ""
         self._last_status: RecallStatus | None = None
 
@@ -82,7 +97,7 @@ class MarkToastMemoryProvider(MemoryProvider):
             return ""
         try:
             params = urllib.parse.urlencode({"q": query, "limit": 6})
-            data = _request(f"{self._hub}/api/search?{params}")
+            data = _request(f"{self._hub}/api/search?{params}", token=self._token)
         except Exception:
             self._last_status = None
             return ""
@@ -168,7 +183,7 @@ class MarkToastMemoryProvider(MemoryProvider):
             limit = max(1, min(int(arguments.get("limit") or 6), 20))
             try:
                 params = urllib.parse.urlencode({"q": query, "limit": limit})
-                data = _request(f"{self._hub}/api/search?{params}")
+                data = _request(f"{self._hub}/api/search?{params}", token=self._token)
                 return json.dumps(data, ensure_ascii=False)
             except Exception as exc:
                 return json.dumps({"error": f"MarkToast hub unavailable: {exc}"}, ensure_ascii=False)
@@ -185,7 +200,7 @@ class MarkToastMemoryProvider(MemoryProvider):
                 "type": str(arguments.get("type") or "reference"),
             }
             try:
-                data = _request(f"{self._hub}/api/memory", data=payload)
+                data = _request(f"{self._hub}/api/memory", data=payload, token=self._token)
                 return json.dumps({"path": data.get("path", "")}, ensure_ascii=False)
             except Exception as exc:
                 return json.dumps({"error": f"MarkToast hub unavailable: {exc}"}, ensure_ascii=False)
@@ -201,7 +216,7 @@ class MarkToastMemoryProvider(MemoryProvider):
             "session": self._session,
         }
         try:
-            _request(f"{self._hub}/api/inbox/candidate", data=payload)
+            _request(f"{self._hub}/api/inbox/candidate", data=payload, token=self._token)
         except Exception:
             # The hub may not be running; canonical memory still works without it.
             pass

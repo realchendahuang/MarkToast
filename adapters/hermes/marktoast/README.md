@@ -18,6 +18,12 @@ Environment (optional):
 
 - `MARKTOAST_ROOT` — repository root (default `~/Memory`)
 - `MARKTOAST_HUB` — hub URL (default `http://127.0.0.1:3777`)
+- `MARKTOAST_TOKEN` — hub bearer token (default: read from `<root>/.marktoast/token`,
+  which `marktoast serve` creates on first start)
+
+The hub refuses unauthenticated API calls with `401`, so the provider sends
+`Authorization: Bearer <token>` on every request. Nothing to configure when the
+token file is in its default place.
 
 The provider uses the hub for recall, `marktoast_search` / `marktoast_save`
 tools, and queues session-end candidates into the MarkToast inbox. Start the
