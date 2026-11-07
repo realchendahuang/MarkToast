@@ -12,9 +12,11 @@ with the version, your OS, and what you did.
 
 | Platform | Asset | Notes |
 |---|---|---|
-| macOS, Apple Silicon | `MarkToast-*-macos-arm64.dmg` or `.zip` | desktop app (hub included) |
-| macOS, Intel | `MarkToast-*-macos-amd64.dmg` or `.zip` | same app, Intel build |
-| macOS, Linux, Windows | `marktoast-*-<os>-<arch>.tar.gz` (`.zip` on Windows) | single CLI binary, web UI embedded |
+| macOS, Apple Silicon | `MarkToast-desktop-*-macos-arm64.dmg` / `.zip` | desktop app (hub included) |
+| macOS, Intel | `MarkToast-desktop-*-macos-amd64.dmg` / `.zip` | same app, Intel build |
+| Linux, arm64 / x86_64 | `MarkToast-desktop-*-linux-<arch>.tar.gz` | desktop app; needs GTK 4 + WebKitGTK 6.0 |
+| Windows, arm64 / x86_64 | `MarkToast-desktop-*-windows-<arch>.zip` | desktop app; needs the WebView2 runtime |
+| macOS, Linux, Windows | `marktoast-*-<os>-<arch>.tar.gz` (`.zip` on Windows) | CLI only, no window toolkit needed |
 
 Both macOS apps are **ad-hoc signed, not notarized**: there is no Developer ID
 in CI. Gatekeeper will refuse the first launch. Either right-click → *Open*,
@@ -52,9 +54,11 @@ tar -xzf marktoast-<version>-<os>-<arch>.tar.gz
 
 ## Known limits
 
-- The desktop shell ships for **macOS only**; Windows and Linux use the CLI and
-  `tui` today (Linux CLI is exercised by CI, Windows CLI is built but untested
-  beyond compilation)
-- No notarization yet (see above)
+- The desktop window needs a system toolkit: GTK 4 + WebKitGTK 6.0 on Linux
+  (Debian/Ubuntu: `sudo apt install libgtk-4-1 libwebkitgtk-6.0-4`), the
+  WebView2 runtime on Windows. The shell checks for these on Linux and tells
+  you the package if they are missing. The CLI has no such dependency.
+- The Windows build is signed by nobody (SmartScreen will warn); macOS is
+  ad-hoc signed, not notarized (see above)
 - Pre-alpha: on-disk formats may still change. Run `marktoast backup` before
   upgrading, and read the notes of the next release

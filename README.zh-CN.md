@@ -196,12 +196,14 @@ go install github.com/realchendahuang/MarkToast/cmd/marktoast@latest
 
 每个 tagged release 都会发布：
 
-- `MarkToast-<version>-macos-<arch>.dmg` / `.zip`：桌面应用，Apple Silicon 与 Intel 两个架构
+- `MarkToast-desktop-<version>-<os>-<arch>.dmg` / `.zip` / `.tar.gz`：桌面应用，覆盖 macOS（Apple Silicon 与 Intel）、Linux（arm64 / x86_64）、Windows（arm64 / x86_64）
 - `marktoast-<version>-<os>-<arch>.tar.gz`（Windows 为 `.zip`）：CLI，Web UI 已内嵌，覆盖 macOS / Linux / Windows 的 arm64 与 amd64
 
 下载：[latest release](https://github.com/realchendahuang/MarkToast/releases/latest)。
 macOS 应用是 ad-hoc 签名（暂无公证）：首次打开请右键 → **打开**，或运行
-`xattr -d com.apple.quarantine /Applications/MarkToast.app`。
+`xattr -d com.apple.quarantine /Applications/MarkToast.app`。Linux 版需要
+GTK 4 + WebKitGTK 6.0（`apt install libgtk-4-1 libwebkitgtk-6.0-4`）；Windows 版
+需要 WebView2 运行时。
 
 ## 快速开始（开发）
 

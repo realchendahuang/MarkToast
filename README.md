@@ -217,14 +217,17 @@ go install github.com/realchendahuang/MarkToast/cmd/marktoast@latest
 
 Every tagged release publishes:
 
-- `MarkToast-<version>-macos-<arch>.dmg` / `.zip` — the desktop app, Apple
-  Silicon and Intel builds
+- `MarkToast-desktop-<version>-<os>-<arch>.dmg` / `.zip` / `.tar.gz` — the
+  desktop app for macOS (Apple Silicon and Intel), Linux (arm64, x86_64) and
+  Windows (arm64, x86_64)
 - `marktoast-<version>-<os>-<arch>.tar.gz` (`.zip` on Windows) — the CLI with
   the web UI embedded, for macOS, Linux and Windows on arm64 and amd64
 
 Get them from the [latest release](https://github.com/realchendahuang/MarkToast/releases/latest).
 The macOS app is ad-hoc signed (no notarization yet): right-click → **Open**,
-or `xattr -d com.apple.quarantine /Applications/MarkToast.app`.
+or `xattr -d com.apple.quarantine /Applications/MarkToast.app`. The Linux app
+needs GTK 4 + WebKitGTK 6.0 (`apt install libgtk-4-1 libwebkitgtk-6.0-4`);
+the Windows app needs the WebView2 runtime.
 
 ## Quick start (development)
 

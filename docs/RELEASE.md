@@ -109,17 +109,24 @@ spctl --assess --type execute --verbose=4 MarkToast.app
 
 ## 5. 发布
 
-工作树必须干净，然后三次构建：
+工作树必须干净，然后按顺序构建（每一步都往 `dist/` 里追加，**不要并行**）：
 
 ```bash
-# 1. macOS 桌面包（.zip/.dmg）。正式分发换成第 3 节的签名 + 公证命令
+# 1. macOS 桌面包（.zip/.dmg，此时会先清空 dist/）。正式分发换成第 3 节的签名 + 公证命令
 ALLOW_UNSIGNED=1 make release VERSION=0.1.0
 
-# 2. 六个平台的 CLI 包（追加进 dist/）
+# 1b. 把 macOS 资产改成统一命名
+cd dist && for f in MarkToast-0.1.0-macos-*; do mv "$f" "MarkToast-desktop-$f" ; done; cd ..
+
+# 2. 六个平台的 CLI 包
 ./scripts/build-cli.sh 0.1.0
 
-# 3. 校验和
-cd dist && shasum -a 256 MarkToast-*.zip MarkToast-*.dmg marktoast-*.tar.gz marktoast-*.zip > SHA256SUMS
+# 3. Windows / Linux 桌面壳（Linux 用 purego 后端，交叉编译不需要 sysroot）
+./scripts/build-desktop.sh 0.1.0
+
+# 4. 校验和
+cd dist && shasum -a 256 MarkToast-desktop-*.zip MarkToast-desktop-*.dmg \
+  MarkToast-desktop-*.tar.gz marktoast-*.tar.gz marktoast-*.zip > SHA256SUMS
 ```
 
 打 tag 并上传：
@@ -136,12 +143,24 @@ Release **不标 prerelease**：`marktoast update` 读的是 `/releases/latest`�
 
 ## 5.1 支持矩阵
 
-| 平台 | 桌面壳（.dmg/.zip） | CLI + hub + TUI |
-| --- | --- | --- |
-| macOS arm64 | ✅ | ✅ |
-| macOS amd64 | ✅ | ✅ |
-| Linux amd64 / arm64 | —（Wails 壳未做 Linux 打包） | ✅（CI 在 Ubuntu 跑测试） |
-| Windows amd64 / arm64 | — | ✅（能编译，尚未实测运行） |
+| 平台 | 桌面壳 | CLI + hub + TUI | 备选 |
+| --- | --- | --- | --- |
+| macOS arm64 | ✅ `.dmg` / `.zip`，ad-hoc 签名 | ✅ | — |
+| macOS amd64 | ✅ 同上（本机交叉编译 + 换二进制） | ✅ | — |
+| Linux arm64 / amd64 | ✅ `.tar.gz`，Wails **purego** 后端 | ✅ | — |
+| Windows arm64 / amd64 | ✅ `.zip`，需 WebView2 运行时 | ✅ | — |
+
+Linux 桌面壳运行时 `dlopen` GTK 4 + WebKitGTK 6.0，启动前会自检并给出包名；
+Windows 需要 WebView2 运行时（Win10 需手动装，Win11 自带）。两个平台都只做了
+交叉编译 + 容器内冒烟（Ubuntu 24.04 + xvfb 能起窗口），没有长时间实机验证。
+
+## 5.3 桌面壳交叉编译
+
+- Linux：`CGO_ENABLED=0 GOOS=linux GOARCH=<arch> go build -tags purego ./cmd/marktoast-desktop`
+  （Wails v3.1 的纯 Go GTK4 后端，无需 Linux sysroot；`scripts/build-desktop.sh` 封装了它）
+- Windows：`CGO_ENABLED=0 GOOS=windows GOARCH=<arch> go build -ldflags "-H=windowsgui"`
+  （Wails 的 Windows 后端是纯 Go，`go-webview2` 走 COM，不需要 mingw）
+- macOS：`scripts/release.sh`（`.app` 布局 + codesign，必须在本机）
 
 ## 5.2 本地验证发布资产
 
@@ -161,13 +180,19 @@ shasum -a 256 -c SHA256SUMS
   命令行工具（打包与签名）、`gh`（上传 release）
 - 没有 CI：`make verify` 是本机门禁，发布前必须绿
 
-## 6. CI 门禁
+## 6. 本机门禁
 
-`.github/workflows/ci.yml` 在 push / pull request 时运行：
+仓库不使用 GitHub Actions。发布前在本机跑：
 
-- Ubuntu：`go mod download`、`go mod verify`、`make fmt-check tidy-check vet
-  test-race build`、三个前端 JS 语法检查、shell 语法检查
-- macOS：使用 CGO 和 macOS 12.0 deployment target 构建 Wails 桌面二进制
+```bash
+make verify                 # fmt、tidy、vet、race tests、前端 JS 语法、CLI 构建
+bash -n scripts/*.sh        # 脚本语法
+```
 
-发布仍建议在干净的、已签名的 macOS 本机或受控 release runner 上执行；CI 不会
-替代证书、公证凭据和人工发布确认。
+Linux 桌面壳的冒烟（可选）：
+
+```bash
+docker run --rm -v "$PWD/dist:/d" ubuntu:24.04 /d/.../marktoast-desktop -h
+```
+
+没有 CI 兜底，所以 tag 之前必须自己确认 `make verify` 绿、工作树干净。

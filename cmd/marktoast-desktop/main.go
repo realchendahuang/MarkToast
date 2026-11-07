@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -28,10 +29,44 @@ import (
 //go:embed icon.png
 var iconPNG []byte
 
+// newApplication turns a toolkit panic into a sentence. Wails' purego backend
+// panics while logging the platform when a loaded library lacks a symbol; the
+// hub does not need the window, so the message points at the CLI instead.
+func newApplication() (app *application.App) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			fmt.Fprintf(os.Stderr,
+				"MarkToast cannot open a window on this system: %v\n"+
+					"Run `marktoast serve` and use the web UI in a browser instead.\n",
+				recovered)
+			os.Exit(1)
+		}
+	}()
+	return application.New(application.Options{
+		Name:        "MarkToast",
+		Description: "Every agent's memory. One place. Yours.",
+		Icon:        iconPNG,
+	})
+}
+
 func main() {
 	root := flag.String("root", "", "memory repository root (defaults to config)")
 	addr := flag.String("addr", "127.0.0.1:3777", "hub listen address")
 	flag.Parse()
+
+	// A Linux window needs GTK 4 and WebKitGTK 6.0; say so before starting a
+	// hub or a window that cannot open.
+	if missing := missingRuntimeLibraries(); len(missing) > 0 {
+		fmt.Fprintf(os.Stderr,
+			"MarkToast's window needs GTK 4 and WebKitGTK 6.0; missing: %s\n\n"+
+				"  Debian/Ubuntu: sudo apt install libgtk-4-1 libwebkitgtk-6.0-4\n"+
+				"  Fedora:        sudo dnf install gtk4 webkitgtk6.0\n"+
+				"  Arch:          sudo pacman -S gtk4 webkitgtk-6.0\n\n"+
+				"The hub and CLI do not need them: run `marktoast serve` and open\n"+
+				"http://127.0.0.1:3777 in a browser instead.\n",
+			strings.Join(missing, ", "))
+		os.Exit(1)
+	}
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -71,11 +106,7 @@ func main() {
 		log.Fatalf("local hub is not available at %s", url)
 	}
 
-	app := application.New(application.Options{
-		Name:        "MarkToast",
-		Description: "Every agent's memory. One place. Yours.",
-		Icon:        iconPNG,
-	})
+	app := newApplication()
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:            "MarkToast · 马克吐司",
 		Width:            1280,
