@@ -1,9 +1,10 @@
 # 发布清单
 
-发布有两条路，都保留：
+发布全程在本机完成，不走 CI / GitHub Actions：
 
-- **CI（默认）**：打 `v*` tag，`.github/workflows/release.yml` 自动构建并发布 GitHub Release——macOS 桌面包（arm64 + Intel）、6 个平台的 CLI、`SHA256SUMS`。CI 没有 Developer ID，所以 macOS 包是 ad-hoc 签名。
-- **本机（正式分发）**：`make release VERSION=0.1.0` 做 Developer ID 签名 + Apple 公证，手工上传替换 CI 的包；脚本只支持 macOS。
+- `scripts/release.sh`（`make release`）产出 macOS 桌面包——Developer ID 签名 + Apple 公证，或 `ALLOW_UNSIGNED=1` 的 ad-hoc 包；只支持 macOS
+- `scripts/build-cli.sh` 交叉编译 6 个平台的 CLI（darwin / linux / windows × arm64 / amd64）
+- `gh release create` 把 `dist/` 里的资产和 `SHA256SUMS` 一次性传上去
 
 ## 1. 安装 CLI（用户侧）
 
@@ -108,25 +109,30 @@ spctl --assess --type execute --verbose=4 MarkToast.app
 
 ## 5. 发布
 
-打 tag 即可，工作树必须干净：
+工作树必须干净，然后三次构建：
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+# 1. macOS 桌面包（.zip/.dmg）。正式分发换成第 3 节的签名 + 公证命令
+ALLOW_UNSIGNED=1 make release VERSION=0.1.0
+
+# 2. 六个平台的 CLI 包（追加进 dist/）
+./scripts/build-cli.sh 0.1.0
+
+# 3. 校验和
+cd dist && shasum -a 256 MarkToast-*.zip MarkToast-*.dmg marktoast-*.tar.gz marktoast-*.zip > SHA256SUMS
 ```
 
-`.github/workflows/release.yml` 会：
+打 tag 并上传：
 
-1. 在 `macos-14`（Apple Silicon）与 `macos-13`（Intel）上各跑一次
-   `ALLOW_UNSIGNED=1 make release VERSION=<tag 去掉 v>`，产出该架构的 `.zip` / `.dmg`
-2. 在 Ubuntu 上交叉编译 6 个 CLI 目标（darwin / linux / windows × arm64 / amd64），
-   每个包内放二进制、`LICENSE`、`README.md`
-3. 汇总资产与 `SHA256SUMS`，`gh release create` 发布
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+gh release create v0.1.0 dist/* \
+  --title "MarkToast 0.1.0 — pre-alpha" \
+  --notes-file .github/release-notes.md
+```
 
-生成的 Release **不标 prerelease**：`marktoast update` 读的是
-`/releases/latest`，GitHub 会跳过 prerelease。标题里写 pre-alpha。
-
-签名版发布仍是本机流程（第 3 节），产物手工替换 CI 的 ad-hoc 包。
+Release **不标 prerelease**：`marktoast update` 读的是 `/releases/latest`，GitHub
+会跳过 prerelease。标题里写 pre-alpha 即可。
 
 ## 5.1 支持矩阵
 
@@ -147,12 +153,13 @@ shasum -a 256 -c SHA256SUMS
 
 ## 现状
 
-- 本机没有 Developer ID 证书与 notary profile：CI 与本地 unsigned 流程只能出
-  ad-hoc 签名包，Gatekeeper 首次启动需要用户放行（右键打开或
-  `xattr -d com.apple.quarantine`）；要正式分发得补证书与 `NOTARY_PROFILE`
-- 仓库已于 2026-11-07 开源为 public；`marktoast update` 已能读到 v0.1.0
-- CI 覆盖：Ubuntu 全量 `make verify` + macOS CGO 桌面构建；Release 工作流另跑两次
-  macOS 打包
+- 本机没有 Developer ID 证书与 notary profile：只能出 ad-hoc 签名包，Gatekeeper
+  首次启动需要用户放行（右键打开或 `xattr -d com.apple.quarantine`）；要正式分发
+  得补证书与 `NOTARY_PROFILE`
+- 仓库已于 2026-11-07 开源为 public
+- 发布机器只需要：Go 1.26+、Node 20+（`make verify` 的 JS 语法检查）、Xcode
+  命令行工具（打包与签名）、`gh`（上传 release）
+- 没有 CI：`make verify` 是本机门禁，发布前必须绿
 
 ## 6. CI 门禁
 
