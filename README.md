@@ -213,6 +213,19 @@ Or install the latest tagged module version:
 go install github.com/realchendahuang/MarkToast/cmd/marktoast@latest
 ```
 
+### Prebuilt binaries
+
+Every tagged release publishes:
+
+- `MarkToast-<version>-macos-<arch>.dmg` / `.zip` — the desktop app, Apple
+  Silicon and Intel builds
+- `marktoast-<version>-<os>-<arch>.tar.gz` (`.zip` on Windows) — the CLI with
+  the web UI embedded, for macOS, Linux and Windows on arm64 and amd64
+
+Get them from the [latest release](https://github.com/realchendahuang/MarkToast/releases/latest).
+The macOS app is ad-hoc signed (no notarization yet): right-click → **Open**,
+or `xattr -d com.apple.quarantine /Applications/MarkToast.app`.
+
 ## Quick start (development)
 
 Requirements: Go 1.26+, git, and Node.js 20+ for the JavaScript syntax check in

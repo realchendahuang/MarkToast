@@ -1,7 +1,9 @@
 # 发布清单
 
-发布脚本只支持 macOS；其他系统会直接报错退出。正式分发要求 Developer ID
-签名与 Apple 公证，本地验证包可使用显式的 unsigned 模式。
+发布有两条路，都保留：
+
+- **CI（默认）**：打 `v*` tag，`.github/workflows/release.yml` 自动构建并发布 GitHub Release——macOS 桌面包（arm64 + Intel）、6 个平台的 CLI、`SHA256SUMS`。CI 没有 Developer ID，所以 macOS 包是 ad-hoc 签名。
+- **本机（正式分发）**：`make release VERSION=0.1.0` 做 Developer ID 签名 + Apple 公证，手工上传替换 CI 的包；脚本只支持 macOS。
 
 ## 1. 安装 CLI（用户侧）
 
@@ -106,18 +108,51 @@ spctl --assess --type execute --verbose=4 MarkToast.app
 
 ## 5. 发布
 
-1. 提交发布内容，确认工作树干净
-2. `git tag v0.1.0 && git push origin v0.1.0`
-3. GitHub Release 上传 `.zip`、`.dmg`、`SHA256SUMS`
-4. 更新检查：`GITHUB_TOKEN=... marktoast update`
-5. 公开仓库 / 文档站需 owner 明确同意
+打 tag 即可，工作树必须干净：
 
-## 当前阻塞
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
 
-- 若本机没有 Developer ID 证书与 notary profile，只能使用
-  `ALLOW_UNSIGNED=1` 生成本地包，不能作为正式分发版本
-- 未创建 GitHub Release 前，`marktoast update` 会返回 404
-- 公开仓库尚未获得 owner 授权
+`.github/workflows/release.yml` 会：
+
+1. 在 `macos-14`（Apple Silicon）与 `macos-13`（Intel）上各跑一次
+   `ALLOW_UNSIGNED=1 make release VERSION=<tag 去掉 v>`，产出该架构的 `.zip` / `.dmg`
+2. 在 Ubuntu 上交叉编译 6 个 CLI 目标（darwin / linux / windows × arm64 / amd64），
+   每个包内放二进制、`LICENSE`、`README.md`
+3. 汇总资产与 `SHA256SUMS`，`gh release create` 发布
+
+生成的 Release **不标 prerelease**：`marktoast update` 读的是
+`/releases/latest`，GitHub 会跳过 prerelease。标题里写 pre-alpha。
+
+签名版发布仍是本机流程（第 3 节），产物手工替换 CI 的 ad-hoc 包。
+
+## 5.1 支持矩阵
+
+| 平台 | 桌面壳（.dmg/.zip） | CLI + hub + TUI |
+| --- | --- | --- |
+| macOS arm64 | ✅ | ✅ |
+| macOS amd64 | ✅ | ✅ |
+| Linux amd64 / arm64 | —（Wails 壳未做 Linux 打包） | ✅（CI 在 Ubuntu 跑测试） |
+| Windows amd64 / arm64 | — | ✅（能编译，尚未实测运行） |
+
+## 5.2 本地验证发布资产
+
+```bash
+cd dist
+shasum -a 256 -c SHA256SUMS
+./bin/marktoast version
+```
+
+## 现状
+
+- 本机没有 Developer ID 证书与 notary profile：CI 与本地 unsigned 流程只能出
+  ad-hoc 签名包，Gatekeeper 首次启动需要用户放行（右键打开或
+  `xattr -d com.apple.quarantine`）；要正式分发得补证书与 `NOTARY_PROFILE`
+- 仓库已于 2026-11-07 开源为 public；`marktoast update` 已能读到 v0.1.0
+- CI 覆盖：Ubuntu 全量 `make verify` + macOS CGO 桌面构建；Release 工作流另跑两次
+  macOS 打包
 
 ## 6. CI 门禁
 

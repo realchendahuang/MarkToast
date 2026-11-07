@@ -192,6 +192,17 @@ go install ./cmd/marktoast
 go install github.com/realchendahuang/MarkToast/cmd/marktoast@latest
 ```
 
+### 预编译包
+
+每个 tagged release 都会发布：
+
+- `MarkToast-<version>-macos-<arch>.dmg` / `.zip`：桌面应用，Apple Silicon 与 Intel 两个架构
+- `marktoast-<version>-<os>-<arch>.tar.gz`（Windows 为 `.zip`）：CLI，Web UI 已内嵌，覆盖 macOS / Linux / Windows 的 arm64 与 amd64
+
+下载：[latest release](https://github.com/realchendahuang/MarkToast/releases/latest)。
+macOS 应用是 ad-hoc 签名（暂无公证）：首次打开请右键 → **打开**，或运行
+`xattr -d com.apple.quarantine /Applications/MarkToast.app`。
+
 ## 快速开始（开发）
 
 依赖：Go 1.26+、git；`make verify` 中的 JavaScript 语法检查需要 Node.js 20+。
