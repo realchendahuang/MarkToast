@@ -13,6 +13,7 @@ DSH, Hermes, Pi and the rest.
 ![macOS](https://img.shields.io/badge/macOS-first-000000?logo=apple&logoColor=white)
 ![Status](https://img.shields.io/badge/status-pre--alpha-d8b26a)
 ![License](https://img.shields.io/badge/license-MIT-green)
+[![GitHub stars](https://img.shields.io/github/stars/realchendahuang/MarkToast?style=flat&color=111111)](https://github.com/realchendahuang/MarkToast/stargazers)
 
 [中文](README.zh-CN.md) · [Brand](docs/BRAND.md) · [Product](docs/PRODUCT.md) · [Tech stack](docs/TECH-STACK.md) · [Architecture](docs/ARCHITECTURE.md) · [Roadmap](docs/ROADMAP.md) · [Credits](docs/CREDITS.md)
 
@@ -286,4 +287,11 @@ MarkToast is built in public debt to these projects — see
 
 ## License
 
-MIT (see [LICENSE](LICENSE)). The project stays private during development.
+MIT (see [LICENSE](LICENSE)).
+
+Issues and pull requests are welcome. If MarkToast is useful to you, a star
+helps other agent users find it.
+
+## Star history
+
+[![Star history chart](https://api.star-history.com/svg?repos=realchendahuang/MarkToast&type=Date)](https://star-history.com/#realchendahuang/MarkToast&Date)

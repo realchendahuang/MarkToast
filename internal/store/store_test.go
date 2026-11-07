@@ -9,16 +9,16 @@ import (
 )
 
 func TestProjectKeyStable(t *testing.T) {
-	a := ProjectKey("/Users/kim/code/feedsieve")
-	b := ProjectKey("/Users/kim/code/feedsieve")
+	a := ProjectKey("/home/demo/code/feedsieve")
+	b := ProjectKey("/home/demo/code/feedsieve")
 	if a != b {
 		t.Fatalf("project key not stable: %q vs %q", a, b)
 	}
 	if !strings.HasPrefix(a, "feedsieve-") || len(a) != len("feedsieve-")+16 {
 		t.Fatalf("unexpected project key %q", a)
 	}
-	if ProjectKey("/Users/kim/code/另一个项目")[:8] != "project-" {
-		t.Fatalf("non-ascii slug should fall back to project-, got %q", ProjectKey("/Users/kim/code/另一个项目"))
+	if ProjectKey("/home/demo/code/另一个项目")[:8] != "project-" {
+		t.Fatalf("non-ascii slug should fall back to project-, got %q", ProjectKey("/home/demo/code/另一个项目"))
 	}
 }
 

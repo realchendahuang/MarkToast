@@ -13,6 +13,7 @@ DSH、Hermes、Pi 等。
 ![macOS](https://img.shields.io/badge/macOS-first-000000?logo=apple&logoColor=white)
 ![Status](https://img.shields.io/badge/status-pre--alpha-d8b26a)
 ![License](https://img.shields.io/badge/license-MIT-green)
+[![GitHub stars](https://img.shields.io/github/stars/realchendahuang/MarkToast?style=flat&color=111111)](https://github.com/realchendahuang/MarkToast/stargazers)
 
 [English](README.md) · [产品定位](docs/PRODUCT.md) · [技术栈](docs/TECH-STACK.md) · [架构设计](docs/ARCHITECTURE.md) · [路线图](docs/ROADMAP.md) · [致敬](docs/CREDITS.md)
 
@@ -251,4 +252,10 @@ MarkToast 站在这些项目肩上——具体借鉴了什么见 [docs/CREDITS.m
 
 ## 许可证
 
-采用 **MIT**（见 [LICENSE](LICENSE)）；开发期仓库保持私有。
+采用 **MIT**（见 [LICENSE](LICENSE)）。
+
+欢迎提 issue 和 PR。如果 MarkToast 对你有用，点一个 star，能让更多用 agent 的人找到它。
+
+## Star history
+
+[![Star history chart](https://api.star-history.com/svg?repos=realchendahuang/MarkToast&type=Date)](https://star-history.com/#realchendahuang/MarkToast&Date)
