@@ -115,8 +115,11 @@ spctl --assess --type execute --verbose=4 MarkToast.app
 # 1. macOS 桌面包（.zip/.dmg，此时会先清空 dist/）。正式分发换成第 3 节的签名 + 公证命令
 ALLOW_UNSIGNED=1 make release VERSION=0.1.0
 
-# 1b. 把 macOS 资产改成统一命名
-cd dist && for f in MarkToast-0.1.0-macos-*; do mv "$f" "MarkToast-desktop-$f" ; done; cd ..
+# 1b. 把 macOS 资产改成统一命名（arm64 与 Intel 各一份）
+cd dist
+mv MarkToast-0.1.0-macos-arm64.zip MarkToast-desktop-0.1.0-macos-arm64.zip
+mv MarkToast-0.1.0-macos-arm64.dmg MarkToast-desktop-0.1.0-macos-arm64.dmg
+cd ..
 
 # 2. 六个平台的 CLI 包
 ./scripts/build-cli.sh 0.1.0
