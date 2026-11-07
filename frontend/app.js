@@ -1482,17 +1482,34 @@ function sortResults(results) {
   return copy;
 }
 
-function appendLoadMoreButton() {
-  if (!state.hasMore) return;
-  const wrap = element("div", "load-more-wrap");
-  const button = element("button", "button quiet load-more", state.loadingMore ? "加载中…" : "加载更多");
-  button.type = "button";
-  button.disabled = state.loadingMore;
-  button.addEventListener("click", () => {
-    if (!state.loadingMore) loadMemories({ preserveSelection: true, silent: true, append: true });
-  });
-  wrap.appendChild(button);
-  els.resultRegion.appendChild(wrap);
+/* The page never asks to be clicked through: it loads the next page as the
+   reader comes near the bottom, and keeps filling while the wall is still
+   shorter than the window. */
+let autoLoadFrame = 0;
+
+function maybeLoadMore() {
+  autoLoadFrame = 0;
+  if (state.view !== "memories" || !state.hasMore || state.loadingMore) return;
+  if (!state.results.length) return;
+  const viewport = document.querySelector(".view");
+  if (!viewport) return;
+  const rest = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+  if (rest < viewport.clientHeight * 1.2) {
+    loadMemories({ preserveSelection: true, silent: true, append: true });
+  }
+}
+
+function queueLoadMoreCheck() {
+  if (autoLoadFrame) return;
+  autoLoadFrame = requestAnimationFrame(maybeLoadMore);
+}
+
+function appendLoadMoreHint() {
+  if (!state.hasMore && !state.loadingMore) return;
+  const hint = element("div", "load-more-hint", state.loadingMore ? "正在加载…" : "");
+  hint.setAttribute("aria-hidden", "true");
+  els.resultRegion.appendChild(hint);
+  queueLoadMoreCheck();
 }
 
 function renderMemories() {
@@ -1557,7 +1574,7 @@ function renderMemories() {
     grid.appendChild(card);
   });
   els.resultRegion.appendChild(grid);
-  appendLoadMoreButton();
+  appendLoadMoreHint();
   if (memoryDetailOpen()) renderMemoryDetail();
 }
 
@@ -1576,8 +1593,10 @@ function renderCardPreview(container, result) {
 }
 
 function cardPreviewLine(line) {
-  let text = String(line || "").replace(/^\s{0,3}#{1,6}\s+/, "");
-  if (!text.trim()) return "";
+  let text = String(line || "").replace(/^\s{0,3}#{1,6}\s+/, "").trim();
+  if (!text) return "";
+  // a card shows the body, not its markup: fences and rules are structure
+  if (/^(`{3,}|~{3,})/.test(text) || /^(-{3,}|\*{3,}|_{3,})$/.test(text)) return "";
   if (/^\s*[|:\-\s]+$/.test(text) && text.includes("-")) return "";
   if (text.includes("|")) {
     const cells = text
@@ -3238,6 +3257,9 @@ function bindEvents() {
     els.search.blur();
     closeSearch();
   });
+
+  const viewport = document.querySelector(".view");
+  if (viewport) viewport.addEventListener("scroll", queueLoadMoreCheck, { passive: true });
 
   els.resultRegion.addEventListener("keydown", (event) => {
     if (!/^(ArrowLeft|ArrowRight|ArrowUp|ArrowDown|Home|End)$/.test(event.key)) return;

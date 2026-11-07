@@ -93,6 +93,7 @@
     "收起侧栏": "Collapse sidebar",
     "加载更多": "Load more",
     "加载中…": "Loading…",
+    "正在加载…": "Loading…",
     "请求超时，请稍后重试。": "Request timed out; try again.",
     "请求已取消。": "Request cancelled.",
     "未授权，请重新连接本地 hub。": "Unauthorized; reconnect to the local hub.",
