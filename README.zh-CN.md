@@ -84,7 +84,7 @@ MarkToast 把记忆还原成它本该有的样子：**一个你拥有的仓库�
 
 ## 现状
 
-**私有 pre-alpha —— 核心闭环、加固后的本地 hub、内嵌 UI 桌面壳、CI 与签名发布校验均已实现。**
+**开源 pre-alpha —— 核心闭环、加固后的本地 hub、内嵌 UI 桌面壳、CI 与签名发布校验均已实现。**
 
 - [x] Go module + CLI（`version` / `init` / `add` / `get` / `search` / `reindex` /
       `log` / `status` / `hook` / `mcp` / `adapters` / `serve` / `ui`）

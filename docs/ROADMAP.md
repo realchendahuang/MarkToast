@@ -1,10 +1,10 @@
 # MarkToast 路线图
 
-> 私有开发期路线图。每完成一个里程碑，更新 checkbox 与日期。
+> 路线图。每完成一个里程碑，更新 checkbox 与日期。
 
 ## M0 — 地基 ✅（2026-11-04）
 
-- [x] 私有仓库 `realchendahuang/MarkToast`
+- [x] 开源仓库 `realchendahuang/MarkToast`
 - [x] README / 中文 README / 架构文档 / 路线图 / 复用调研 / harness 接入参考
 - [x] Go module + CLI 骨架
 - [x] `.gitignore` / Makefile

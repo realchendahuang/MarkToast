@@ -93,7 +93,7 @@ MarkToast treats memory as what it should be: **a repository you own.**
 
 ## Status
 
-**Private pre-alpha — core loop, hardened local hub, embedded-UI desktop shell,
+**Public pre-alpha — core loop, hardened local hub, embedded-UI desktop shell,
 CI and signed-release validation are implemented.**
 
 - [x] Go module + CLI (`version`, `init`, `add`, `get`, `search`, `reindex`,
