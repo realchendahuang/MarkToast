@@ -69,8 +69,12 @@ if ! mkdir -p "$CLI_DIR" 2>/dev/null || [[ ! -w "$CLI_DIR" ]]; then
     exit 1
   fi
 fi
-cp bin/marktoast "$CLI_DIR/marktoast"
-chmod 755 "$CLI_DIR/marktoast"
+# Replace the CLI by rename, not by overwriting its bytes: `marktoast serve`
+# may be running from this path (launchd keeps it alive), and rewriting a
+# running executable's inode leaves a file macOS then kills on the next exec.
+cp bin/marktoast "$CLI_DIR/.marktoast.new.$$"
+chmod 755 "$CLI_DIR/.marktoast.new.$$"
+mv -f "$CLI_DIR/.marktoast.new.$$" "$CLI_DIR/marktoast"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
