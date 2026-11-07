@@ -388,6 +388,313 @@ function emptyState(title, message, actionLabel, onAction) {
   return empty;
 }
 
+/* ---- Popover menus: Magpie's .pop --------------------------------------
+   A filter used to be a native <select>; macOS draws that in a look of its
+   own, so the pill opens a list this file owns instead: same hairlines,
+   same hover, same keys as the rest of the page. */
+let popMenu = null;
+
+function closePopMenu({ restoreFocus = false } = {}) {
+  const current = popMenu;
+  if (!current) return;
+  popMenu = null;
+  current.anchor.setAttribute("aria-expanded", "false");
+  current.pop.remove();
+  document.removeEventListener("pointerdown", current.onOutside, true);
+  document.removeEventListener("scroll", current.onDismiss, true);
+  window.removeEventListener("resize", current.onDismiss);
+  if (restoreFocus) current.anchor.focus();
+}
+
+function openPopMenu(anchor, config) {
+  if (popMenu && popMenu.anchor === anchor) {
+    closePopMenu();
+    return;
+  }
+  closePopMenu();
+
+  const pop = element("div", "pop");
+  pop.setAttribute("role", "listbox");
+  pop.tabIndex = -1;
+  if (config.label) pop.setAttribute("aria-label", config.label);
+
+  let filter = null;
+  if (config.searchable) {
+    filter = element("input", "pop-search");
+    filter.type = "search";
+    filter.placeholder = config.placeholder || "搜索";
+    filter.setAttribute("aria-label", config.placeholder || "搜索");
+    filter.autocomplete = "off";
+    pop.appendChild(filter);
+  }
+
+  const list = element("div", "pop-list");
+  pop.appendChild(list);
+  const rows = [];
+  (config.items || []).forEach((item, index) => {
+    const row = element("button", "pop-item");
+    row.type = "button";
+    row.id = `pop-item-${index}`;
+    row.setAttribute("role", "option");
+    row.setAttribute("aria-selected", String(Boolean(item.selected)));
+    row.dataset.label = `${item.label} ${item.meta ?? ""}`.trim();
+    const check = element("span", "pop-check");
+    check.appendChild(icon("check"));
+    const name = element("span", "pop-name", item.label);
+    if (item.raw) name.dataset.noI18n = "true";
+    row.append(check, name);
+    if (item.meta !== undefined && item.meta !== null) {
+      const meta = element("span", "pop-meta", item.meta);
+      meta.dataset.noI18n = "true";
+      row.appendChild(meta);
+    }
+    row.addEventListener("click", () => {
+      closePopMenu({ restoreFocus: true });
+      config.onPick(item.value);
+    });
+    row.addEventListener("pointerenter", () => setActive(row));
+    list.appendChild(row);
+    rows.push(row);
+  });
+  const empty = element("div", "pop-empty", config.emptyText || "没有匹配项");
+  empty.hidden = Boolean(rows.length);
+  list.appendChild(empty);
+
+  let active = rows.find((row) => row.getAttribute("aria-selected") === "true") || rows[0] || null;
+  function setActive(row) {
+    if (row && row.hidden) return;
+    rows.forEach((item) => item.removeAttribute("data-active"));
+    active = row || null;
+    if (!active) {
+      pop.removeAttribute("aria-activedescendant");
+      return;
+    }
+    active.setAttribute("data-active", "true");
+    pop.setAttribute("aria-activedescendant", active.id);
+    active.scrollIntoView({ block: "nearest" });
+  }
+  function visibleRows() {
+    return rows.filter((row) => !row.hidden);
+  }
+
+  pop.addEventListener("keydown", (event) => {
+    const shown = visibleRows();
+    const index = shown.indexOf(active);
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!shown.length) return;
+      setActive(event.key === "ArrowDown"
+        ? shown[Math.min(shown.length - 1, index + 1)]
+        : shown[Math.max(0, index - 1)]);
+    } else if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      setActive(event.key === "Home" ? shown[0] : shown[shown.length - 1]);
+    } else if (event.key === "Enter") {
+      if (!active || active.hidden) return;
+      event.preventDefault();
+      active.click();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closePopMenu({ restoreFocus: true });
+    }
+  });
+
+  if (filter) {
+    filter.addEventListener("input", () => {
+      const needle = filter.value.trim().toLowerCase();
+      let hits = 0;
+      rows.forEach((row) => {
+        const hit = !needle || row.dataset.label.toLowerCase().includes(needle);
+        row.hidden = !hit;
+        if (hit) hits += 1;
+      });
+      empty.hidden = hits > 0;
+      list.scrollTop = 0;
+      setActive(visibleRows()[0] || null);
+    });
+  }
+
+  const rect = anchor.getBoundingClientRect();
+  document.body.appendChild(pop);
+  const size = pop.getBoundingClientRect();
+  const gap = 6;
+  const left = Math.min(
+    Math.max(10, Math.round(rect.left)),
+    Math.max(10, window.innerWidth - size.width - 10),
+  );
+  let top = Math.round(rect.bottom + gap);
+  if (top + size.height > window.innerHeight - 10) top = Math.max(10, Math.round(rect.top - gap - size.height));
+  pop.style.left = `${left}px`;
+  pop.style.top = `${top}px`;
+  pop.style.minWidth = `${Math.round(Math.max(rect.width, 180))}px`;
+
+  const onOutside = (event) => {
+    if (pop.contains(event.target) || anchor.contains(event.target)) return;
+    closePopMenu();
+  };
+  const onDismiss = (event) => {
+    if (event && event.target && (event.target === pop || pop.contains(event.target))) return;
+    closePopMenu();
+  };
+  document.addEventListener("pointerdown", onOutside, true);
+  document.addEventListener("scroll", onDismiss, true);
+  window.addEventListener("resize", onDismiss);
+  anchor.setAttribute("aria-expanded", "true");
+  popMenu = { anchor, pop, onOutside, onDismiss };
+
+  setActive(active);
+  if (filter) filter.focus();
+  else pop.focus();
+}
+
+/* ---- filters, as pills that open a list -------------------------------- */
+function setFilterLabel(node, text, raw = false) {
+  if (!node) return;
+  if (raw) node.dataset.noI18n = "true";
+  else delete node.dataset.noI18n;
+  node.textContent = text;
+}
+
+function syncFilterLabels() {
+  const projectButton = $("project-filter-button");
+  const typeButton = $("type-filter-button");
+  if (!projectButton || !typeButton) return;
+  setFilterLabel($("project-filter-label"), state.project ? projectLabel(state.project) : "全部项目", Boolean(state.project));
+  projectButton.classList.toggle("on", Boolean(state.project));
+  projectButton.title = state.project || "";
+  setFilterLabel($("type-filter-label"), state.type ? typeLabel(state.type) : "全部类型");
+  typeButton.classList.toggle("on", Boolean(state.type));
+  typeButton.title = state.type ? typeLabel(state.type) : "";
+}
+
+function projectMenuItems() {
+  const items = [{ value: "", label: "全部项目", selected: !state.project }];
+  const projects = state.status?.projects || [];
+  projects
+    .slice()
+    .sort((a, b) => (Number(b.facts) || 0) - (Number(a.facts) || 0) || projectLabel(a.key).localeCompare(projectLabel(b.key), "zh-CN"))
+    .forEach((project) => {
+      items.push({
+        value: project.key,
+        label: projectLabel(project.key),
+        meta: project.facts ?? 0,
+        raw: true,
+        selected: state.project === project.key,
+      });
+    });
+  return items;
+}
+
+function openProjectMenu() {
+  openPopMenu($("project-filter-button"), {
+    label: "项目筛选",
+    searchable: true,
+    placeholder: "搜索项目",
+    emptyText: "没有匹配的项目",
+    items: projectMenuItems(),
+    onPick: (value) => {
+      if (value === (state.project || "")) return;
+      cancelPendingSearch();
+      state.project = value;
+      els.projectFilter.value = value;
+      renderProjects(state.status?.projects || []);
+      $("all-memories").classList.toggle("is-active", !value);
+      syncFilterLabels();
+      loadMemories({ preserveSelection: true });
+    },
+  });
+}
+
+function openTypeMenu() {
+  const types = Object.keys(TYPE_LABELS);
+  const items = [{ value: "", label: "全部类型", selected: !state.type }];
+  types.forEach((type) => {
+    items.push({ value: type, label: typeLabel(type), selected: state.type === type });
+  });
+  openPopMenu($("type-filter-button"), {
+    label: "类型筛选",
+    items,
+    onPick: (value) => {
+      if (value === (state.type || "")) return;
+      cancelPendingSearch();
+      state.type = value;
+      els.typeFilter.value = value;
+      syncFilterLabels();
+      loadMemories({ preserveSelection: true });
+    },
+  });
+}
+
+function sortMenuItems() {
+  const items = [];
+  if (state.query) items.push({ value: "relevance", label: "相关度", selected: state.sort === "relevance" });
+  items.push({
+    value: "updated",
+    label: "最近更新",
+    selected: state.sort === "updated" || (!state.query && state.sort === "relevance"),
+  });
+  items.push({ value: "title", label: "标题", selected: state.sort === "title" });
+  return items;
+}
+
+function openSortMenu() {
+  openPopMenu($("sort-button"), {
+    label: "排序",
+    items: sortMenuItems(),
+    onPick: (value) => {
+      if (value === state.sort) return;
+      cancelPendingSearch();
+      state.sort = value;
+      updateHeading();
+      loadMemories({ preserveSelection: true });
+    },
+  });
+}
+
+/* ---- reading size ------------------------------------------------------ */
+const READ_SIZE_KEY = "marktoast-read-size";
+const READ_SIZES = ["s", "m", "l"];
+
+function readSizePreference() {
+  try {
+    const saved = localStorage.getItem(READ_SIZE_KEY);
+    return READ_SIZES.includes(saved) ? saved : "m";
+  } catch (error) {
+    return "m";
+  }
+}
+
+function applyReadSize(size, { persist = true } = {}) {
+  const next = READ_SIZES.includes(size) ? size : "m";
+  document.body.dataset.read = next;
+  if (persist) {
+    try {
+      localStorage.setItem(READ_SIZE_KEY, next);
+    } catch (error) {
+      // Private mode: the choice lasts the session only.
+    }
+  }
+  document.querySelectorAll("[data-read-choice]").forEach((button) => {
+    const on = button.dataset.readChoice === next;
+    button.classList.toggle("on", on);
+    button.setAttribute("aria-pressed", String(on));
+  });
+  requestAnimationFrame(positionSetThumbs);
+}
+
+/* how many cards a row of the wall holds: an arrow key moves by a row */
+function wallColumns(cards) {
+  if (!cards.length) return 1;
+  const firstTop = cards[0].offsetTop;
+  let count = 0;
+  for (const card of cards) {
+    if (card.offsetTop !== firstTop) break;
+    count += 1;
+  }
+  return Math.max(1, count);
+}
+
 async function loadStatus({ announce = false } = {}) {
   setHubState("", "正在连接本地 hub");
   try {
@@ -516,6 +823,7 @@ function renderProjectOptions(projects) {
     }
   });
   els.projectFilter.value = projects.some((project) => project.key === current) ? current : "";
+  syncFilterLabels();
 }
 
 function selectProject(project) {
@@ -526,6 +834,7 @@ function selectProject(project) {
   els.searchClear.hidden = true;
   els.projectFilter.value = project;
   renderProjects(state.status?.projects || []);
+  syncFilterLabels();
   $("all-memories").classList.toggle("is-active", !project);
   switchView("memories", { autoLoadMemories: false });
   loadMemories({ preserveSelection: true });
@@ -590,6 +899,7 @@ function updateBreadcrumb() {
 function updateHeading() {
   const effectiveSort = !state.query && state.sort === "relevance" ? "updated" : state.sort;
   $("sort-label").textContent = effectiveSort === "updated" ? "最近更新" : effectiveSort === "title" ? "标题" : "相关度";
+  syncFilterLabels();
   updateBreadcrumb();
 }
 
@@ -992,13 +1302,13 @@ function renderExpandedMemory(result) {
   copyMd.title = "复制 Markdown";
   copyMd.setAttribute("aria-label", "复制这条记忆的 Markdown");
   copyMd.appendChild(icon("file"));
-  copyMd.addEventListener("click", () => copyMarkdown(path));
+  copyMd.addEventListener("click", () => copyMarkdown(path, copyMd));
   const copy = element("button", "icon", "");
   copy.type = "button";
   copy.title = path;
   copy.setAttribute("aria-label", "复制记忆路径");
   copy.appendChild(icon("copy"));
-  copy.addEventListener("click", () => copyPath(path));
+  copy.addEventListener("click", () => copyPath(path, copy));
   actions.append(history, copyMd, copy);
   meta.appendChild(actions);
   header.appendChild(meta);
@@ -1034,7 +1344,7 @@ function renderExpandedMemory(result) {
   return box;
 }
 
-async function copyMarkdown(path) {
+async function copyMarkdown(path, button) {
   const detail = state.details.get(path);
   if (!detail || !detail.raw) {
     toast("这条记忆还没加载完", "error");
@@ -1043,6 +1353,7 @@ async function copyMarkdown(path) {
   try {
     await navigator.clipboard.writeText(String(detail.raw));
     toast("Markdown 已复制到剪贴板");
+    flashCopied(button);
   } catch {
     toast("复制失败，请稍后再试", "error");
   }
@@ -1499,11 +1810,12 @@ function safeUrl(raw) {
   return "";
 }
 
-async function copyPath(path) {
+async function copyPath(path, button) {
   if (!path) return;
   try {
     await navigator.clipboard.writeText(path);
     toast("路径已复制到剪贴板");
+    flashCopied(button);
   } catch {
     toast("复制失败，请手动选择路径", "error");
   }
@@ -2240,6 +2552,18 @@ function positionSegThumb() {
   }
 }
 
+/* Magpie measures the scrollbar into --bar, so the 1200px column does not
+   shift by its width when a long page grows a scrollbar and a short one
+   does not. WebKit's overlay bar measures 0, which is the right answer there. */
+function measureScrollbarWidth() {
+  const probe = element("div", "");
+  probe.style.cssText = "position:absolute;top:-1000px;left:0;width:50px;height:20px;overflow-y:scroll;visibility:hidden";
+  document.body.appendChild(probe);
+  const width = probe.offsetWidth - probe.clientWidth;
+  probe.remove();
+  document.documentElement.style.setProperty("--bar", `${Math.max(0, width)}px`);
+}
+
 function clearFilters() {
   cancelPendingSearch();
   state.query = "";
@@ -2251,6 +2575,7 @@ function clearFilters() {
   els.searchClear.hidden = true;
   els.projectFilter.value = "";
   els.typeFilter.value = "";
+  syncFilterLabels();
   renderProjects(state.status?.projects || []);
   $("all-memories").classList.add("is-active");
   loadMemories({ preserveSelection: true });
@@ -2386,10 +2711,10 @@ function openSearch(focus = true) {
   els.searchToggle.setAttribute("aria-expanded", "true");
   els.search.tabIndex = 0;
   if (focus) {
-    requestAnimationFrame(() => {
-      els.search.focus();
-      els.search.select();
-    });
+    // Focus now, not on the next frame: a key press should land in the field
+    // even when the window is busy or the frame is throttled.
+    els.search.focus();
+    requestAnimationFrame(() => els.search.select());
   }
 }
 
@@ -2463,7 +2788,36 @@ function bindEvents() {
     closeSearch();
   });
 
+  els.resultRegion.addEventListener("keydown", (event) => {
+    if (!/^(ArrowLeft|ArrowRight|ArrowUp|ArrowDown|Home|End)$/.test(event.key)) return;
+    const cards = [...els.resultRegion.querySelectorAll(".memory-card")];
+    const index = cards.indexOf(document.activeElement);
+    if (index < 0) return;
+    event.preventDefault();
+    let next = index;
+    if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = cards.length - 1;
+    else {
+      const columns = wallColumns(cards);
+      const step = event.key === "ArrowUp" ? -columns
+        : event.key === "ArrowDown" ? columns
+        : event.key === "ArrowLeft" ? -1 : 1;
+      next = Math.min(cards.length - 1, Math.max(0, index + step));
+    }
+    cards[next].focus();
+  });
+
   document.addEventListener("keydown", (event) => {
+    if (event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      const target = event.target;
+      const typing = target instanceof HTMLElement
+        && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      if (!typing && !isAnyModalOpen()) {
+        event.preventDefault();
+        focusSearch();
+      }
+      return;
+    }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
       if (isAnyModalOpen()) return;
       event.preventDefault();
@@ -2506,18 +2860,15 @@ function bindEvents() {
   els.typeFilter.addEventListener("change", () => {
     cancelPendingSearch();
     state.type = els.typeFilter.value;
+    syncFilterLabels();
     loadMemories({ preserveSelection: true });
   });
 
-  $("sort-button").addEventListener("click", () => {
-    cancelPendingSearch();
-    if (state.query) {
-      state.sort = state.sort === "relevance" ? "updated" : state.sort === "updated" ? "title" : "relevance";
-    } else {
-      state.sort = state.sort === "title" ? "updated" : "title";
-    }
-    updateHeading();
-    loadMemories({ preserveSelection: true });
+  $("project-filter-button").addEventListener("click", openProjectMenu);
+  $("type-filter-button").addEventListener("click", openTypeMenu);
+  $("sort-button").addEventListener("click", openSortMenu);
+  document.querySelectorAll("[data-read-choice]").forEach((button) => {
+    button.addEventListener("click", () => applyReadSize(button.dataset.readChoice));
   });
 
   $("new-memory-top").addEventListener("click", openDialog);
@@ -2525,8 +2876,8 @@ function bindEvents() {
   document.querySelectorAll("[data-theme-choice]").forEach((button) => {
     button.addEventListener("click", () => setTheme(button.dataset.themeChoice));
   });
-  $("copy-root").addEventListener("click", () => copyText($("settings-root").textContent, "根目录"));
-  $("copy-token").addEventListener("click", () => copyText($("settings-token").textContent, "Token"));
+  $("copy-root").addEventListener("click", () => copyText($("settings-root").textContent, "根目录", $("copy-root")));
+  $("copy-token").addEventListener("click", () => copyText($("settings-token").textContent, "Token", $("copy-token")));
   $("reindex").addEventListener("click", rebuildIndex);
   $("backup-now").addEventListener("click", backupNow);
   $("save-aliases").addEventListener("click", saveAliases);
@@ -2667,10 +3018,27 @@ function bindEvents() {
 }
 
 
-function copyText(value, label) {
+function flashCopied(button) {
+  if (!button) return;
+  const use = button.querySelector("use");
+  if (!use) return;
+  const original = use.getAttribute("href");
+  window.clearTimeout(button.copiedTimer);
+  use.setAttribute("href", "#icon-check");
+  button.classList.add("done");
+  button.copiedTimer = window.setTimeout(() => {
+    use.setAttribute("href", original);
+    button.classList.remove("done");
+  }, 1200);
+}
+
+function copyText(value, label, button) {
   if (!value || value === "—") return;
   navigator.clipboard.writeText(value).then(
-    () => toast(`${label}已复制`),
+    () => {
+      toast(`${label}已复制`);
+      flashCopied(button);
+    },
     () => toast("复制失败", "error"),
   );
 }
@@ -2961,6 +3329,12 @@ async function init() {
   syncSidebarControls();
   syncPageInert();
   showSettingsPage(document.querySelector("#set-tabs .on")?.dataset.set || "general");
+  applyReadSize(readSizePreference(), { persist: false });
+  measureScrollbarWidth();
+  window.addEventListener("resize", () => {
+    if (state.barFrame) cancelAnimationFrame(state.barFrame);
+    state.barFrame = requestAnimationFrame(measureScrollbarWidth);
+  });
   bindEvents();
   renderMemoryLoading();
   applyTheme();

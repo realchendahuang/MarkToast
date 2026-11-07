@@ -143,6 +143,7 @@
           <svg class="ic"><use href="#icon-search"></use></svg>
         </button>
         <input id="global-search" type="search" placeholder="搜索" autocomplete="off" spellcheck="false" aria-label="搜索记忆" tabindex="-1" />
+        <kbd class="search-kbd" id="search-kbd" aria-hidden="true">⌘K</kbd>
         <button class="search-clear" id="search-clear" type="button" aria-label="清空搜索" hidden>
           <svg class="ic"><use href="#icon-close"></use></svg>
         </button>
@@ -231,25 +232,27 @@
         </div>
 
         <div class="filters" aria-label="记忆筛选">
-          <label class="filter-control">
-            <select id="project-filter" aria-label="项目筛选">
-              <option value="">全部项目</option>
-            </select>
+          <button class="filter-control filter-button" id="project-filter-button" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="project-filter">
+            <b id="project-filter-label">全部项目</b>
             <svg class="ic"><use href="#icon-chevron-down"></use></svg>
-          </label>
-          <label class="filter-control">
-            <select id="type-filter" aria-label="类型筛选">
-              <option value="">全部类型</option>
-              <option value="user">用户</option>
-              <option value="feedback">反馈</option>
-              <option value="project">项目</option>
-              <option value="reference">参考</option>
-              <option value="decision">决策</option>
-            </select>
+          </button>
+          <button class="filter-control filter-button" id="type-filter-button" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="type-filter">
+            <b id="type-filter-label">全部类型</b>
             <svg class="ic"><use href="#icon-chevron-down"></use></svg>
-          </label>
+          </button>
+          <select id="project-filter" class="sr-only" aria-hidden="true" tabindex="-1">
+            <option value="">全部项目</option>
+          </select>
+          <select id="type-filter" class="sr-only" aria-hidden="true" tabindex="-1">
+            <option value="">全部类型</option>
+            <option value="user">用户</option>
+            <option value="feedback">反馈</option>
+            <option value="project">项目</option>
+            <option value="reference">参考</option>
+            <option value="decision">决策</option>
+          </select>
           <div class="filter-push"></div>
-          <button class="filter-control sort-control" id="sort-button" type="button" aria-label="切换排序">
+          <button class="filter-control sort-control filter-button" id="sort-button" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="切换排序">
             <b id="sort-label">相关度</b>
             <svg class="ic"><use href="#icon-chevron-down"></use></svg>
           </button>
@@ -322,6 +325,18 @@
                 <span class="thumb" aria-hidden="true"></span>
                 <button type="button" class="opt" data-lang="zh" aria-pressed="true">中文</button>
                 <button type="button" class="opt" data-lang="en" aria-pressed="false">English</button>
+              </div>
+            </div>
+            <div class="row pref">
+              <div class="who">
+                <div class="name">阅读字号</div>
+                <div class="sub">一篇记忆正文的字号，标题跟着一起放大</div>
+              </div>
+              <div class="segs" id="read-size-switch" role="group" aria-label="阅读字号">
+                <span class="thumb" aria-hidden="true"></span>
+                <button type="button" class="opt" data-read-choice="s" aria-pressed="false">小</button>
+                <button type="button" class="opt is-default" data-read-choice="m" aria-pressed="true">标准</button>
+                <button type="button" class="opt" data-read-choice="l" aria-pressed="false">大</button>
               </div>
             </div>
           </div>
