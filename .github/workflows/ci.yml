@@ -32,8 +32,25 @@ jobs:
       - name: Verify Go module checksums
         run: go mod verify
 
-      - name: Format, tidy, vet, race test, and build
-        run: make fmt-check tidy-check vet test-race build
+      # The desktop shell imports Wails v3, whose Linux backend needs GTK4 and
+      # webkitgtk-6.0 development headers that the runner does not carry. It is
+      # macOS-only for now anyway, so the cross-platform packages are vetted,
+      # raced and built here and the shell is left to the macOS job below.
+      - name: Format and module checks
+        run: make fmt-check tidy-check
+
+      - name: Vet the cross-platform packages
+        run: |
+          packages="$(go list ./... | grep -v 'cmd/marktoast-desktop')"
+          go vet $packages
+
+      - name: Race tests
+        run: |
+          packages="$(go list ./... | grep -v 'cmd/marktoast-desktop')"
+          go test -race $packages
+
+      - name: Build the CLI
+        run: go build ./cmd/marktoast
 
       - name: Check frontend JavaScript syntax
         run: |
