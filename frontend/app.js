@@ -57,6 +57,7 @@ const state = {
   searchTimer: 0,
   searchGeneration: 0,
   requestId: 0,
+  newFrom: 0,
   lastFocus: null,
 };
 
@@ -338,7 +339,11 @@ function hideHubAlert() {
 }
 
 function toast(message, kind = "success") {
-  const node = element("div", `toast${kind === "error" ? " is-error" : ""}`);
+  if (kind !== "error") {
+    showStatusPill(message, kind);
+    return;
+  }
+  const node = element("div", "toast is-error");
   node.appendChild(icon(kind === "error" ? "warning" : "check"));
   node.appendChild(element("span", "", message));
   $("toast-region").appendChild(node);
@@ -399,7 +404,9 @@ function closePopMenu({ restoreFocus = false } = {}) {
   if (!current) return;
   popMenu = null;
   current.anchor.setAttribute("aria-expanded", "false");
-  current.pop.remove();
+  current.pop.classList.add("leaving");
+  const leaving = current.pop;
+  window.setTimeout(() => leaving.remove(), 200);
   document.removeEventListener("pointerdown", current.onOutside, true);
   document.removeEventListener("scroll", current.onDismiss, true);
   window.removeEventListener("resize", current.onDismiss);
@@ -448,6 +455,7 @@ function openPopMenu(anchor, config) {
       meta.dataset.noI18n = "true";
       row.appendChild(meta);
     }
+    row.style.setProperty("--i", String(Math.min(index, 10)));
     row.addEventListener("click", () => {
       closePopMenu({ restoreFocus: true });
       config.onPick(item.value);
@@ -524,10 +532,17 @@ function openPopMenu(anchor, config) {
     Math.max(10, window.innerWidth - size.width - 10),
   );
   let top = Math.round(rect.bottom + gap);
-  if (top + size.height > window.innerHeight - 10) top = Math.max(10, Math.round(rect.top - gap - size.height));
+  let opensUp = false;
+  if (top + size.height > window.innerHeight - 10) {
+    top = Math.max(10, Math.round(rect.top - gap - size.height));
+    opensUp = true;
+  }
   pop.style.left = `${left}px`;
   pop.style.top = `${top}px`;
   pop.style.minWidth = `${Math.round(Math.max(rect.width, 180))}px`;
+  pop.style.setProperty("--ox", `${Math.round(rect.left + rect.width / 2 - left)}px`);
+  pop.style.setProperty("--oy", opensUp ? "bottom" : "top");
+  pop.style.setProperty("--pop-dy", opensUp ? "6px" : "-6px");
 
   const onOutside = (event) => {
     if (pop.contains(event.target) || anchor.contains(event.target)) return;
@@ -540,6 +555,9 @@ function openPopMenu(anchor, config) {
   document.addEventListener("pointerdown", onOutside, true);
   document.addEventListener("scroll", onDismiss, true);
   window.addEventListener("resize", onDismiss);
+  window.setTimeout(() => {
+    rows.forEach((row) => row.classList.add("settled"));
+  }, 280);
   anchor.setAttribute("aria-expanded", "true");
   popMenu = { anchor, pop, onOutside, onDismiss };
 
@@ -652,9 +670,23 @@ function openSortMenu() {
   });
 }
 
+function flash(node) {
+  if (!node) return;
+  node.classList.remove("flash");
+  void node.offsetWidth;
+  node.classList.add("flash");
+  window.setTimeout(() => node.classList.remove("flash"), 1300);
+}
+
 /* ---- reading size ------------------------------------------------------ */
 const READ_SIZE_KEY = "marktoast-read-size";
 const READ_SIZES = ["s", "m", "l"];
+
+function stepReadSize(delta) {
+  const index = Math.max(0, READ_SIZES.indexOf(readSizePreference()));
+  const next = READ_SIZES[Math.min(READ_SIZES.length - 1, Math.max(0, index + delta))];
+  applyReadSize(next);
+}
 
 function readSizePreference() {
   try {
@@ -695,6 +727,399 @@ function wallColumns(cards) {
   return Math.max(1, count);
 }
 
+/* ---- Sidebar mechanics: magpie's width, bar and torch -------------------
+   The sidebar is the part of a Mac app that people feel: an edge they can
+   drag, a thin bar that shows only while the list scrolls, and the row under
+   the pointer lit as by a torch. All three are borrowed from magpie's. */
+const SIDE_WIDTH_KEY = "marktoast-side-w";
+const SIDE_MIN = 168;
+const SIDE_MAX = 320;
+let sideWidthValue = 0;
+try {
+  sideWidthValue = Math.round(Number(localStorage.getItem(SIDE_WIDTH_KEY) || 0)) || 0;
+} catch (error) {}
+
+function sideFitWidth(width) {
+  const room = Math.max(SIDE_MIN, Math.min(SIDE_MAX, Math.round(window.innerWidth * 0.36)));
+  return Math.round(Math.max(SIDE_MIN, Math.min(Number(width) || SIDE_MIN, room)));
+}
+
+function applySideWidth() {
+  if (sideWidthValue) document.body.style.setProperty("--side-w", `${sideFitWidth(sideWidthValue)}px`);
+  const edge = $("side-edge");
+  const sidebar = document.querySelector(".sidebar");
+  if (!edge || !sidebar) return;
+  edge.setAttribute("aria-valuenow", String(Math.round(sidebar.getBoundingClientRect().width)));
+  edge.setAttribute("aria-valuemax", String(sideFitWidth(SIDE_MAX)));
+  positionSideBars();
+}
+
+function keepSideWidth(width) {
+  sideWidthValue = sideFitWidth(width);
+  try {
+    localStorage.setItem(SIDE_WIDTH_KEY, String(sideWidthValue));
+  } catch (error) {}
+  applySideWidth();
+}
+
+function toggleSidebarCollapsed() {
+  const button = document.getElementById("side-toggle");
+  if (button) button.click();
+}
+
+function initSidebarEdge() {
+  const edge = $("side-edge");
+  const sidebar = document.querySelector(".sidebar");
+  if (!edge || !sidebar) return;
+  edge.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    edge.setPointerCapture(event.pointerId);
+    document.body.classList.add("side-drag");
+    const from = sidebar.getBoundingClientRect().width - event.clientX;
+    let width = 0;
+    const finish = () => {
+      edge.removeEventListener("pointermove", move);
+      edge.removeEventListener("pointerup", finish);
+      edge.removeEventListener("pointercancel", finish);
+      if (edge.hasPointerCapture(event.pointerId)) edge.releasePointerCapture(event.pointerId);
+      document.body.classList.remove("side-drag");
+      if (width) keepSideWidth(width);
+    };
+    const move = (moveEvent) => {
+      const want = from + moveEvent.clientX;
+      // dragged well past its narrowest, it folds away, as a Mac app's does
+      if (want < SIDE_MIN - 64) {
+        width = 0;
+        finish();
+        applySideWidth();
+        toggleSidebarCollapsed();
+        return;
+      }
+      width = sideFitWidth(want);
+      document.body.style.setProperty("--side-w", `${width}px`);
+      positionSideBars();
+    };
+    edge.addEventListener("pointermove", move);
+    edge.addEventListener("pointerup", finish);
+    edge.addEventListener("pointercancel", finish);
+  });
+  edge.addEventListener("keydown", (event) => {
+    const step = event.shiftKey ? 32 : 8;
+    const delta = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
+    if (!delta || document.body.classList.contains("side-collapsed")) return;
+    event.preventDefault();
+    keepSideWidth(sidebar.getBoundingClientRect().width + delta);
+  });
+}
+
+const sideBars = [];
+
+function attachSideBar(box) {
+  const sidebar = document.querySelector(".sidebar");
+  if (!box || !sidebar) return;
+  const bar = element("div", "side-bar");
+  bar.setAttribute("aria-hidden", "true");
+  bar.hidden = true;
+  const thumb = element("i");
+  bar.appendChild(thumb);
+  sidebar.appendChild(bar);
+  let fadeTimer = 0;
+  const place = () => {
+    const height = box.clientHeight;
+    const total = box.scrollHeight;
+    bar.hidden = !height || total <= height + 1;
+    if (bar.hidden) return;
+    bar.style.top = `${box.offsetTop}px`;
+    bar.style.height = `${height}px`;
+    const thumbHeight = Math.max(24, Math.round(height * height / total));
+    const y = Math.round((height - thumbHeight) * box.scrollTop / (total - height));
+    thumb.style.height = `${thumbHeight}px`;
+    thumb.style.transform = `translateY(${y}px)`;
+  };
+  const rest = () => {
+    window.clearTimeout(fadeTimer);
+    fadeTimer = window.setTimeout(() => {
+      if (!bar.matches(":hover") && !bar.classList.contains("drag")) bar.classList.remove("on");
+    }, 900);
+  };
+  box.addEventListener("scroll", () => {
+    place();
+    if (bar.hidden) return;
+    bar.classList.add("on");
+    rest();
+  }, { passive: true });
+  bar.addEventListener("pointerleave", rest);
+  // a press on the track pages toward it, as a Mac's bar does
+  bar.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    if (event.target !== thumb) {
+      const rect = thumb.getBoundingClientRect();
+      box.scrollTop += (event.clientY < rect.top ? -1 : 1) * box.clientHeight * 0.9;
+      return;
+    }
+    bar.setPointerCapture(event.pointerId);
+    bar.classList.add("drag");
+    const startY = event.clientY;
+    const startTop = box.scrollTop;
+    const per = (box.scrollHeight - box.clientHeight) / Math.max(1, box.clientHeight - thumb.offsetHeight);
+    const end = () => {
+      bar.removeEventListener("pointermove", move);
+      bar.removeEventListener("pointerup", end);
+      bar.removeEventListener("pointercancel", end);
+      if (bar.hasPointerCapture(event.pointerId)) bar.releasePointerCapture(event.pointerId);
+      bar.classList.remove("drag");
+      rest();
+    };
+    const move = (moveEvent) => {
+      box.scrollTop = startTop + (moveEvent.clientY - startY) * per;
+    };
+    bar.addEventListener("pointermove", move);
+    bar.addEventListener("pointerup", end);
+    bar.addEventListener("pointercancel", end);
+  });
+  const observer = new ResizeObserver(place);
+  observer.observe(box);
+  sideBars.push({ bar, place });
+}
+
+function positionSideBars() {
+  sideBars.forEach((entry) => entry.place());
+}
+
+/* the row under the pointer lights as a torch, then fades as it moves on */
+function initNavLamp() {
+  const sidebar = document.querySelector(".sidebar");
+  if (!sidebar) return;
+  document.documentElement.classList.add("navlamp");
+  const lit = new Map();
+  let at = null;
+  let targetX = 0;
+  let x = 0;
+  let frame = 0;
+  const calm = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const tick = () => {
+    frame = 0;
+    const still = calm();
+    const row = at && at.isConnected && !at.parentElement.classList.contains("is-active") ? at : null;
+    if (row && !lit.has(row)) lit.set(row, 0);
+    x = still ? targetX : x + (targetX - x) * 0.22;
+    let busy = Math.abs(targetX - x) > 0.3;
+    for (const [node, value] of lit) {
+      const to = node === row ? 1 : 0;
+      const now = still ? to : value + (to - value) * (to > value ? 0.22 : 0.1);
+      if (!to && (now < 0.01 || !node.isConnected)) {
+        lit.delete(node);
+        node.classList.remove("lit");
+        node.style.removeProperty("--si");
+        node.style.removeProperty("--lx");
+        continue;
+      }
+      if (Math.abs(to - now) > 0.002) busy = true;
+      lit.set(node, now);
+      node.classList.add("lit");
+      node.style.setProperty("--si", now.toFixed(3));
+      node.style.setProperty("--lx", `${(x - node.getBoundingClientRect().left).toFixed(1)}px`);
+    }
+    if (busy) frame = requestAnimationFrame(tick);
+  };
+  const go = () => {
+    if (!frame) frame = requestAnimationFrame(tick);
+  };
+  sidebar.addEventListener("pointermove", (event) => {
+    if (event.pointerType === "touch") return;
+    const row = event.target && event.target.closest ? event.target.closest(".side-row") : null;
+    const word = row && row.querySelector(".side-name");
+    if (word && !at) x = event.clientX;
+    targetX = event.clientX;
+    at = word || null;
+    if (at || lit.size) go();
+  }, { passive: true });
+  sidebar.addEventListener("pointerleave", () => {
+    at = null;
+    go();
+  });
+}
+
+/* ---- the app's own tooltip, in place of the system's slow `title` ------ */
+const TIP_KEYCAPS = {
+  "search-toggle": "⌘K",
+  "open-settings": "⌘,",
+  "side-toggle": "⌃⌘S",
+  "side-toggle-top": "⌃⌘S",
+};
+let tipBox = null;
+let tipTimer = 0;
+let tipOwner = null;
+let tipShownAt = 0;
+
+function tooltipButton(node) {
+  const button = node && node.closest ? node.closest("button") : null;
+  if (!button || button.disabled || !button.querySelector(".ic")) return null;
+  if (button.textContent.trim()) return null;
+  return button.getAttribute("aria-label") || button.getAttribute("title") ? button : null;
+}
+
+function hideTip() {
+  window.clearTimeout(tipTimer);
+  tipTimer = 0;
+  if (tipBox) tipBox.classList.remove("on");
+  if (tipOwner && tipOwner.dataset.tipTitle) {
+    tipOwner.setAttribute("title", tipOwner.dataset.tipTitle);
+    delete tipOwner.dataset.tipTitle;
+  }
+  tipOwner = null;
+}
+
+function showTip(button) {
+  if (!button || !button.isConnected) return;
+  if (!tipBox) {
+    tipBox = element("div", "tooltip");
+    tipBox.id = "app-tooltip";
+    tipBox.setAttribute("role", "tooltip");
+    tipBox.setAttribute("aria-hidden", "true");
+    document.body.appendChild(tipBox);
+  }
+  const label = button.getAttribute("aria-label") || button.getAttribute("title") || "";
+  if (!label) return;
+  // take the native title out of the way, so two tooltips never show at once
+  if (!button.dataset.tipTitle && button.getAttribute("title")) {
+    button.dataset.tipTitle = button.getAttribute("title");
+    button.removeAttribute("title");
+  }
+  tipOwner = button;
+  clear(tipBox);
+  tipBox.appendChild(element("span", "", label));
+  const cap = TIP_KEYCAPS[button.id];
+  if (cap) tipBox.appendChild(element("kbd", "", cap));
+  const rect = button.getBoundingClientRect();
+  tipBox.classList.add("on");
+  const size = tipBox.getBoundingClientRect();
+  const left = Math.round(Math.min(
+    Math.max(10, rect.left + rect.width / 2 - size.width / 2),
+    window.innerWidth - size.width - 10,
+  ));
+  let top = Math.round(rect.bottom + 7);
+  if (top + size.height > window.innerHeight - 10) top = Math.round(rect.top - size.height - 7);
+  tipBox.style.left = `${left}px`;
+  tipBox.style.top = `${top}px`;
+  tipShownAt = performance.now();
+}
+
+function initTooltip() {
+  document.addEventListener("pointerover", (event) => {
+    if (event.pointerType === "touch") return;
+    const button = tooltipButton(event.target);
+    if (!button || button === tipOwner) return;
+    hideTip();
+    if (performance.now() - tipShownAt < 400) showTip(button);
+    else tipTimer = window.setTimeout(() => showTip(button), 450);
+  });
+  document.addEventListener("pointerout", (event) => {
+    const button = tooltipButton(event.target);
+    if (!button || (event.relatedTarget && button.contains(event.relatedTarget))) return;
+    hideTip();
+  });
+  document.addEventListener("focusin", (event) => {
+    const button = tooltipButton(event.target);
+    if (button) showTip(button);
+  });
+  document.addEventListener("focusout", hideTip);
+  document.addEventListener("pointerdown", hideTip, true);
+  document.addEventListener("keydown", hideTip, true);
+  document.addEventListener("scroll", hideTip, true);
+  window.addEventListener("blur", hideTip);
+}
+
+/* ---- one way back up and down a long page ------------------------------ */
+function initScrollEnds() {
+  const box = element("div", "view-ends");
+  const up = element("button", "ve-up");
+  up.type = "button";
+  up.title = "回到顶部";
+  up.setAttribute("aria-label", "回到顶部");
+  up.appendChild(icon("chevron-up"));
+  const down = element("button", "ve-down");
+  down.type = "button";
+  down.title = "滚到底部";
+  down.setAttribute("aria-label", "滚到底部");
+  down.appendChild(icon("chevron-down"));
+  box.append(up, element("span", "ve-sep"), down);
+  document.body.appendChild(box);
+
+  const scroller = () => {
+    const detail = $("detail-content");
+    if (detail && memoryDetailOpen()) return detail;
+    return document.querySelector(".view");
+  };
+  const paint = () => {
+    const node = scroller();
+    const dialog = document.querySelector(".detail-dialog");
+    if (memoryDetailOpen() && dialog) {
+      if (box.parentElement !== dialog) dialog.appendChild(box);
+      box.classList.add("in-dialog");
+    } else {
+      if (box.parentElement !== document.body) document.body.appendChild(box);
+      box.classList.remove("in-dialog");
+    }
+    if (!node) {
+      box.classList.remove("on");
+      return;
+    }
+    const room = node.scrollHeight - node.clientHeight;
+    const held = box.contains(document.activeElement) || box.matches(":hover");
+    const on = room > node.clientHeight * 0.6 && node.scrollTop > node.clientHeight * 0.6;
+    if (!on && !held) {
+      box.classList.remove("on");
+      return;
+    }
+    box.classList.add("on");
+    up.setAttribute("aria-disabled", String(node.scrollTop <= 2));
+    down.setAttribute("aria-disabled", String(node.scrollTop + node.clientHeight >= node.scrollHeight - 2));
+  };
+  const roll = (toBottom) => {
+    const node = scroller();
+    if (!node) return;
+    node.scrollTo({
+      top: toBottom ? node.scrollHeight : 0,
+      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
+  };
+  up.addEventListener("click", () => roll(false));
+  down.addEventListener("click", () => roll(true));
+  // The capture listener covers the page; the open sheet is wired again
+  // below, because its scroll does not always reach a document listener.
+  document.addEventListener("scroll", paint, true);
+  window.addEventListener("resize", paint);
+  return paint;
+}
+
+/* ---- one outcome, centred, as magpie's status ------------------------- */
+function showStatusPill(message, kind = "success") {
+  let region = $("status-region");
+  if (!region) {
+    region = element("div", "status-region");
+    region.id = "status-region";
+    region.setAttribute("role", "status");
+    region.setAttribute("aria-live", "polite");
+    document.body.appendChild(region);
+  }
+  clear(region);
+  const pill = element("div", "status-pill");
+  pill.appendChild(icon(kind === "warning" ? "warning" : "check"));
+  pill.appendChild(element("span", "", message));
+  region.appendChild(pill);
+  window.clearTimeout(showStatusPill.timer);
+  showStatusPill.timer = window.setTimeout(() => {
+    pill.style.transition = "opacity .18s var(--ease)";
+    pill.style.opacity = "0";
+    window.setTimeout(() => {
+      if (region.contains(pill)) pill.remove();
+    }, 220);
+  }, 2600);
+}
+
 async function loadStatus({ announce = false } = {}) {
   setHubState("", "正在连接本地 hub");
   try {
@@ -712,6 +1137,7 @@ async function loadStatus({ announce = false } = {}) {
     $("repo-status").title = data.root || "";
     renderProjects(data.projects || []);
     renderProjectOptions(data.projects || []);
+    requestAnimationFrame(positionSideBars);
     if (announce) toast("已连接到本地 hub");
     return data;
   } catch (error) {
@@ -1009,6 +1435,7 @@ async function loadMemories({ preserveSelection = true, silent = false, append =
     state.limit = limit;
     state.offset = responseOffset + receivedCount;
     state.hasMore = totalKnown ? state.offset < totalNumber : receivedCount >= limit;
+    state.newFrom = append ? previousCount : 0;
     if (append && (receivedCount === 0 || merged.length === previousCount)) state.hasMore = false;
 
     const selectedCanStay = Boolean(
@@ -1069,6 +1496,8 @@ function appendLoadMoreButton() {
 }
 
 function renderMemories() {
+  const newFrom = state.newFrom || 0;
+  state.newFrom = 0;
   clear(els.resultRegion);
   els.resultTotal.textContent = state.totalKnown ? String(state.total) : String(state.results.length);
   if (!state.selectedPath) hideMemoryDetail();
@@ -1085,7 +1514,7 @@ function renderMemories() {
   }
 
   const grid = element("div", "memory-grid");
-  state.results.forEach((result) => {
+  state.results.forEach((result, index) => {
     const open = result.path === state.selectedPath;
     const type = result.type || "memory";
     const card = element("button", `memory-card type-${type}${open ? " is-open" : ""}`);
@@ -1120,6 +1549,10 @@ function renderMemories() {
     foot.append(project, openIcon);
     card.appendChild(foot);
 
+    if (newFrom && index >= newFrom) {
+      card.classList.add("is-new");
+      card.style.setProperty("--i", String(Math.min(index - newFrom, 12)));
+    }
     card.addEventListener("click", () => selectMemory(result.path));
     grid.appendChild(card);
   });
@@ -1194,6 +1627,7 @@ function memoryDetailOpen() {
 function hideMemoryDetail() {
   if (els.detailModal && !els.detailModal.hidden) hideModal(els.detailModal);
   state.detailLoading = false;
+  requestAnimationFrame(() => window.paintScrollEnds?.());
 }
 
 function renderMemoryDetail() {
@@ -1206,9 +1640,16 @@ function renderMemoryDetail() {
   }
   clear(els.detailContent);
   els.detailContent.appendChild(renderExpandedMemory(result));
+  if (els.detailContent.dataset.endsWired !== "1") {
+    els.detailContent.dataset.endsWired = "1";
+    els.detailContent.addEventListener("scroll", () => {
+      requestAnimationFrame(() => window.paintScrollEnds?.());
+    }, { passive: true });
+  }
   if (state.detailScrollPath !== path) {
     state.detailScrollPath = path;
     els.detailContent.scrollTop = 0;
+    requestAnimationFrame(() => window.paintScrollEnds?.());
   }
 }
 
@@ -2374,6 +2815,12 @@ function showSettingsPage(name) {
   document.querySelectorAll("#view-settings .set-page").forEach((page) => {
     page.hidden = page.id !== `setPage-${target}`;
   });
+  const openPage = document.getElementById(`setPage-${target}`);
+  if (openPage) {
+    [...openPage.querySelectorAll(".row.pref")].forEach((row, index) => {
+      row.style.setProperty("--i", String(Math.min(index, 10)));
+    });
+  }
   requestAnimationFrame(positionSetThumbs);
 }
 
@@ -2429,6 +2876,10 @@ function switchView(view, { autoLoadMemories = true } = {}) {
   positionSegThumb();
   const viewport = document.querySelector(".view");
   if (viewport) viewport.scrollTop = 0;
+  requestAnimationFrame(() => {
+    window.paintScrollEnds?.();
+    positionSideBars();
+  });
   $("all-memories")?.classList.toggle("is-active", view === "memories" && !state.project);
   document.querySelectorAll(".project-row").forEach((row) => {
     row.classList.toggle("is-active", view === "memories" && Boolean(state.project) && row.dataset.project === state.project);
@@ -2818,6 +3269,32 @@ function bindEvents() {
       }
       return;
     }
+    if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && (event.key === "," || event.code === "Comma")) {
+      if (isAnyModalOpen()) return;
+      event.preventDefault();
+      switchView("settings");
+      return;
+    }
+    if (event.metaKey && event.ctrlKey && event.key.toLowerCase() === "s") {
+      event.preventDefault();
+      toggleSidebarCollapsed();
+      return;
+    }
+    if ((event.metaKey || event.ctrlKey) && !event.altKey && (event.key === "+" || event.key === "=")) {
+      event.preventDefault();
+      stepReadSize(1);
+      return;
+    }
+    if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key === "-") {
+      event.preventDefault();
+      stepReadSize(-1);
+      return;
+    }
+    if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key === "0") {
+      event.preventDefault();
+      applyReadSize("m");
+      return;
+    }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
       if (isAnyModalOpen()) return;
       event.preventDefault();
@@ -3120,6 +3597,7 @@ async function saveAliases() {
     renderAliasList(state.settings);
     renderProjects(state.status?.projects || []);
     renderProjectOptions(state.status?.projects || []);
+    flash($("save-aliases")?.closest(".row.pref"));
     updateHeading();
     if (state.view === "memories") renderMemories();
     toast("已保存");
@@ -3162,6 +3640,7 @@ async function backupNow() {
     $("settings-backup").textContent = data.path || "—";
     $("settings-backup").title = data.path || "";
     toast("备份已创建");
+    flash($("backup-now")?.closest(".row.pref"));
   } catch (error) {
     toast(formatError(error), "error");
   } finally {
@@ -3175,6 +3654,7 @@ async function rebuildIndex() {
   try {
     const data = await api("/api/reindex", { method: "POST", timeoutMs: 120_000 });
     toast(`索引已重建 · ${data.facts || 0} 条`);
+    flash($("reindex")?.closest(".row.pref"));
     await loadSettings();
     await loadStatus();
     if (state.view === "memories") loadMemories();
@@ -3309,6 +3789,7 @@ async function restoreMemoryVersion(path, hash) {
     });
     state.details.delete(path);
     toastDataResult(result, "已恢复");
+    flash(document.querySelector(`.memory-card[data-path="${CSS.escape(path)}"]`));
     await selectMemory(path, true);
     const data = await api(`/api/memory/history?path=${encodeURIComponent(path)}`);
     history.commits = data.commits || [];
@@ -3331,6 +3812,13 @@ async function init() {
   showSettingsPage(document.querySelector("#set-tabs .on")?.dataset.set || "general");
   applyReadSize(readSizePreference(), { persist: false });
   measureScrollbarWidth();
+  applySideWidth();
+  initSidebarEdge();
+  attachSideBar(document.querySelector(".side-scroll"));
+  attachSideBar($("project-list"));
+  initNavLamp();
+  initTooltip();
+  window.paintScrollEnds = initScrollEnds();
   window.addEventListener("resize", () => {
     if (state.barFrame) cancelAnimationFrame(state.barFrame);
     state.barFrame = requestAnimationFrame(measureScrollbarWidth);
