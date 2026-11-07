@@ -31,6 +31,7 @@ const state = {
   limit: MEMORY_PAGE_SIZE,
   loadingMore: false,
   selectedPath: "",
+  detailScrollPath: "",
   details: new Map(),
   detailErrors: new Map(),
   detailLoading: false,
@@ -83,7 +84,6 @@ const els = {
   adapterDialogBody: $("adapter-dialog-body"),
   adapterDialogAction: $("adapter-dialog-action"),
   detailContent: $("detail-content"),
-  detailTitle: $("detail-title"),
   form: $("memory-form"),
   formError: $("form-error"),
   submit: $("submit-memory"),
@@ -794,8 +794,9 @@ function renderMemories() {
     title.dataset.noI18n = "true";
     card.appendChild(title);
 
-    const snippet = element("div", "card-snippet", result.description || cleanSnippet(result.snippet) || shortPath(result.path));
+    const snippet = element("div", "card-snippet");
     snippet.dataset.noI18n = "true";
+    renderCardPreview(snippet, result);
     card.appendChild(snippet);
 
     const foot = element("div", "card-foot");
@@ -815,6 +816,37 @@ function renderMemories() {
   els.resultRegion.appendChild(grid);
   appendLoadMoreButton();
   if (memoryDetailOpen()) renderMemoryDetail();
+}
+
+const CARD_PREVIEW_CHARS = 360;
+
+function renderCardPreview(container, result) {
+  const source = String(result.preview || result.description || cleanSnippet(result.snippet) || shortPath(result.path) || "");
+  const text = source
+    .split("\n")
+    .map(cardPreviewLine)
+    .filter((line) => line.trim())
+    .join(" ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  renderInline(container, text.slice(0, CARD_PREVIEW_CHARS));
+}
+
+function cardPreviewLine(line) {
+  let text = String(line || "").replace(/^\s{0,3}#{1,6}\s+/, "");
+  if (!text.trim()) return "";
+  if (/^\s*[|:\-\s]+$/.test(text) && text.includes("-")) return "";
+  if (text.includes("|")) {
+    const cells = text
+      .replace(/^\s*\|/, "")
+      .replace(/\|\s*$/, "")
+      .split("|")
+      .map((cell) => cell.trim())
+      .filter(Boolean);
+    if (cells.length > 1) return cells.join(" · ");
+  }
+  text = text.replace(/^\s{0,3}>\s?/, "").replace(/^\s*(?:[-*+])\s+/, "· ").replace(/^\s*(\d+)[.)]\s+/, "$1. ");
+  return text;
 }
 
 function isAnyModalOpen() {
@@ -862,15 +894,12 @@ function renderMemoryDetail() {
     hideMemoryDetail();
     return;
   }
-  const detail = state.details.get(path);
-  const title = (detail && detail.name) || result.name || fileName(path);
-  if (els.detailTitle) {
-    els.detailTitle.dataset.noI18n = "true";
-    els.detailTitle.textContent = title;
-    els.detailTitle.title = path || title;
-  }
   clear(els.detailContent);
   els.detailContent.appendChild(renderExpandedMemory(result));
+  if (state.detailScrollPath !== path) {
+    state.detailScrollPath = path;
+    els.detailContent.scrollTop = 0;
+  }
 }
 
 function openMemoryDetail() {
@@ -900,7 +929,7 @@ function cleanSnippet(snippet) {
 }
 
 function renderExpandedMemory(result) {
-  const box = element("div", "memory-expanded");
+  const box = element("div", "memory-document");
   if (state.detailLoading) {
     box.classList.add("loading");
     const loading = element("div", "detail-loading");
@@ -936,53 +965,87 @@ function renderExpandedMemory(result) {
     return box;
   }
 
-  const meta = element("div", "expanded-meta");
+  const path = detail.path || result.path;
   const type = detail.type || result.type || "memory";
+  const header = element("header", "doc-head");
+
+  const meta = element("div", "doc-meta");
   const typePill = element("span", `pill type-pill type-${type}`, typeLabel(type));
   typePill.title = type;
   meta.appendChild(typePill);
   if (detail.project || result.project) {
-    const project = element("span", "expanded-project", projectLabel(detail.project || result.project));
+    const project = element("span", "doc-project", projectLabel(detail.project || result.project));
     project.title = detail.project || result.project;
     meta.appendChild(project);
   }
-  meta.appendChild(element("span", "expanded-time", relativeDate(detail.updated || result.updated)));
-  const path = detail.path || result.path;
-  const actions = element("div", "memory-actions");
-  const history = element("button", "icon copy-path", "");
+  meta.appendChild(element("span", "doc-time", relativeDate(detail.updated || result.updated)));
+
+  const actions = element("div", "doc-actions");
+  const history = element("button", "icon", "");
   history.type = "button";
   history.title = "版本历史";
   history.setAttribute("aria-label", "查看这条记忆的版本历史");
-  history.append(icon("branch"));
+  history.appendChild(icon("branch"));
   history.addEventListener("click", () => toggleMemoryHistory(path));
-  const copy = element("button", "icon copy-path", "");
+  const copyMd = element("button", "icon", "");
+  copyMd.type = "button";
+  copyMd.title = "复制 Markdown";
+  copyMd.setAttribute("aria-label", "复制这条记忆的 Markdown");
+  copyMd.appendChild(icon("file"));
+  copyMd.addEventListener("click", () => copyMarkdown(path));
+  const copy = element("button", "icon", "");
   copy.type = "button";
   copy.title = path;
   copy.setAttribute("aria-label", "复制记忆路径");
-  copy.append(icon("copy"));
+  copy.appendChild(icon("copy"));
   copy.addEventListener("click", () => copyPath(path));
-  actions.append(history, copy);
+  actions.append(history, copyMd, copy);
   meta.appendChild(actions);
-  box.appendChild(meta);
+  header.appendChild(meta);
+
+  const title = element("h1", "doc-title", detail.name || result.name || fileName(path));
+  title.id = "detail-title";
+  title.dataset.noI18n = "true";
+  title.title = path;
+  header.appendChild(title);
+
+  const description = String(detail.description || result.description || "").trim();
+  if (description) {
+    const lead = element("p", "doc-description", description);
+    lead.dataset.noI18n = "true";
+    header.appendChild(lead);
+  }
+  header.appendChild(element("div", "doc-rule"));
+  box.appendChild(header);
 
   const fullBody = String(detail.body || "");
-  const visibleBody = fullBody.slice(0, MAX_RENDERED_BODY_CHARS);
-  if (fullBody.length > MAX_RENDERED_BODY_CHARS) {
-    box.appendChild(element(
-      "p",
-      "body-truncation-note",
-      `正文较长，仅显示前 ${MAX_RENDERED_BODY_CHARS.toLocaleString("en-US")} 个字符。`,
-    ));
+  const body = element("div", "markdown-body doc-body");
+  renderMarkdown(body, fullBody.slice(0, MAX_RENDERED_BODY_CHARS));
+  if (!fullBody.trim()) {
+    body.appendChild(element("p", "doc-empty", "没有正文。"));
+  } else if (fullBody.length > MAX_RENDERED_BODY_CHARS) {
+    body.appendChild(element("p", "body-truncation-note", `正文较长，仅显示前 ${MAX_RENDERED_BODY_CHARS.toLocaleString("en-US")} 个字符。`));
   }
-  const body = element("div", "markdown-body");
-  renderMarkdown(body, visibleBody);
-  if (!fullBody.trim()) body.appendChild(element("p", "muted", "没有正文。"));
   box.appendChild(body);
-  const currentPath = detail.path || result.path;
-  if (state.memoryHistory.open && state.memoryHistory.path === currentPath) {
-    box.appendChild(renderMemoryHistory(currentPath));
+
+  if (state.memoryHistory.open && state.memoryHistory.path === path) {
+    box.appendChild(renderMemoryHistory(path));
   }
   return box;
+}
+
+async function copyMarkdown(path) {
+  const detail = state.details.get(path);
+  if (!detail || !detail.raw) {
+    toast("这条记忆还没加载完", "error");
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(String(detail.raw));
+    toast("Markdown 已复制到剪贴板");
+  } catch {
+    toast("复制失败，请稍后再试", "error");
+  }
 }
 
 function cacheMemoryDetail(path, detail) {
@@ -1027,111 +1090,403 @@ async function selectMemory(path, force = false) {
   }
 }
 
+// ---- Markdown -----------------------------------------------------------
+// The UI ships without dependencies, so this is a small GFM-ish renderer
+// built from DOM nodes only: memory bodies can never inject markup.
+// Blocks: headings, fenced code, tables, blockquotes, ordered/unordered
+// lists (nested, task items), horizontal rules, paragraphs.
+// Inline: bold, italic, strikethrough, code spans, links, autolinks, images.
+
+const MD_FENCE_RE = /^\s{0,3}(`{3,}|~{3,})\s*([^`\s]*)\s*$/;
+const MD_HEADING_RE = /^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/;
+const MD_RULE_RE = /^\s{0,3}(?:(\*\s*){3,}|(-\s*){3,}|(_\s*){3,})$/;
+const MD_QUOTE_RE = /^\s{0,3}>/;
+const MD_INLINE_SOURCE = "(`[^`\\n]+`|\\*\\*[^*\\n]+\\*\\*|~~[^~\\n]+~~|!\\[[^\\]\\n]*\\]\\([^)\\n]+\\)|\\[[^\\]\\n]+\\]\\([^)\\n]+\\)|\\*[^*\\s][^*\\n]*\\*|<(?:https?:\\/\\/|mailto:)[^<>\\s]+>)";
+
 function renderMarkdown(container, markdown) {
-  const lines = String(markdown || "").replace(/\r\n?/g, "\n").split("\n");
-  let index = 0;
-  while (index < lines.length) {
-    const line = lines[index];
+  renderMarkdownBlocks(container, normalizeMarkdown(markdown));
+}
+
+function normalizeMarkdown(value) {
+  const lines = String(value || "").replace(/\r\n?/g, "\n").replace(/\t/g, "    ").split("\n");
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  return lines;
+}
+
+function renderMarkdownBlocks(parent, lines) {
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
     if (!line.trim()) {
-      index += 1;
+      i += 1;
       continue;
     }
 
-    if (/^```/.test(line)) {
-      const codeLines = [];
-      index += 1;
-      while (index < lines.length && !/^```/.test(lines[index])) {
-        codeLines.push(lines[index]);
-        index += 1;
+    const fence = line.match(MD_FENCE_RE);
+    if (fence) {
+      const ch = fence[1][0];
+      const lang = fence[2] || "";
+      const closeRe = new RegExp(`^\\s{0,3}${ch}{3,}\\s*$`);
+      const code = [];
+      i += 1;
+      while (i < lines.length && !closeRe.test(lines[i])) {
+        code.push(lines[i]);
+        i += 1;
       }
-      if (index < lines.length) index += 1;
-      const pre = document.createElement("pre");
-      const code = document.createElement("code");
-      code.textContent = codeLines.join("\n");
-      pre.appendChild(code);
-      container.appendChild(pre);
+      if (i < lines.length) i += 1;
+      parent.appendChild(markdownCodeBlock(code.join("\n"), lang));
       continue;
     }
 
-    const heading = line.match(/^(#{1,6})\s+(.+)$/);
+    const heading = line.match(MD_HEADING_RE);
     if (heading) {
       const node = document.createElement(`h${heading[1].length}`);
-      appendInline(node, heading[2]);
-      container.appendChild(node);
-      index += 1;
+      renderInline(node, heading[2]);
+      parent.appendChild(node);
+      i += 1;
       continue;
     }
 
-    const unordered = line.match(/^\s*[-*+]\s+(.+)$/);
-    const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
-    if (unordered || ordered) {
-      const list = document.createElement(ordered ? "ol" : "ul");
-      while (index < lines.length) {
-        const match = ordered
-          ? lines[index].match(/^\s*\d+[.)]\s+(.+)$/)
-          : lines[index].match(/^\s*[-*+]\s+(.+)$/);
-        if (!match) break;
-        const item = document.createElement("li");
-        appendInline(item, match[1]);
-        list.appendChild(item);
-        index += 1;
-      }
-      container.appendChild(list);
+    if (MD_RULE_RE.test(line)) {
+      parent.appendChild(element("hr", "md-rule"));
+      i += 1;
       continue;
     }
 
-    const paragraphLines = [line.trim()];
-    index += 1;
-    while (index < lines.length) {
-      const current = lines[index];
-      if (
-        !current.trim() ||
-        /^```/.test(current) ||
-        /^(#{1,6})\s+/.test(current) ||
-        /^\s*[-*+]\s+/.test(current) ||
-        /^\s*\d+[.)]\s+/.test(current)
-      ) {
-        break;
-      }
-      paragraphLines.push(current.trim());
-      index += 1;
+    if (line.includes("|") && isTableSeparator(lines[i + 1])) {
+      i = renderMarkdownTable(parent, lines, i);
+      continue;
     }
-    const paragraph = document.createElement("p");
-    appendInline(paragraph, paragraphLines.join(" "));
-    container.appendChild(paragraph);
+
+    if (MD_QUOTE_RE.test(line)) {
+      const quoted = [];
+      while (i < lines.length) {
+        const current = lines[i];
+        if (!current.trim()) {
+          if (i + 1 < lines.length && MD_QUOTE_RE.test(lines[i + 1])) {
+            quoted.push("");
+            i += 1;
+            continue;
+          }
+          break;
+        }
+        if (!MD_QUOTE_RE.test(current)) break;
+        quoted.push(current.replace(/^\s{0,3}>\s?/, ""));
+        i += 1;
+      }
+      const quote = element("blockquote", "");
+      renderMarkdownBlocks(quote, quoted);
+      parent.appendChild(quote);
+      continue;
+    }
+
+    if (listMarker(line)) {
+      i = renderMarkdownList(parent, lines, i);
+      continue;
+    }
+
+    const paragraph = [line.trim()];
+    i += 1;
+    while (i < lines.length) {
+      const current = lines[i];
+      if (!current.trim()) break;
+      if (startsMarkdownBlock(current)) break;
+      if (current.includes("|") && isTableSeparator(lines[i + 1])) break;
+      paragraph.push(current.trim());
+      i += 1;
+    }
+    const node = document.createElement("p");
+    appendParagraphContent(node, paragraph);
+    parent.appendChild(node);
   }
 }
 
-function appendInline(parent, source) {
-  const pattern = /(\*\*[^*]+\*\*|`[^`\n]+`|\[[^\]\n]+\]\([^) \n]+\))/g;
-  let lastIndex = 0;
-  let match;
-  while ((match = pattern.exec(source)) !== null) {
-    if (match.index > lastIndex) {
-      parent.appendChild(document.createTextNode(source.slice(lastIndex, match.index)));
-    }
-    const token = match[0];
-    if (token.startsWith("**")) {
-      parent.appendChild(element("strong", "", token.slice(2, -2)));
-    } else if (token.startsWith("`")) {
-      parent.appendChild(element("code", "", token.slice(1, -1)));
+function startsMarkdownBlock(line) {
+  const text = line.replace(/^\s{0,3}/, "");
+  return (
+    /^(`{3,}|~{3,})/.test(text) ||
+    /^#{1,6}\s/.test(text) ||
+    /^>/.test(text) ||
+    listMarker(text) !== null ||
+    MD_RULE_RE.test(text)
+  );
+}
+
+function listMarker(line) {
+  const match = String(line || "").match(/^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/);
+  if (!match) return null;
+  if (/(^|\s)([*_-])(\s*[*_-]){1,}/.test(match[3]) && !match[3].trim()) return null;
+  return {
+    indent: match[1].replace(/\t/g, "    ").length,
+    ordered: /\d/.test(match[2]),
+    number: parseInt(match[2], 10),
+    content: match[3],
+  };
+}
+
+function indentOf(line) {
+  return String(line || "").match(/^\s*/)[0].replace(/\t/g, "    ").length;
+}
+
+function renderMarkdownList(parent, lines, start) {
+  const first = listMarker(lines[start]);
+  const list = document.createElement(first.ordered ? "ol" : "ul");
+  if (first.ordered && first.number !== 1) list.setAttribute("start", String(first.number));
+  const ordered = first.ordered;
+  const baseIndent = first.indent;
+
+  let i = start;
+  while (i < lines.length) {
+    const marker = listMarker(lines[i]);
+    if (!marker || marker.indent !== baseIndent || marker.ordered !== ordered) break;
+
+    const item = document.createElement("li");
+    const task = marker.content.match(/^\[([ xX])\]\s+(.*)$/);
+    if (task) {
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.disabled = true;
+      box.checked = task[1] !== " ";
+      box.className = "md-checkbox";
+      item.appendChild(box);
+      renderInline(item, task[2]);
     } else {
-      const linkMatch = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-      const href = linkMatch ? safeUrl(linkMatch[2]) : "";
-      if (href) {
-        const anchor = document.createElement("a");
-        anchor.href = href;
-        anchor.textContent = linkMatch[1];
-        anchor.target = "_blank";
-        anchor.rel = "noreferrer noopener";
-        parent.appendChild(anchor);
-      } else if (linkMatch) {
-        parent.appendChild(document.createTextNode(linkMatch[1]));
-      }
+      renderInline(item, marker.content);
     }
-    lastIndex = pattern.lastIndex;
+
+    i += 1;
+    const continuation = [];
+    while (i < lines.length) {
+      const current = lines[i];
+      if (!current.trim()) {
+        let next = i + 1;
+        while (next < lines.length && !lines[next].trim()) next += 1;
+        if (next < lines.length) {
+          const nextMarker = listMarker(lines[next]);
+          const nextIndent = indentOf(lines[next]);
+          if (nextMarker && nextMarker.indent === baseIndent) break;
+          if (nextIndent > baseIndent) {
+            continuation.push("");
+            i += 1;
+            continue;
+          }
+        }
+        break;
+      }
+      const currentMarker = listMarker(current);
+      if (currentMarker && currentMarker.indent <= baseIndent) break;
+      if (indentOf(current) > baseIndent) {
+        continuation.push(current);
+        i += 1;
+        continue;
+      }
+      if (startsMarkdownBlock(current)) break;
+      continuation.push(current);
+      i += 1;
+    }
+
+    if (continuation.length) {
+      const dedented = dedentLines(continuation);
+      renderMarkdownBlocks(item, dedented);
+    }
+    list.appendChild(item);
   }
-  if (lastIndex < source.length) parent.appendChild(document.createTextNode(source.slice(lastIndex)));
+
+  parent.appendChild(list);
+  return i;
+}
+
+function dedentLines(lines) {
+  const widths = lines.filter((line) => line.trim()).map((line) => indentOf(line));
+  const strip = widths.length ? Math.min(...widths) : 0;
+  if (!strip) return lines.slice();
+  return lines.map((line) => {
+    if (!line.trim()) return "";
+    let removed = 0;
+    let out = "";
+    for (const ch of line) {
+      if (removed < strip && (ch === " " || ch === "\t")) {
+        removed += ch === "\t" ? 4 : 1;
+        continue;
+      }
+      out += ch;
+    }
+    return out;
+  });
+}
+
+function appendParagraphContent(parent, lines) {
+  lines.forEach((line, index) => {
+    const hardBreak = /\s{2,}$/.test(line) || line.endsWith("\\");
+    renderInline(parent, line.replace(/\\$/, "").replace(/\s+$/, ""));
+    if (hardBreak) parent.appendChild(document.createElement("br"));
+    else if (index < lines.length - 1) {
+      const join = softBreakJoiner(lines[index], lines[index + 1]);
+      if (join) parent.appendChild(document.createTextNode(join));
+    }
+  });
+}
+
+// Chinese prose is usually hard-wrapped without spaces, so joining two CJK
+// lines with the CommonMark space would leave a visible gap in every fact.
+function softBreakJoiner(previous, next) {
+  const last = String(previous || "").trim().slice(-1);
+  const first = String(next || "").trim().charAt(0);
+  if (isCJK(last) && isCJK(first)) return "";
+  return " ";
+}
+
+function isCJK(ch) {
+  return /[\u3000-\u303f\u3400-\u4dbf\u4e00-\u9fff\uff00-\uffef]/.test(ch);
+}
+
+function isTableSeparator(line) {
+  if (!line || !line.includes("-")) return false;
+  const cells = splitTableRow(line);
+  if (!cells.length) return false;
+  return cells.every((cell) => /^:?-{1,}:?$/.test(cell.replace(/\s+/g, "")));
+}
+
+function splitTableRow(line) {
+  let text = String(line || "").trim();
+  if (text.startsWith("|")) text = text.slice(1);
+  if (text.endsWith("|")) text = text.slice(0, -1);
+  return text.split("|").map((cell) => cell.trim());
+}
+
+function tableAlignment(cell) {
+  const text = cell.replace(/\s+/g, "");
+  const left = text.startsWith(":");
+  const right = text.endsWith(":");
+  if (left && right) return "center";
+  if (right) return "right";
+  if (left) return "left";
+  return "";
+}
+
+function renderMarkdownTable(parent, lines, start) {
+  const header = splitTableRow(lines[start]);
+  const alignments = splitTableRow(lines[start + 1]).map(tableAlignment);
+  const table = element("table", "md-table");
+  const head = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  header.forEach((cell, index) => {
+    const th = document.createElement("th");
+    if (alignments[index]) th.style.textAlign = alignments[index];
+    renderInline(th, cell);
+    headRow.appendChild(th);
+  });
+  head.appendChild(headRow);
+  table.appendChild(head);
+
+  const body = document.createElement("tbody");
+  let i = start + 2;
+  while (i < lines.length && lines[i].trim() && lines[i].includes("|")) {
+    const cells = splitTableRow(lines[i]);
+    if (!cells.length) break;
+    const row = document.createElement("tr");
+    for (let column = 0; column < header.length; column += 1) {
+      const td = document.createElement("td");
+      if (alignments[column]) td.style.textAlign = alignments[column];
+      renderInline(td, cells[column] || "");
+      row.appendChild(td);
+    }
+    body.appendChild(row);
+    i += 1;
+  }
+  table.appendChild(body);
+  parent.appendChild(table);
+  return i;
+}
+
+function markdownCodeBlock(code, lang) {
+  const wrap = element("div", "md-code");
+  if (lang) wrap.appendChild(element("span", "md-code-lang", lang));
+  const pre = document.createElement("pre");
+  const node = document.createElement("code");
+  if (lang) node.className = `language-${lang}`;
+  node.textContent = code;
+  pre.appendChild(node);
+  wrap.appendChild(pre);
+  return wrap;
+}
+
+function renderInline(parent, source) {
+  const text = String(source === undefined || source === null ? "" : source);
+  const pattern = new RegExp(MD_INLINE_SOURCE, "g");
+  let cursor = 0;
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > cursor) parent.appendChild(document.createTextNode(text.slice(cursor, match.index)));
+    renderInlineToken(parent, match[0]);
+    cursor = pattern.lastIndex;
+  }
+  if (cursor < text.length) parent.appendChild(document.createTextNode(text.slice(cursor)));
+}
+
+function renderInlineToken(parent, token) {
+  if (token.startsWith("`")) {
+    parent.appendChild(element("code", "", token.slice(1, -1)));
+    return;
+  }
+  if (token.startsWith("![")) {
+    const image = token.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+    parent.appendChild(document.createTextNode(image && image[1] ? image[1] : "图片"));
+    return;
+  }
+  if (token.startsWith("[")) {
+    const link = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (!link) {
+      parent.appendChild(document.createTextNode(token));
+      return;
+    }
+    const href = safeUrl(link[2]);
+    if (!href) {
+      renderInline(parent, link[1]);
+      return;
+    }
+    const anchor = document.createElement("a");
+    anchor.href = href;
+    anchor.target = "_blank";
+    anchor.rel = "noreferrer noopener";
+    renderInline(anchor, link[1]);
+    parent.appendChild(anchor);
+    return;
+  }
+  if (token.startsWith("**")) {
+    const strong = element("strong", "");
+    renderInline(strong, token.slice(2, -2));
+    parent.appendChild(strong);
+    return;
+  }
+  if (token.startsWith("~~")) {
+    const strike = element("del", "");
+    renderInline(strike, token.slice(2, -2));
+    parent.appendChild(strike);
+    return;
+  }
+  if (token[0] === "*") {
+    const emphasis = element("em", "");
+    renderInline(emphasis, token.slice(1, -1));
+    parent.appendChild(emphasis);
+    return;
+  }
+  if (token.startsWith("<")) {
+    const url = token.slice(1, -1);
+    const href = safeUrl(url);
+    if (!href) {
+      parent.appendChild(document.createTextNode(token));
+      return;
+    }
+    const anchor = document.createElement("a");
+    anchor.href = href;
+    anchor.target = "_blank";
+    anchor.rel = "noreferrer noopener";
+    anchor.textContent = url;
+    parent.appendChild(anchor);
+    return;
+  }
+  parent.appendChild(document.createTextNode(token));
 }
 
 function safeUrl(raw) {

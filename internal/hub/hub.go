@@ -97,6 +97,7 @@ func handleSearch(w http.ResponseWriter, r *http.Request, o Options) {
 			"type":        res.Fact.Type,
 			"updated":     res.Fact.Updated.Format(time.RFC3339),
 			"snippet":     res.Snippet,
+			"preview":     memoryPreview(res.Fact.Path),
 			"score":       res.Score,
 		})
 	}
@@ -184,6 +185,10 @@ func handleMemories(w http.ResponseWriter, r *http.Request, o Options) {
 	}
 	out := make([]map[string]any, 0, len(facts))
 	for _, f := range facts {
+		preview := ""
+		if limit > 0 {
+			preview = memoryPreview(f.Path)
+		}
 		out = append(out, map[string]any{
 			"path":        f.Path,
 			"name":        f.Name,
@@ -191,11 +196,40 @@ func handleMemories(w http.ResponseWriter, r *http.Request, o Options) {
 			"project":     f.Project,
 			"type":        f.Type,
 			"updated":     f.Updated.Format(time.RFC3339),
+			"preview":     preview,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"memories": out, "count": len(out), "total": total, "offset": offset, "limit": limit,
 	})
+}
+
+// memoryPreviewRunes bounds the body excerpt the memory wall renders on a
+// card. Imported facts often carry keyword-soup descriptions, so the UI
+// previews the fact body instead of the frontmatter description.
+const memoryPreviewRunes = 420
+
+func memoryPreview(path string) string {
+	fact, err := store.ParseFile(path)
+	if err != nil {
+		return ""
+	}
+	body := strings.TrimSpace(fact.Body)
+	if body == "" {
+		return ""
+	}
+	runes := []rune(body)
+	if len(runes) <= memoryPreviewRunes {
+		return body
+	}
+	cut := string(runes[:memoryPreviewRunes])
+	if idx := strings.LastIndex(cut, "\n"); idx > 0 {
+		return strings.TrimSpace(cut[:idx])
+	}
+	if idx := strings.LastIndex(cut, " "); idx > 0 {
+		return strings.TrimSpace(cut[:idx])
+	}
+	return cut
 }
 
 func handleProjects(w http.ResponseWriter, r *http.Request, o Options) {

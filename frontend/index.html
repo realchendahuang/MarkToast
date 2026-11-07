@@ -479,16 +479,10 @@
 
   <div class="modal" id="memory-detail-modal" hidden>
     <div class="dialog detail-dialog" role="dialog" aria-modal="true" aria-labelledby="detail-title">
-      <header class="dialog-head">
-        <div class="dialog-title-wrap">
-          <svg class="logo"><use href="#icon-file"></use></svg>
-          <h2 id="detail-title" data-no-i18n>记忆</h2>
-        </div>
-        <button class="icon" id="close-detail" type="button" aria-label="关闭记忆详情">
-          <svg class="ic"><use href="#icon-close"></use></svg>
-        </button>
-      </header>
-      <div class="dialog-body detail-body" id="detail-content"></div>
+      <button class="icon detail-close" id="close-detail" type="button" aria-label="关闭记忆详情">
+        <svg class="ic"><use href="#icon-close"></use></svg>
+      </button>
+      <div class="detail-scroll" id="detail-content"></div>
     </div>
   </div>
 
