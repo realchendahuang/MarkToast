@@ -63,7 +63,7 @@ func NewMCPServer(root string) *mcp.Server {
 		Name:        "memory_get",
 		Description: "Read one memory fact by path or name, including its Markdown body.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args getArgs) (*mcp.CallToolResult, any, error) {
-		raw, fact, err := readMemory(root, args.Path, args.Name)
+		raw, fact, err := readMemory(root, args.Path, args.nameOrID())
 		if err != nil {
 			return nil, nil, err
 		}
@@ -172,6 +172,19 @@ type searchArgs struct {
 type getArgs struct {
 	Path string `json:"path,omitempty" jsonschema:"file path or repository-relative path"`
 	Name string `json:"name,omitempty" jsonschema:"fact name, when path is unknown"`
+	// ID is an alias for Name. Clients routinely call the fact name an id;
+	// accepting both keeps the tool callable instead of failing validation on
+	// an unexpected property.
+	ID string `json:"id,omitempty" jsonschema:"fact name (alias for name)"`
+}
+
+// nameOrID returns the fact name, falling back to the id alias. A client that
+// sends both is taken at its word on name.
+func (a getArgs) nameOrID() string {
+	if a.Name != "" {
+		return a.Name
+	}
+	return a.ID
 }
 
 type saveArgs struct {
@@ -201,7 +214,7 @@ func readMemory(root, path, name string) (string, store.Fact, error) {
 		return svc.ReadMemoryFile(path)
 	}
 	if name == "" {
-		return "", store.Fact{}, fmt.Errorf("path or name is required")
+		return "", store.Fact{}, fmt.Errorf("path, name or id is required")
 	}
 	facts, err := store.ListFacts(root)
 	if err != nil {
