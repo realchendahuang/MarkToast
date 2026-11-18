@@ -4,6 +4,7 @@ package hub
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,13 +26,75 @@ import (
 	"github.com/realchendahuang/MarkToast/internal/version"
 )
 
-func handleStatus(w http.ResponseWriter, r *http.Request, o Options) {
-	adapters, _ := adapter.All("")
-	facts, _, listErr := index.ListPage(o.Root, index.ListOptions{Limit: 0})
-	if listErr != nil {
-		facts, _ = store.ListFacts(o.Root)
+const (
+	// memoryPreviewRunes bounds the body excerpt the memory wall renders on a
+	// card. Imported facts often carry keyword-soup descriptions, so the UI
+	// previews the fact body instead of the frontmatter description.
+	memoryPreviewRunes = 420
+
+	maxJSONBody         = store.MaxFactBodyBytes + (2 << 20)
+	maxSmallControlBody = 4096
+	maxPaginationOffset = 1_000_000
+)
+
+var errMemoryNotFound = errors.New("memory not found")
+
+// validMemoryTypes lists the five canonical memory categories shared by the
+// Web UI, CLI, HTTP Hub and MCP tools.
+var validMemoryTypes = map[string]struct{}{
+	"user":      {},
+	"feedback":  {},
+	"project":   {},
+	"reference": {},
+	"decision":  {},
+}
+
+func normalizeMemoryType(raw, defaultIfEmpty string) (string, error) {
+	t := strings.ToLower(strings.TrimSpace(raw))
+	if t == "" {
+		return defaultIfEmpty, nil
 	}
-	counts := map[string]int{}
+	if _, ok := validMemoryTypes[t]; !ok {
+		return "", fmt.Errorf("invalid memory type %q: must be one of user, feedback, project, reference, or decision", raw)
+	}
+	return t, nil
+}
+
+// requireMethod enforces the allowed HTTP methods for an endpoint. When GET is
+// permitted, HEAD is automatically accepted per RFC 9110 §9.3.2.
+func requireMethod(w http.ResponseWriter, r *http.Request, allowed ...string) bool {
+	hasGet := false
+	for _, m := range allowed {
+		if r.Method == m {
+			return true
+		}
+		if m == http.MethodGet {
+			hasGet = true
+		}
+	}
+	if hasGet && r.Method == http.MethodHead {
+		return true
+	}
+	allowList := append([]string{}, allowed...)
+	if hasGet {
+		hasHead := false
+		for _, m := range allowList {
+			if m == http.MethodHead {
+				hasHead = true
+				break
+			}
+		}
+		if !hasHead {
+			allowList = append(allowList, http.MethodHead)
+		}
+	}
+	w.Header().Set("Allow", strings.Join(allowList, ", "))
+	writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method %s not allowed", r.Method))
+	return false
+}
+
+func projectCounts(facts []store.Fact) []map[string]any {
+	counts := make(map[string]int)
 	for _, f := range facts {
 		counts[f.Project]++
 	}
@@ -42,6 +105,18 @@ func handleStatus(w http.ResponseWriter, r *http.Request, o Options) {
 	sort.Slice(projects, func(i, j int) bool {
 		return projects[i]["key"].(string) < projects[j]["key"].(string)
 	})
+	return projects
+}
+
+func handleStatus(w http.ResponseWriter, r *http.Request, o Options) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	adapters, _ := adapter.All("")
+	facts, _, listErr := index.ListPage(o.Root, index.ListOptions{Limit: 0})
+	if listErr != nil {
+		facts, _ = store.ListFacts(o.Root)
+	}
 	adapterList := make([]map[string]any, 0, len(adapters))
 	for _, a := range adapters {
 		adapterList = append(adapterList, map[string]any{"id": a.ID, "title": a.Title, "tier": a.Tier})
@@ -64,7 +139,7 @@ func handleStatus(w http.ResponseWriter, r *http.Request, o Options) {
 		"version":  version.Version,
 		"root":     o.Root,
 		"facts":    len(facts),
-		"projects": projects,
+		"projects": projectCounts(facts),
 		"adapters": adapterList,
 		"index":    map[string]any{"facts": stats.Facts, "builtAt": stats.BuiltAt},
 		"inbox":    inboxCount(o.Root),
@@ -73,15 +148,23 @@ func handleStatus(w http.ResponseWriter, r *http.Request, o Options) {
 }
 
 func handleSearch(w http.ResponseWriter, r *http.Request, o Options) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
 	q := r.URL.Query().Get("q")
+	typ, err := normalizeMemoryType(r.URL.Query().Get("type"), "")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	limit := queryInt(r, "limit", 20, 1, 100)
-	offset := queryInt(r, "offset", 0, 0, 1<<30)
+	offset := queryInt(r, "offset", 0, 0, maxPaginationOffset)
 	results, total, err := index.SearchPage(o.Root, q, index.Options{
-		Project: r.URL.Query().Get("project"),
-		Type:    r.URL.Query().Get("type"),
+		Project: strings.TrimSpace(r.URL.Query().Get("project")),
+		Type:    typ,
 		Limit:   limit,
 		Offset:  offset,
-		Sort:    r.URL.Query().Get("sort"),
+		Sort:    strings.TrimSpace(r.URL.Query().Get("sort")),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -109,12 +192,17 @@ func handleSearch(w http.ResponseWriter, r *http.Request, o Options) {
 
 func handleMemory(w http.ResponseWriter, r *http.Request, o Options) {
 	switch r.Method {
-	case http.MethodGet:
-		path := r.URL.Query().Get("path")
-		name := r.URL.Query().Get("name")
-		raw, fact, err := readMemory(o.Root, path, name)
+	case http.MethodGet, http.MethodHead:
+		q := r.URL.Query()
+		path := q.Get("path")
+		name := q.Get("name")
+		if name == "" {
+			name = q.Get("id")
+		}
+		project := q.Get("project")
+		raw, fact, status, err := readMemoryHTTP(o.Root, path, name, project)
 		if err != nil {
-			writeError(w, http.StatusNotFound, err)
+			writeError(w, status, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -133,45 +221,206 @@ func handleMemory(w http.ResponseWriter, r *http.Request, o Options) {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		if strings.TrimSpace(args.Name) == "" {
-			writeError(w, http.StatusBadRequest, fmt.Errorf("name is required"))
-			return
-		}
-		if args.Project == "" {
-			args.Project = store.GlobalProject
-		}
-		path, err := service.New(o.Root).Save(args.Project, store.Fact{
-			Name:        args.Name,
-			Description: args.Description,
-			Type:        args.Type,
-			Body:        args.Body,
-		})
+		res, err := saveMemoryFact(o, args)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		commitWarning := ""
-		if err := commit(o, fmt.Sprintf("mem(%s): save %s", args.Project, args.Name)); err != nil {
-			commitWarning = err.Error()
-		}
-		if o.Plugins != nil {
-			o.Plugins.Emit("memory.saved", map[string]any{
-				"path": path, "project": args.Project, "name": args.Name, "type": args.Type,
-			})
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"path": path, "commitWarning": commitWarning})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"path":          res.Path,
+			"commitWarning": res.CommitWarning,
+		})
+	case http.MethodDelete:
+		handleMemoryDelete(w, r, o)
 	default:
-		w.Header().Set("Allow", "GET, POST")
-		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		w.Header().Set("Allow", "GET, HEAD, POST, DELETE")
+		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method %s not allowed", r.Method))
 	}
 }
 
+type saveResult struct {
+	Path          string
+	Project       string
+	Name          string
+	Type          string
+	CommitWarning string
+}
+
+// saveMemoryFact validates, persists, optionally cleans up a renamed/moved
+// previousPath, schedules or executes Git commit, and notifies plugins.
+func saveMemoryFact(o Options, args saveArgs) (saveResult, error) {
+	name := strings.TrimSpace(args.Name)
+	if name == "" {
+		return saveResult{}, fmt.Errorf("name is required")
+	}
+	project := strings.TrimSpace(args.Project)
+	if project == "" {
+		project = store.GlobalProject
+	}
+	typ, err := normalizeMemoryType(args.Type, "reference")
+	if err != nil {
+		return saveResult{}, err
+	}
+	body := args.Body
+	if body == "" && args.Content != "" {
+		body = args.Content
+	}
+
+	var prevAbs string
+	if strings.TrimSpace(args.PreviousPath) != "" {
+		resolvedPrev, _, _, err := store.ResolveMemoryPath(o.Root, args.PreviousPath)
+		if err != nil {
+			return saveResult{}, fmt.Errorf("invalid previousPath: %w", err)
+		}
+		prevAbs = resolvedPrev
+	}
+
+	path, err := service.New(o.Root).Save(project, store.Fact{
+		Name:        name,
+		Description: args.Description,
+		Type:        typ,
+		Body:        body,
+	})
+	if err != nil {
+		return saveResult{}, err
+	}
+
+	if prevAbs != "" && filepath.Clean(prevAbs) != filepath.Clean(path) {
+		if err := removeOldMemoryFile(o.Root, prevAbs); err != nil {
+			return saveResult{}, err
+		}
+	}
+
+	commitWarning := commitWithWarning(o, fmt.Sprintf("mem(%s): save %s", project, name))
+	if o.Plugins != nil {
+		o.Plugins.Emit("memory.saved", map[string]any{
+			"path": path, "project": project, "name": name, "type": typ,
+		})
+	}
+	return saveResult{
+		Path:          path,
+		Project:       project,
+		Name:          name,
+		Type:          typ,
+		CommitWarning: commitWarning,
+	}, nil
+}
+
+func removeOldMemoryFile(root, absPath string) error {
+	unlock, err := store.LockWrite(root)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	if err := os.Remove(absPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	if err := store.WriteIndexes(root); err != nil {
+		return err
+	}
+	_, err = index.Rebuild(root)
+	return err
+}
+
+func handleMemoryDelete(w http.ResponseWriter, r *http.Request, o Options) {
+	var payload struct {
+		Path string `json:"path"`
+	}
+	hasBody, err := decodeOptionalJSONBody(w, r, &payload)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	targetPath := strings.TrimSpace(r.URL.Query().Get("path"))
+	if targetPath == "" && hasBody {
+		targetPath = strings.TrimSpace(payload.Path)
+	}
+	abs, _, project, err := store.ResolveMemoryPath(o.Root, targetPath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	unlock, err := store.LockWrite(o.Root)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	removeErr := os.Remove(abs)
+	if removeErr != nil {
+		unlock()
+		if errors.Is(removeErr, os.ErrNotExist) {
+			writeError(w, http.StatusNotFound, fmt.Errorf("memory %q not found", targetPath))
+			return
+		}
+		writeError(w, http.StatusInternalServerError, removeErr)
+		return
+	}
+	indexErr := store.WriteIndexes(o.Root)
+	if indexErr == nil {
+		_, indexErr = index.Rebuild(o.Root)
+	}
+	unlock()
+	if indexErr != nil {
+		writeError(w, http.StatusInternalServerError, indexErr)
+		return
+	}
+
+	commitWarning := commitWithWarning(o, fmt.Sprintf("mem(%s): delete %s", project, filepath.Base(abs)))
+	if o.Plugins != nil {
+		o.Plugins.Emit("memory.deleted", map[string]any{"path": abs, "project": project})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":            true,
+		"path":          abs,
+		"commitWarning": commitWarning,
+	})
+}
+
+func readMemoryHTTP(root, path, name, project string) (string, store.Fact, int, error) {
+	path = strings.TrimSpace(path)
+	name = strings.TrimSpace(name)
+	project = strings.TrimSpace(project)
+	if path == "" && name == "" {
+		return "", store.Fact{}, http.StatusBadRequest, fmt.Errorf("path, name or id is required")
+	}
+	if path != "" {
+		if _, _, _, err := store.ResolveMemoryPath(root, path); err != nil {
+			return "", store.Fact{}, http.StatusBadRequest, err
+		}
+	}
+	if project != "" {
+		if err := store.ValidateProject(project); err != nil {
+			return "", store.Fact{}, http.StatusBadRequest, err
+		}
+	}
+	raw, fact, err := readMemoryInProject(root, path, name, project)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, errMemoryNotFound) {
+			return "", store.Fact{}, http.StatusNotFound, err
+		}
+		return "", store.Fact{}, http.StatusBadRequest, err
+	}
+	return raw, fact, http.StatusOK, nil
+}
+
 func handleMemories(w http.ResponseWriter, r *http.Request, o Options) {
-	project := r.URL.Query().Get("project")
-	typ := r.URL.Query().Get("type")
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	project := strings.TrimSpace(r.URL.Query().Get("project"))
+	typ, err := normalizeMemoryType(r.URL.Query().Get("type"), "")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	limit := queryInt(r, "limit", 0, 0, 500)
-	offset := queryInt(r, "offset", 0, 0, 1<<30)
-	sortBy := strings.ToLower(r.URL.Query().Get("sort"))
+	offset := queryInt(r, "offset", 0, 0, maxPaginationOffset)
+	sortBy := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("sort")))
 	facts, total, err := index.ListPage(o.Root, index.ListOptions{
 		Project: project,
 		Type:    typ,
@@ -204,11 +453,6 @@ func handleMemories(w http.ResponseWriter, r *http.Request, o Options) {
 	})
 }
 
-// memoryPreviewRunes bounds the body excerpt the memory wall renders on a
-// card. Imported facts often carry keyword-soup descriptions, so the UI
-// previews the fact body instead of the frontmatter description.
-const memoryPreviewRunes = 420
-
 func memoryPreview(path string) string {
 	fact, err := store.ParseFile(path)
 	if err != nil {
@@ -233,6 +477,9 @@ func memoryPreview(path string) string {
 }
 
 func handleProjects(w http.ResponseWriter, r *http.Request, o Options) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
 	facts, _, err := index.ListPage(o.Root, index.ListOptions{Limit: 0})
 	if err != nil {
 		facts, err = store.ListFacts(o.Root)
@@ -241,19 +488,13 @@ func handleProjects(w http.ResponseWriter, r *http.Request, o Options) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	counts := map[string]int{}
-	for _, f := range facts {
-		counts[f.Project]++
-	}
-	out := make([]map[string]any, 0, len(counts))
-	for key, count := range counts {
-		out = append(out, map[string]any{"key": key, "facts": count})
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i]["key"].(string) < out[j]["key"].(string) })
-	writeJSON(w, http.StatusOK, map[string]any{"projects": out})
+	writeJSON(w, http.StatusOK, map[string]any{"projects": projectCounts(facts)})
 }
 
 func handleAdapters(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
 	adapters, err := adapter.All("")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -278,6 +519,7 @@ func handleAdapters(w http.ResponseWriter, r *http.Request) {
 			"install_kind":  a.Hooks.InstallKind,
 			"staged":        mode == adapter.ModeStaged,
 			"staged_ready":  status.StagedReady,
+			"staged_dir":    status.StagedDir,
 			"detected_path": strings.Join(detected, ", "),
 			"notes":         a.Notes,
 			"hooks": map[string]any{
@@ -292,10 +534,10 @@ func handleAdapters(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleGitLog(w http.ResponseWriter, r *http.Request, o Options) {
-	n, _ := strconv.Atoi(r.URL.Query().Get("n"))
-	if n <= 0 {
-		n = 20
+	if !requireMethod(w, r, http.MethodGet) {
+		return
 	}
+	n := queryInt(r, "n", 20, 1, 500)
 	if !gitx.Available() {
 		writeError(w, http.StatusServiceUnavailable, fmt.Errorf("git not available"))
 		return
@@ -312,32 +554,95 @@ func handleGitLog(w http.ResponseWriter, r *http.Request, o Options) {
 	writeJSON(w, http.StatusOK, map[string]any{"commits": commits})
 }
 
-func queryInt(r *http.Request, key string, fallback, min, max int) int {
-	value, err := strconv.Atoi(r.URL.Query().Get(key))
-	if err != nil {
+func clampInt(value, fallback, minVal, maxVal int) int {
+	if value == 0 && fallback != 0 && minVal > 0 {
 		return fallback
 	}
-	if value < min {
-		return min
+	if value < minVal {
+		return minVal
 	}
-	if value > max {
-		return max
+	if value > maxVal {
+		return maxVal
 	}
 	return value
 }
 
-const maxJSONBody = store.MaxFactBodyBytes + (2 << 20)
+func queryInt(r *http.Request, key string, fallback, minVal, maxVal int) int {
+	raw := strings.TrimSpace(r.URL.Query().Get(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		if errors.Is(err, strconv.ErrRange) {
+			if strings.HasPrefix(raw, "-") {
+				return minVal
+			}
+			return maxVal
+		}
+		return fallback
+	}
+	if value < minVal {
+		return minVal
+	}
+	if value > maxVal {
+		return maxVal
+	}
+	return value
+}
 
 func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBody)
 	dec := json.NewDecoder(r.Body)
 	if err := dec.Decode(dst); err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			return fmt.Errorf("request body exceeds maximum size of %d bytes", mbe.Limit)
+		}
+		if errors.Is(err, io.EOF) {
+			return fmt.Errorf("request body is required")
+		}
 		return err
 	}
+	return ensureSingleJSONValue(dec)
+}
+
+func decodeOptionalJSONBody(w http.ResponseWriter, r *http.Request, dst any) (bool, error) {
+	if r.Body == nil {
+		return false, nil
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBody)
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			return false, fmt.Errorf("request body exceeds maximum size of %d bytes", mbe.Limit)
+		}
+		return false, err
+	}
+	trimmed := strings.TrimSpace(string(data))
+	if trimmed == "" {
+		return false, nil
+	}
+	dec := json.NewDecoder(strings.NewReader(trimmed))
+	if err := dec.Decode(dst); err != nil {
+		return false, err
+	}
+	if err := ensureSingleJSONValue(dec); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func ensureSingleJSONValue(dec *json.Decoder) error {
 	var extra any
 	if err := dec.Decode(&extra); err != io.EOF {
 		if err == nil {
 			return fmt.Errorf("request body must contain one JSON value")
+		}
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			return fmt.Errorf("request body exceeds maximum size of %d bytes", mbe.Limit)
 		}
 		return err
 	}
@@ -357,9 +662,7 @@ func writeError(w http.ResponseWriter, status int, err error) {
 }
 
 func handleAdapterAction(w http.ResponseWriter, r *http.Request, o Options) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
-		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 	var payload struct {
@@ -368,6 +671,12 @@ func handleAdapterAction(w http.ResponseWriter, r *http.Request, o Options) {
 	}
 	if err := decodeJSONBody(w, r, &payload); err != nil {
 		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	payload.ID = strings.TrimSpace(payload.ID)
+	payload.Action = strings.TrimSpace(payload.Action)
+	if payload.ID == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("adapter id is required"))
 		return
 	}
 	if payload.Action != "install" && payload.Action != "uninstall" && payload.Action != "stage" {
@@ -446,9 +755,7 @@ func inboxCount(root string) int {
 }
 
 func handleInbox(w http.ResponseWriter, r *http.Request, o Options) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", "GET")
-		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 	candidates, err := ingest.List(o.Root)
@@ -471,9 +778,7 @@ func handleInbox(w http.ResponseWriter, r *http.Request, o Options) {
 }
 
 func handleInboxPromote(w http.ResponseWriter, r *http.Request, o Options) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
-		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 	var payload struct {
@@ -484,15 +789,16 @@ func handleInboxPromote(w http.ResponseWriter, r *http.Request, o Options) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if strings.TrimSpace(payload.Path) == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("path is required"))
+		return
+	}
 	path, err := service.New(o.Root).PromoteInbox(payload.Path, payload.Project)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	commitWarning := ""
-	if err := commit(o, fmt.Sprintf("inbox: promote %s", filepath.Base(path))); err != nil {
-		commitWarning = err.Error()
-	}
+	commitWarning := commitWithWarning(o, fmt.Sprintf("inbox: promote %s", filepath.Base(path)))
 	if o.Plugins != nil {
 		o.Plugins.Emit("inbox.promoted", map[string]any{"path": path})
 	}
@@ -500,9 +806,7 @@ func handleInboxPromote(w http.ResponseWriter, r *http.Request, o Options) {
 }
 
 func handleInboxDismiss(w http.ResponseWriter, r *http.Request, o Options) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
-		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 	var payload struct {
@@ -512,21 +816,20 @@ func handleInboxDismiss(w http.ResponseWriter, r *http.Request, o Options) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if strings.TrimSpace(payload.Path) == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("path is required"))
+		return
+	}
 	if err := ingest.Dismiss(o.Root, payload.Path); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	commitWarning := ""
-	if err := commit(o, "inbox: dismiss candidate"); err != nil {
-		commitWarning = err.Error()
-	}
+	commitWarning := commitWithWarning(o, "inbox: dismiss candidate")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "commitWarning": commitWarning})
 }
 
 func handleInboxCandidate(w http.ResponseWriter, r *http.Request, o Options) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
-		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 	var payload struct {

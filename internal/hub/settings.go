@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"unicode"
 
 	"github.com/realchendahuang/MarkToast/internal/backup"
 	"github.com/realchendahuang/MarkToast/internal/gitx"
@@ -16,9 +18,7 @@ import (
 )
 
 func handleSettings(w http.ResponseWriter, r *http.Request, o Options) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", "GET")
-		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 	_, factCount, err := index.ListPage(o.Root, index.ListOptions{Limit: 0})
@@ -31,7 +31,7 @@ func handleSettings(w http.ResponseWriter, r *http.Request, o Options) {
 		factCount = len(allFacts)
 	}
 	aliases, err := store.LoadAliases(o.Root)
-	if err != nil {
+	if err != nil || aliases == nil {
 		aliases = map[string]string{}
 	}
 	stats := index.Inspect(o.Root)
@@ -52,11 +52,10 @@ func handleSettings(w http.ResponseWriter, r *http.Request, o Options) {
 }
 
 func handleReindex(w http.ResponseWriter, r *http.Request, o Options) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
-		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxSmallControlBody)
 	count, err := service.New(o.Root).Reindex()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -68,11 +67,14 @@ func handleReindex(w http.ResponseWriter, r *http.Request, o Options) {
 
 func handleAliases(w http.ResponseWriter, r *http.Request, o Options) {
 	switch r.Method {
-	case http.MethodGet:
+	case http.MethodGet, http.MethodHead:
 		aliases, err := store.LoadAliases(o.Root)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
+		}
+		if aliases == nil {
+			aliases = map[string]string{}
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"aliases": aliases})
 	case http.MethodPut:
@@ -83,25 +85,42 @@ func handleAliases(w http.ResponseWriter, r *http.Request, o Options) {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
+		// Reject omitted or null "aliases" rather than silently wiping existing
+		// project display names. Callers clearing all aliases pass {"aliases":{}}.
+		if payload.Aliases == nil {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("aliases object is required"))
+			return
+		}
 		if err := service.New(o.Root).SaveAliases(payload.Aliases); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
 		aliases, _ := store.LoadAliases(o.Root)
+		if aliases == nil {
+			aliases = map[string]string{}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"aliases": aliases})
 	default:
-		w.Header().Set("Allow", "GET, PUT")
-		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		w.Header().Set("Allow", "GET, HEAD, PUT")
+		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method %s not allowed", r.Method))
 	}
 }
 
 func handleMemoryHistory(w http.ResponseWriter, r *http.Request, o Options) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if !gitx.Available() {
+		writeError(w, http.StatusServiceUnavailable, fmt.Errorf("git not available"))
+		return
+	}
 	rel, err := memoryRelPath(o.Root, r.URL.Query().Get("path"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	commits, err := gitx.FileLog(o.Root, rel, 30)
+	limit := queryInt(r, "n", 30, 1, 200)
+	commits, err := gitx.FileLog(o.Root, rel, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -113,13 +132,40 @@ func handleMemoryHistory(w http.ResponseWriter, r *http.Request, o Options) {
 	writeJSON(w, http.StatusOK, map[string]any{"path": rel, "commits": out})
 }
 
+func validateGitRef(hash string) (string, error) {
+	h := strings.TrimSpace(hash)
+	if h == "" {
+		return "", fmt.Errorf("hash is required")
+	}
+	if strings.HasPrefix(h, "-") || len(h) > 128 {
+		return "", fmt.Errorf("invalid commit hash %q", hash)
+	}
+	for _, r := range h {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			return "", fmt.Errorf("invalid commit hash %q", hash)
+		}
+	}
+	return h, nil
+}
+
 func handleMemoryDiff(w http.ResponseWriter, r *http.Request, o Options) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if !gitx.Available() {
+		writeError(w, http.StatusServiceUnavailable, fmt.Errorf("git not available"))
+		return
+	}
 	rel, err := memoryRelPath(o.Root, r.URL.Query().Get("path"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	hash := r.URL.Query().Get("hash")
+	hash, err := validateGitRef(r.URL.Query().Get("hash"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	patch, err := gitx.DiffFile(o.Root, hash, rel)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -129,9 +175,7 @@ func handleMemoryDiff(w http.ResponseWriter, r *http.Request, o Options) {
 }
 
 func handleMemoryRestore(w http.ResponseWriter, r *http.Request, o Options) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
-		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 	var payload struct {
@@ -142,15 +186,17 @@ func handleMemoryRestore(w http.ResponseWriter, r *http.Request, o Options) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	abs, project, name, err := service.New(o.Root).Restore(payload.Path, payload.Hash)
+	hash, err := validateGitRef(payload.Hash)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	commitWarning := ""
-	if err := commit(o, fmt.Sprintf("restore(%s): %s", project, name)); err != nil {
-		commitWarning = err.Error()
+	abs, project, name, err := service.New(o.Root).Restore(payload.Path, hash)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
 	}
+	commitWarning := commitWithWarning(o, fmt.Sprintf("restore(%s): %s", project, name))
 	if o.Plugins != nil {
 		o.Plugins.Emit("memory.restored", map[string]any{"path": abs, "project": project, "name": name})
 	}
@@ -165,9 +211,7 @@ func memoryRelPath(root, path string) (string, error) {
 }
 
 func handleImport(w http.ResponseWriter, r *http.Request, o Options) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
-		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 	var payload struct {
@@ -179,10 +223,11 @@ func handleImport(w http.ResponseWriter, r *http.Request, o Options) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	from := strings.ToLower(strings.TrimSpace(payload.From))
 	home, _ := os.UserHomeDir()
-	source := payload.Source
+	source := strings.TrimSpace(payload.Source)
 	if source == "" {
-		switch payload.From {
+		switch from {
 		case "zcode":
 			source = filepath.Join(home, ".zcode", "cli", "memories")
 		case "hermes":
@@ -194,7 +239,7 @@ func handleImport(w http.ResponseWriter, r *http.Request, o Options) {
 	}
 	var result importer.Result
 	var err error
-	switch payload.From {
+	switch from {
 	case "zcode":
 		result, err = importer.ZCode(o.Root, source, payload.DryRun)
 	case "hermes":
@@ -208,7 +253,7 @@ func handleImport(w http.ResponseWriter, r *http.Request, o Options) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"from":     payload.From,
+		"from":     from,
 		"source":   source,
 		"facts":    result.Facts,
 		"projects": result.Projects,
@@ -218,11 +263,10 @@ func handleImport(w http.ResponseWriter, r *http.Request, o Options) {
 }
 
 func handleBackup(w http.ResponseWriter, r *http.Request, o Options) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
-		writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxSmallControlBody)
 	unlock, err := store.LockWrite(o.Root)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)

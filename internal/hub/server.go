@@ -34,6 +34,11 @@ type Options struct {
 	Debounce    time.Duration
 	Committer   *committer
 	Plugins     *plugin.Host
+
+	// commitConfigured marks Options initialised by Start or NewMCPServer so
+	// AutoCommit=false is honoured instead of falling through to immediate
+	// synchronous Git commits.
+	commitConfigured bool
 }
 
 // Server is a running local hub. Callers must Shutdown it to flush pending
@@ -50,6 +55,9 @@ type Server struct {
 
 // Start binds the hub listener and starts serving in the background.
 func Start(o Options) (*Server, error) {
+	if strings.TrimSpace(o.Root) == "" {
+		return nil, fmt.Errorf("memory repository root is required")
+	}
 	if o.Addr == "" {
 		o.Addr = "127.0.0.1:3777"
 	}
@@ -69,7 +77,8 @@ func Start(o Options) (*Server, error) {
 		log.Printf("marktoast: plugin load: %v", pluginErr)
 	}
 	o.Plugins = plugins
-	if o.AutoCommit {
+	o.commitConfigured = true
+	if o.AutoCommit && o.Committer == nil {
 		o.Committer = newCommitter(o.Root, o.Debounce)
 	}
 	if path, created, err := backup.EnsureDaily(o.Root); err != nil {
@@ -89,7 +98,16 @@ func Start(o Options) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{
-		srv:       &http.Server{Handler: buildHandler(o, mcpToken, sessionToken), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 60 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second, MaxHeaderBytes: 1 << 20},
+		srv: &http.Server{
+			Handler:           buildHandler(o, mcpToken, sessionToken),
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       60 * time.Second,
+			// Long-running admin endpoints (/api/import, /api/backup, /api/reindex)
+			// allow a 120s client timeout in the Web UI; keep WriteTimeout above it.
+			WriteTimeout:   180 * time.Second,
+			IdleTimeout:    120 * time.Second,
+			MaxHeaderBytes: 1 << 20,
+		},
 		listener:  ln,
 		committer: o.Committer,
 		plugins:   plugins,
@@ -207,6 +225,9 @@ func buildHandler(o Options, mcpToken, sessionToken string) http.Handler {
 	apiMux.HandleFunc("/api/memory/history", func(w http.ResponseWriter, r *http.Request) { handleMemoryHistory(w, r, o) })
 	apiMux.HandleFunc("/api/memory/diff", func(w http.ResponseWriter, r *http.Request) { handleMemoryDiff(w, r, o) })
 	apiMux.HandleFunc("/api/memory/restore", func(w http.ResponseWriter, r *http.Request) { handleMemoryRestore(w, r, o) })
+	apiMux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, http.StatusNotFound, fmt.Errorf("API endpoint %q not found", r.URL.Path))
+	})
 
 	var ui http.Handler
 	switch {
@@ -216,25 +237,41 @@ func buildHandler(o Options, mcpToken, sessionToken string) http.Handler {
 		ui = http.FileServerFS(o.FrontendFS)
 	default:
 		ui = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/" {
+				writeError(w, http.StatusNotFound, fmt.Errorf("not found"))
+				return
+			}
 			writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": version.Version, "note": "API-only hub"})
 		})
 	}
 	uiWithCookie := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet || r.Method == http.MethodHead {
-			setSessionCookie(w, sessionToken)
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+			return
 		}
-		if r.URL.Path == "/" || strings.HasSuffix(strings.ToLower(r.URL.Path), ".html") {
+		isHTML := r.URL.Path == "/" || strings.HasSuffix(strings.ToLower(r.URL.Path), ".html")
+		if isHTML || !tokenEqual(cookieToken(r), sessionToken) {
+			setSessionCookie(w, r, sessionToken)
+		}
+		if isHTML {
 			w.Header().Set("Cache-Control", "no-store")
+		} else {
+			w.Header().Set("Cache-Control", "no-cache")
 		}
 		ui.ServeHTTP(w, r)
 	})
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		if !requireMethod(w, r, http.MethodGet) {
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": version.Version})
 	})
 	mux.Handle("/api/", apiGuard(apiMux, mcpToken, sessionToken))
-	mux.Handle("/mcp", MCPHTTPHandler(NewMCPServer(o.Root), mcpToken))
+	mux.Handle("/mcp", MCPHTTPHandler(newMCPServerWithOptions(o), mcpToken))
 	mux.Handle("/", uiWithCookie)
 	return hostGuard(mux)
 }
