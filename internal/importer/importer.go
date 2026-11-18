@@ -1,5 +1,6 @@
 // Package importer brings existing harness memories into a MarkToast
-// repository without changing their Markdown content.
+// repository while redacting high-confidence secrets and rebuilding derived
+// indexes.
 package importer
 
 import (
@@ -11,6 +12,7 @@ import (
 
 	"github.com/realchendahuang/MarkToast/internal/gitx"
 	"github.com/realchendahuang/MarkToast/internal/index"
+	"github.com/realchendahuang/MarkToast/internal/redact"
 	"github.com/realchendahuang/MarkToast/internal/store"
 )
 
@@ -22,9 +24,8 @@ type Result struct {
 	DryRun   bool
 }
 
-// ZCode copies the project memory tree of ~/.zcode/cli/memories. The layout is
-// already identical to MarkToast's, so files are copied byte-for-byte and the
-// index is rebuilt afterwards.
+// ZCode copies the project memory tree of ~/.zcode/cli/memories. In dry-run
+// mode no directories, locks, or files are created on disk.
 func ZCode(root, source string, dryRun bool) (Result, error) {
 	result := Result{DryRun: dryRun}
 	projectsDir := filepath.Join(source, "projects")
@@ -49,7 +50,7 @@ func ZCode(root, source string, dryRun bool) (Result, error) {
 		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
 			return nil
 		}
-		if strings.ToLower(filepath.Ext(path)) != ".md" || entry.Name() == store.IndexFile {
+		if strings.ToLower(filepath.Ext(path)) != ".md" || strings.EqualFold(entry.Name(), store.IndexFile) {
 			return nil
 		}
 		rel, err := filepath.Rel(projectsDir, path)
@@ -57,19 +58,20 @@ func ZCode(root, source string, dryRun bool) (Result, error) {
 			return nil
 		}
 		parts := strings.Split(filepath.ToSlash(rel), "/")
-		if len(parts) < 3 || parts[1] != "memory" {
+		if len(parts) != 3 || parts[1] != "memory" {
 			return nil
 		}
 		project := parts[0]
 		if err := store.ValidateProject(project); err != nil {
 			return err
 		}
-		dir, err := store.EnsureMemoryDir(root, project)
+		// Compute target path without touching disk first so dryRun stays pure.
+		dir, err := store.MemoryDir(root, project)
 		if err != nil {
 			return err
 		}
 		dst := filepath.Join(dir, entry.Name())
-		if _, err := os.Stat(dst); err == nil {
+		if _, err := os.Lstat(dst); err == nil {
 			result.Skipped++
 			return nil
 		}
@@ -77,6 +79,9 @@ func ZCode(root, source string, dryRun bool) (Result, error) {
 		projects[project] = struct{}{}
 		if dryRun {
 			return nil
+		}
+		if _, err := store.EnsureMemoryDir(root, project); err != nil {
+			return err
 		}
 		if err := copyFile(path, dst); err != nil {
 			return err
@@ -100,32 +105,29 @@ func ZCode(root, source string, dryRun bool) (Result, error) {
 // memories with a lone "§" line, so each block becomes one MarkToast fact.
 func Hermes(root, source string, dryRun bool) (Result, error) {
 	result := Result{DryRun: dryRun}
-	files := []struct {
+	type sourceFile struct {
 		path    string
 		project string
 		kind    string
-	}{
+	}
+	files := []sourceFile{
 		{filepath.Join(source, "memories", "MEMORY.md"), store.GlobalProject, "reference"},
 		{filepath.Join(source, "memories", "USER.md"), store.GlobalProject, "user"},
 	}
 	profilesDir := filepath.Join(source, "profiles")
 	if entries, err := os.ReadDir(profilesDir); err == nil {
 		for _, entry := range entries {
-			if !entry.IsDir() {
+			if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+				continue
+			}
+			proj := "hermes-" + store.SanitizeSlug(entry.Name())
+			if store.ValidateProject(proj) != nil {
 				continue
 			}
 			base := filepath.Join(profilesDir, entry.Name(), "memories")
 			files = append(files,
-				struct {
-					path    string
-					project string
-					kind    string
-				}{filepath.Join(base, "MEMORY.md"), "hermes-" + entry.Name(), "reference"},
-				struct {
-					path    string
-					project string
-					kind    string
-				}{filepath.Join(base, "USER.md"), "hermes-" + entry.Name(), "user"},
+				sourceFile{filepath.Join(base, "MEMORY.md"), proj, "reference"},
+				sourceFile{filepath.Join(base, "USER.md"), proj, "user"},
 			)
 		}
 	}
@@ -139,39 +141,48 @@ func Hermes(root, source string, dryRun bool) (Result, error) {
 		}
 		defer unlock()
 	}
-	seen := map[string]bool{}
+	seenProjectName := map[string]bool{}
 	seenBody := map[string]bool{}
-	existing := map[string]bool{}
+	existingProjectName := map[string]bool{}
+	existingBody := map[string]bool{}
 	if facts, err := store.ListFacts(root); err == nil {
 		for _, fact := range facts {
-			existing[fact.Name] = true
+			existingProjectName[fact.Project+"\x00"+fact.Name] = true
+			existingBody[normalizeBodyKey(fact.Body)] = true
 		}
 	}
+
+	projectsUsed := map[string]struct{}{}
 	for _, file := range files {
+		info, err := os.Lstat(file.path)
+		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			continue
+		}
 		data, err := os.ReadFile(file.path)
 		if err != nil {
 			continue
 		}
 		for i, block := range splitHermes(string(data)) {
-			bodyKey := strings.Join(strings.Fields(block), " ")
-			if seenBody[bodyKey] {
+			bKey := normalizeBodyKey(block)
+			if seenBody[bKey] || existingBody[bKey] {
 				result.Skipped++
 				continue
 			}
-			seenBody[bodyKey] = true
+			seenBody[bKey] = true
 			name := factName(block, file.kind, i)
 			if name == "" {
 				continue
 			}
-			if existing[name] {
+			if existingProjectName[file.project+"\x00"+name] {
 				result.Skipped++
 				continue
 			}
-			for seen[name] {
+			for seenProjectName[file.project+"\x00"+name] {
 				name += " ·"
 			}
-			seen[name] = true
+			seenProjectName[file.project+"\x00"+name] = true
 			result.Facts++
+			projectsUsed[file.project] = struct{}{}
 			if dryRun {
 				continue
 			}
@@ -186,7 +197,7 @@ func Hermes(root, source string, dryRun bool) (Result, error) {
 			}
 		}
 	}
-	result.Projects = 2
+	result.Projects = len(projectsUsed)
 	if dryRun || result.Facts == 0 {
 		return result, nil
 	}
@@ -194,6 +205,10 @@ func Hermes(root, source string, dryRun bool) (Result, error) {
 		return result, err
 	}
 	return result, nil
+}
+
+func normalizeBodyKey(s string) string {
+	return strings.Join(strings.Fields(redact.String(s)), " ")
 }
 
 func splitHermes(content string) []string {
@@ -211,7 +226,7 @@ func splitHermes(content string) []string {
 	return blocks
 }
 
-func factName(block, kind string, index int) string {
+func factName(block, kind string, _ int) string {
 	line := strings.Split(block, "\n")[0]
 	line = strings.TrimSpace(line)
 	line = strings.TrimLeft(line, "#-* ")
@@ -240,8 +255,11 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	if !info.Mode().IsRegular() {
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 		return fmt.Errorf("import source is not a regular file: %s", src)
+	}
+	if info.Size() > store.MaxFactBodyBytes+64*1024 {
+		return fmt.Errorf("import source is too large: %s", src)
 	}
 	data, err := os.ReadFile(src)
 	if err != nil {
@@ -250,10 +268,11 @@ func copyFile(src, dst string) error {
 	if len(data) > store.MaxFactBodyBytes+64*1024 {
 		return fmt.Errorf("import source is too large: %s", src)
 	}
+	redacted := []byte(redact.String(string(data)))
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return err
 	}
-	if err := store.AtomicWriteFile(dst, data, 0o600); err != nil {
+	if err := store.AtomicWriteFile(dst, redacted, 0o600); err != nil {
 		return err
 	}
 	_ = os.Chtimes(dst, info.ModTime(), info.ModTime())
@@ -270,7 +289,7 @@ func finish(root, message string) error {
 	if !gitx.Available() {
 		return nil
 	}
-	if _, err := os.Stat(filepath.Join(root, ".git")); err != nil {
+	if _, err := os.Lstat(filepath.Join(root, ".git")); err != nil {
 		if _, err := gitx.EnsureRepo(root); err != nil {
 			return err
 		}

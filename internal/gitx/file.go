@@ -1,7 +1,6 @@
 package gitx
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,7 +11,14 @@ import (
 	"github.com/realchendahuang/MarkToast/internal/store"
 )
 
-var hashPattern = regexp.MustCompile(`^[0-9a-fA-F]{4,40}$`)
+var hashPattern = regexp.MustCompile(`^[0-9a-fA-F]{4,64}$`)
+
+func isValidCommitRef(ref string) bool {
+	if ref == "HEAD" {
+		return true
+	}
+	return hashPattern.MatchString(ref)
+}
 
 func safeMemoryRel(root, rel string) (string, error) {
 	_, clean, _, err := store.ResolveMemoryPath(root, rel)
@@ -33,29 +39,17 @@ func FileLog(root, rel string, n int) ([]Commit, error) {
 	}
 	out, err := Run(root, "log", "--format=%h%x1f%s%x1f%ad", "--date=short", "-n", strconv.Itoa(n), "--", rel)
 	if err != nil {
-		return nil, errors.New(strings.TrimSpace(out))
+		if isUnbornHeadError(out) {
+			return []Commit{}, nil
+		}
+		return nil, formatGitError(out, err)
 	}
-	commits := make([]Commit, 0)
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		if line == "" {
-			continue
-		}
-		parts := strings.Split(line, "\x1f")
-		if len(parts) < 2 {
-			continue
-		}
-		commit := Commit{Hash: parts[0], Subject: parts[1]}
-		if len(parts) > 2 {
-			commit.Date = parts[2]
-		}
-		commits = append(commits, commit)
-	}
-	return commits, nil
+	return parseCommitLines(out), nil
 }
 
 // ShowFile returns one version of a file from a commit.
 func ShowFile(root, hash, rel string) (string, error) {
-	if !hashPattern.MatchString(hash) {
+	if !isValidCommitRef(hash) {
 		return "", fmt.Errorf("invalid commit")
 	}
 	rel, err := safeMemoryRel(root, rel)
@@ -64,14 +58,14 @@ func ShowFile(root, hash, rel string) (string, error) {
 	}
 	out, err := Run(root, "show", hash+":"+rel)
 	if err != nil {
-		return "", errors.New(strings.TrimSpace(out))
+		return "", formatGitError(out, err)
 	}
 	return out, nil
 }
 
 // DiffFile returns the patch for one file in a commit.
 func DiffFile(root, hash, rel string) (string, error) {
-	if !hashPattern.MatchString(hash) {
+	if !isValidCommitRef(hash) {
 		return "", fmt.Errorf("invalid commit")
 	}
 	rel, err := safeMemoryRel(root, rel)
@@ -80,7 +74,7 @@ func DiffFile(root, hash, rel string) (string, error) {
 	}
 	out, err := Run(root, "show", "--format=", "--no-color", "--unified=3", hash, "--", rel)
 	if err != nil {
-		return "", errors.New(strings.TrimSpace(out))
+		return "", formatGitError(out, err)
 	}
 	if strings.TrimSpace(out) == "" {
 		return "", fmt.Errorf("no diff for this commit")
@@ -91,16 +85,17 @@ func DiffFile(root, hash, rel string) (string, error) {
 // RestoreFile writes a previous version back to the working tree and commits
 // the restore. It returns false when the file already had that content.
 func RestoreFile(root, hash, rel string) (bool, error) {
-	cleanRel, err := safeMemoryRel(root, rel)
+	unlock, err := store.LockWrite(root)
 	if err != nil {
 		return false, err
 	}
-	rel = cleanRel
-	abs, _, _, err := store.ResolveMemoryPath(root, rel)
+	defer unlock()
+
+	abs, cleanRel, project, err := store.ResolveMemoryPath(root, rel)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("invalid memory path: %w", err)
 	}
-	content, err := ShowFile(root, hash, rel)
+	content, err := ShowFile(root, hash, cleanRel)
 	if err != nil {
 		return false, err
 	}
@@ -111,11 +106,14 @@ func RestoreFile(root, hash, rel string) (bool, error) {
 	if info, err := os.Stat(abs); err == nil {
 		mode = info.Mode().Perm()
 	}
-	if err := os.MkdirAll(filepath.Dir(abs), 0o700); err != nil {
+	if _, err := store.EnsureMemoryDir(root, project); err != nil {
 		return false, err
 	}
 	if err := store.AtomicWriteFile(abs, []byte(content), mode); err != nil {
 		return false, err
 	}
-	return CommitAll(root, "restore: "+filepath.ToSlash(rel))
+	if err := store.WriteIndexes(root); err != nil {
+		return false, err
+	}
+	return CommitAll(root, "restore: "+filepath.ToSlash(cleanRel))
 }

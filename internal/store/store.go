@@ -13,6 +13,7 @@
 package store
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -72,15 +73,21 @@ type frontmatter struct {
 	} `yaml:"metadata"`
 }
 
-// Init creates the repository skeleton.
+// Init creates the repository skeleton and validates that none of its managed
+// subdirectories escape through symlinks.
 func Init(root string) error {
+	if strings.TrimSpace(root) == "" {
+		return fmt.Errorf("repository root is required")
+	}
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return fmt.Errorf("create repository root: %w", err)
+	}
 	for _, dir := range []string{
-		root,
 		filepath.Join(root, "projects"),
 		filepath.Join(root, GlobalProject),
 		filepath.Join(root, MetaDir),
 	} {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
+		if err := mkdirWithinRoot(root, dir); err != nil {
 			return err
 		}
 	}
@@ -88,7 +95,8 @@ func Init(root string) error {
 }
 
 // LockWrite holds the repository's write lock until the returned function is
-// called. It is re-entrant within one process.
+// called. It is re-entrant on the same goroutine and mutually exclusive across
+// concurrent goroutines and OS processes.
 func LockWrite(root string) (func(), error) {
 	return lockfile.Acquire(root)
 }
@@ -116,11 +124,11 @@ func ValidateProject(project string) error {
 	if len(project) > 128 {
 		return fmt.Errorf("project key is too long")
 	}
-	if project == "." || project == ".." || strings.ContainsAny(project, `/\\`) || project != strings.TrimSpace(project) {
+	if project == "." || project == ".." || strings.ContainsAny(project, `/\`) || project != strings.TrimSpace(project) {
 		return fmt.Errorf("invalid project key %q", project)
 	}
 	for _, r := range project {
-		if unicode.IsControl(r) {
+		if unicode.IsControl(r) || r == 0 {
 			return fmt.Errorf("invalid project key %q", project)
 		}
 	}
@@ -204,8 +212,28 @@ func nameHash(name string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// isReservedFactSlug rejects filenames that would collide with MEMORY.md (even
+// on case-insensitive filesystems) or Windows reserved device names.
+func isReservedFactSlug(slug string) bool {
+	if strings.EqualFold(slug+".md", IndexFile) {
+		return true
+	}
+	base := slug
+	if dot := strings.IndexByte(base, '.'); dot >= 0 {
+		base = base[:dot]
+	}
+	switch strings.ToLower(base) {
+	case "con", "prn", "aux", "nul",
+		"com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
+		"lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9":
+		return true
+	}
+	return false
+}
+
 // factFileName keeps ASCII names human-readable, and adds a short hash for
-// names that would otherwise collide (Chinese names all sanitise to "project").
+// names that would otherwise collide (Chinese names all sanitise to "project",
+// and "memory" would collide with MEMORY.md).
 func factFileName(name string) string {
 	slug := SanitizeSlug(name)
 	ascii := true
@@ -215,48 +243,102 @@ func factFileName(name string) string {
 			break
 		}
 	}
-	if slug == "project" || !ascii {
-		suffix := nameHash(name)[:8]
-		if slug == "project" {
-			return "fact-" + suffix + ".md"
-		}
-		return slug + "-" + suffix + ".md"
+	if slug == "project" || !ascii || isReservedFactSlug(slug) {
+		return hashedFactFileNameWithLen(name, 8)
 	}
 	return slug + ".md"
 }
 
 func hashedFactFileName(name string) string {
+	return hashedFactFileNameWithLen(name, 8)
+}
+
+func hashedFactFileNameWithLen(name string, hashChars int) string {
 	slug := SanitizeSlug(name)
-	suffix := nameHash(name)[:8]
-	if slug == "project" {
-		return "fact-" + suffix + ".md"
+	hash := nameHash(name)
+	if hashChars > 0 && hashChars < len(hash) {
+		hash = hash[:hashChars]
 	}
-	return slug + "-" + suffix + ".md"
+	if slug == "project" {
+		return "fact-" + hash + ".md"
+	}
+	return slug + "-" + hash + ".md"
 }
 
 // Parse splits a markdown file into frontmatter and body.
+//
+// The closing frontmatter delimiter must be an unindented "---" on its own
+// line so multiline YAML block scalars containing indented "---" or "---text"
+// never truncate the frontmatter early.
 func Parse(text string) (frontmatter, string) {
 	var meta frontmatter
 	trimmed := strings.TrimPrefix(text, "\ufeff")
-	if !strings.HasPrefix(trimmed, "---\n") && !strings.HasPrefix(trimmed, "---\r\n") {
+	rest, ok := consumeOpeningFence(trimmed)
+	if !ok {
 		return meta, trimmed
 	}
-	rest := trimmed[4:]
-	idx := strings.Index(rest, "\n---")
-	if idx < 0 {
+	head, afterFence, found := splitClosingFence(rest)
+	if !found {
 		return meta, trimmed
 	}
-	head := rest[:idx]
-	body := strings.TrimLeft(rest[idx+4:], "\r\n")
 	_ = yaml.Unmarshal([]byte(head), &meta)
+	body := trimBodyDelimiters(afterFence)
 	return meta, body
+}
+
+func consumeOpeningFence(s string) (string, bool) {
+	nl := strings.IndexByte(s, '\n')
+	if nl < 0 {
+		return "", false
+	}
+	firstLine := strings.TrimRight(s[:nl], " \t\r")
+	if firstLine != "---" {
+		return "", false
+	}
+	return s[nl+1:], true
+}
+
+func splitClosingFence(rest string) (head, after string, found bool) {
+	offset := 0
+	for offset <= len(rest) {
+		lineEnd := len(rest)
+		nextOffset := len(rest) + 1
+		if nl := strings.IndexByte(rest[offset:], '\n'); nl >= 0 {
+			lineEnd = offset + nl
+			nextOffset = lineEnd + 1
+		}
+		line := strings.TrimRight(rest[offset:lineEnd], " \t\r")
+		if line == "---" {
+			head = rest[:offset]
+			if nextOffset <= len(rest) {
+				after = rest[nextOffset:]
+			}
+			return head, after, true
+		}
+		offset = nextOffset
+	}
+	return "", "", false
+}
+
+// trimBodyDelimiters strips the blank separator line written after frontmatter
+// and the single trailing newline appended by WriteFact, keeping internal and
+// intentional extra newlines intact across Parse/WriteFact round-trips.
+func trimBodyDelimiters(after string) string {
+	// Strip optional blank separator line(s) right after closing "---\n".
+	after = strings.TrimLeft(after, "\r\n")
+	if strings.HasSuffix(after, "\r\n") {
+		after = after[:len(after)-2]
+	} else if strings.HasSuffix(after, "\n") {
+		after = after[:len(after)-1]
+	}
+	return after
 }
 
 // ParseFile reads one fact file.
 func ParseFile(path string) (Fact, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return Fact{}, err
+		return Fact{}, fmt.Errorf("read fact file: %w", err)
 	}
 	meta, body := Parse(string(data))
 	f := Fact{
@@ -283,6 +365,14 @@ func ParseFile(path string) (Fact, error) {
 	return f, nil
 }
 
+// normalizeSingleLine collapses newlines/tabs into single spaces for fact names.
+func normalizeSingleLine(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
+	return strings.TrimSpace(s)
+}
+
 // WriteFact writes (or safely updates) one fact atomically.
 func WriteFact(root, project string, f Fact) (string, error) {
 	if project == "" {
@@ -291,18 +381,24 @@ func WriteFact(root, project string, f Fact) (string, error) {
 	if err := ValidateProject(project); err != nil {
 		return "", err
 	}
-	name := strings.TrimSpace(f.Name)
+	name := redact.String(normalizeSingleLine(f.Name))
 	if name == "" {
 		return "", fmt.Errorf("fact name is required")
 	}
 	if utf8.RuneCountInString(name) > MaxFactNameRunes {
 		return "", fmt.Errorf("fact name exceeds %d characters", MaxFactNameRunes)
 	}
-	description := strings.TrimSpace(f.Description)
+	description := strings.TrimSpace(strings.ReplaceAll(f.Description, "\r\n", "\n"))
 	if utf8.RuneCountInString(description) > MaxFactDescriptionRunes {
 		return "", fmt.Errorf("fact description exceeds %d characters", MaxFactDescriptionRunes)
 	}
-	body := redact.String(strings.TrimLeft(f.Body, "\r\n"))
+	rawBody := strings.ReplaceAll(f.Body, "\r\n", "\n")
+	rawBody = strings.TrimLeft(rawBody, "\n")
+	rawBody = strings.TrimSuffix(rawBody, "\n")
+	if len(rawBody) > MaxFactBodyBytes {
+		return "", fmt.Errorf("fact body exceeds %d bytes", MaxFactBodyBytes)
+	}
+	body := redact.String(rawBody)
 	if len([]byte(body)) > MaxFactBodyBytes {
 		return "", fmt.Errorf("fact body exceeds %d bytes", MaxFactBodyBytes)
 	}
@@ -342,12 +438,17 @@ func WriteFact(root, project string, f Fact) (string, error) {
 	meta := frontmatter{Name: name, Description: description}
 	meta.Metadata.NodeType = nodeType
 	meta.Metadata.Type = typ
-	meta.Metadata.OriginSessionID = f.OriginSessionID
+	meta.Metadata.OriginSessionID = strings.TrimSpace(f.OriginSessionID)
 	head, err := yaml.Marshal(meta)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("marshal frontmatter: %w", err)
 	}
-	content := "---\n" + string(head) + "---\n\n" + body + "\n"
+	var content string
+	if body == "" {
+		content = "---\n" + string(head) + "---\n"
+	} else {
+		content = "---\n" + string(head) + "---\n\n" + body + "\n"
+	}
 	if err := AtomicWriteFile(path, []byte(content), 0o600); err != nil {
 		return "", err
 	}
@@ -357,38 +458,42 @@ func WriteFact(root, project string, f Fact) (string, error) {
 // existingFactPath returns an existing file whose frontmatter name exactly
 // matches name. This preserves imported/legacy filenames when updating a fact.
 func existingFactPath(dir, name string) (string, error) {
-	var found string
-	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil
-			}
-			return err
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
 		}
-		if d.IsDir() || d.Type()&os.ModeSymlink != 0 || !strings.HasSuffix(strings.ToLower(path), ".md") || strings.EqualFold(filepath.Base(path), IndexFile) {
-			return nil
+		return "", fmt.Errorf("read memory directory: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			continue
 		}
+		fileName := entry.Name()
+		if !strings.HasSuffix(strings.ToLower(fileName), ".md") || strings.EqualFold(fileName, IndexFile) {
+			continue
+		}
+		path := filepath.Join(dir, fileName)
 		f, err := ParseFile(path)
 		if err == nil && f.Name == name {
-			found = path
-			return filepath.SkipAll
+			return path, nil
 		}
-		return nil
-	})
-	if os.IsNotExist(err) {
-		return "", nil
 	}
-	return found, err
+	return "", nil
 }
 
 func newFactPath(dir, name string) (string, error) {
-	path := filepath.Join(dir, factFileName(name))
-	if err := checkFactTarget(path, name); err == nil {
-		return path, nil
+	candidates := []string{
+		factFileName(name),
+		hashedFactFileName(name),
+		hashedFactFileNameWithLen(name, 16),
+		hashedFactFileNameWithLen(name, 32),
 	}
-	path = filepath.Join(dir, hashedFactFileName(name))
-	if err := checkFactTarget(path, name); err == nil {
-		return path, nil
+	for _, fileName := range candidates {
+		path := filepath.Join(dir, fileName)
+		if err := checkFactTarget(path, name); err == nil {
+			return path, nil
+		}
 	}
 	return "", fmt.Errorf("filename collision for memory %q", name)
 }
@@ -415,57 +520,32 @@ func checkFactTarget(path, name string) error {
 }
 
 // ListFacts walks the repository and returns every valid fact (indexes and
-// symlinks excluded).
+// symlinks excluded). It uses os.ReadDir instead of filepath.Glob so roots
+// containing glob metacharacters such as "[" or "]" work reliably.
 func ListFacts(root string) ([]Fact, error) {
 	var facts []Fact
-	projects := filepath.Join(root, "projects")
-	err := filepath.WalkDir(projects, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil
+	projectsDir := filepath.Join(root, "projects")
+	if info, err := os.Lstat(projectsDir); err == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+		projectEntries, err := os.ReadDir(projectsDir)
+		if err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("read projects directory: %w", err)
+		}
+		for _, projEntry := range projectEntries {
+			if !projEntry.IsDir() || projEntry.Type()&os.ModeSymlink != 0 {
+				continue
 			}
-			return nil
+			project := projEntry.Name()
+			if ValidateProject(project) != nil {
+				continue
+			}
+			memDir := filepath.Join(projectsDir, project, "memory")
+			facts = appendDirFacts(root, memDir, project, facts)
 		}
-		if d.IsDir() || d.Type()&os.ModeSymlink != 0 || !strings.HasSuffix(strings.ToLower(path), ".md") {
-			return nil
-		}
-		if strings.EqualFold(filepath.Base(path), IndexFile) {
-			return nil
-		}
-		f, err := ParseFile(path)
-		if err != nil {
-			return nil
-		}
-		project, projectErr := ProjectFromPath(root, path)
-		if projectErr != nil {
-			return nil
-		}
-		f.Project = project
-		facts = append(facts, f)
-		return nil
-	})
-	if err != nil && !os.IsNotExist(err) {
-		return nil, err
 	}
 
-	globalFiles, err := filepath.Glob(filepath.Join(root, GlobalProject, "*.md"))
-	if err != nil {
-		return nil, err
-	}
-	for _, path := range globalFiles {
-		if strings.EqualFold(filepath.Base(path), IndexFile) {
-			continue
-		}
-		if info, err := os.Lstat(path); err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-			continue
-		}
-		f, err := ParseFile(path)
-		if err != nil {
-			continue
-		}
-		f.Project = GlobalProject
-		facts = append(facts, f)
-	}
+	globalDir := filepath.Join(root, GlobalProject)
+	facts = appendDirFacts(root, globalDir, GlobalProject, facts)
+
 	sort.Slice(facts, func(i, j int) bool {
 		if facts[i].Name == facts[j].Name {
 			return facts[i].Path < facts[j].Path
@@ -473,6 +553,38 @@ func ListFacts(root string) ([]Fact, error) {
 		return facts[i].Name < facts[j].Name
 	})
 	return facts, nil
+}
+
+func appendDirFacts(root, dir, project string, dst []Fact) []Fact {
+	info, err := os.Lstat(dir)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return dst
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return dst
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(strings.ToLower(name), ".md") || strings.EqualFold(name, IndexFile) {
+			continue
+		}
+		path := filepath.Join(dir, name)
+		resolvedAbs, _, resolvedProj, err := ResolveMemoryPath(root, path)
+		if err != nil || resolvedProj != project {
+			continue
+		}
+		f, err := ParseFile(resolvedAbs)
+		if err != nil {
+			continue
+		}
+		f.Project = project
+		dst = append(dst, f)
+	}
+	return dst
 }
 
 // WriteIndexes regenerates MEMORY.md for every project that has facts.
@@ -491,12 +603,17 @@ func WriteIndexes(root string) error {
 	for _, f := range facts {
 		byProject[f.Project] = append(byProject[f.Project], f)
 	}
-	for project, list := range byProject {
+	projects := make([]string, 0, len(byProject))
+	for project := range byProject {
+		projects = append(projects, project)
+	}
+	sort.Strings(projects)
+	for _, project := range projects {
 		dir, err := MemoryDir(root, project)
 		if err != nil {
 			return err
 		}
-		if err := writeProjectIndex(root, dir, list); err != nil {
+		if err := writeProjectIndex(root, dir, byProject[project]); err != nil {
 			return err
 		}
 	}
@@ -504,11 +621,21 @@ func WriteIndexes(root string) error {
 	// Clear stale generated indexes for directories whose last fact was
 	// removed outside MarkToast. Empty projects remain discoverable but cannot
 	// point at deleted files.
-	projectDirs, _ := filepath.Glob(filepath.Join(root, "projects", "*", "memory"))
-	for _, dir := range projectDirs {
-		project := filepath.Base(filepath.Dir(dir))
-		if _, ok := byProject[project]; !ok {
-			if _, err := os.Stat(filepath.Join(dir, IndexFile)); err == nil {
+	projectsRoot := filepath.Join(root, "projects")
+	if entries, err := os.ReadDir(projectsRoot); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+				continue
+			}
+			project := entry.Name()
+			if ValidateProject(project) != nil {
+				continue
+			}
+			if _, ok := byProject[project]; ok {
+				continue
+			}
+			dir := filepath.Join(projectsRoot, project, "memory")
+			if _, err := os.Lstat(filepath.Join(dir, IndexFile)); err == nil {
 				if err := writeProjectIndex(root, dir, nil); err != nil {
 					return err
 				}
@@ -524,10 +651,17 @@ func WriteIndexes(root string) error {
 }
 
 func writeProjectIndex(root, dir string, list []Fact) error {
-	sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
+	sorted := make([]Fact, len(list))
+	copy(sorted, list)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].Name != sorted[j].Name {
+			return sorted[i].Name < sorted[j].Name
+		}
+		return filepath.Base(sorted[i].Path) < filepath.Base(sorted[j].Path)
+	})
 	var b strings.Builder
 	b.WriteString("# Memory Index\n")
-	for _, f := range list {
+	for _, f := range sorted {
 		desc := strings.Join(strings.Fields(f.Description), " ")
 		if desc == "" {
 			desc = "(no description)"
@@ -539,7 +673,14 @@ func writeProjectIndex(root, dir string, list []Fact) error {
 	if err := mkdirWithinRoot(root, dir); err != nil {
 		return err
 	}
-	return AtomicWriteFile(filepath.Join(dir, IndexFile), []byte(b.String()), 0o600)
+	indexPath := filepath.Join(dir, IndexFile)
+	desired := []byte(b.String())
+	if info, err := os.Lstat(indexPath); err == nil && info.Mode().IsRegular() {
+		if existing, readErr := os.ReadFile(indexPath); readErr == nil && bytes.Equal(existing, desired) {
+			return nil
+		}
+	}
+	return AtomicWriteFile(indexPath, desired, 0o600)
 }
 
 func escapeMarkdownLabel(value string) string {
@@ -551,30 +692,33 @@ func escapeMarkdownLabel(value string) string {
 // AtomicWriteFile writes path through a unique temporary file in the same
 // directory, fsyncs it, and only then renames it into place.
 func AtomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	if info, err := os.Lstat(path); err == nil && info.IsDir() {
+		return fmt.Errorf("cannot overwrite directory with file: %s", path)
+	}
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".marktoast-write-*")
 	if err != nil {
-		return err
+		return fmt.Errorf("create temp file: %w", err)
 	}
 	tmpName := tmp.Name()
 	defer func() { _ = os.Remove(tmpName) }()
 	if err := tmp.Chmod(perm); err != nil {
 		_ = tmp.Close()
-		return err
+		return fmt.Errorf("chmod temp file: %w", err)
 	}
 	if _, err := tmp.Write(data); err != nil {
 		_ = tmp.Close()
-		return err
+		return fmt.Errorf("write temp file: %w", err)
 	}
 	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
-		return err
+		return fmt.Errorf("sync temp file: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		return err
+		return fmt.Errorf("close temp file: %w", err)
 	}
 	if err := os.Rename(tmpName, path); err != nil {
-		return err
+		return fmt.Errorf("rename temp file into place: %w", err)
 	}
 	if dirFile, err := os.Open(dir); err == nil {
 		_ = dirFile.Sync()
@@ -585,7 +729,8 @@ func AtomicWriteFile(path string, data []byte, perm os.FileMode) error {
 
 // ResolveMemoryPath accepts an absolute or repository-relative memory path and
 // returns a canonical path restricted to global/<fact>.md or
-// projects/<project>/memory/<fact>.md. Symlinks are rejected.
+// projects/<project>/memory/<fact>.md. Symlinks anywhere inside the repository
+// hierarchy are rejected.
 func ResolveMemoryPath(root, input string) (abs, rel, project string, err error) {
 	if strings.TrimSpace(input) == "" {
 		return "", "", "", fmt.Errorf("path is required")
@@ -603,7 +748,7 @@ func ResolveMemoryPath(root, input string) (abs, rel, project string, err error)
 		return "", "", "", err
 	}
 	rel, err = filepath.Rel(rootAbs, abs)
-	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 		return "", "", "", fmt.Errorf("path escapes memory repository")
 	}
 	parts := strings.Split(filepath.ToSlash(rel), "/")
@@ -626,13 +771,27 @@ func ResolveMemoryPath(root, input string) (abs, rel, project string, err error)
 	if err != nil {
 		return "", "", "", err
 	}
-	realParent, err := filepath.EvalSymlinks(filepath.Dir(abs))
-	if err != nil {
-		return "", "", "", err
+	// Walk every existing intermediate component inside rootAbs and reject
+	// symlinked directories even before the leaf directory exists on disk.
+	cur := rootAbs
+	for _, comp := range parts[:len(parts)-1] {
+		cur = filepath.Join(cur, comp)
+		info, lerr := os.Lstat(cur)
+		if os.IsNotExist(lerr) {
+			break
+		}
+		if lerr != nil {
+			return "", "", "", lerr
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return "", "", "", fmt.Errorf("path escapes memory repository")
+		}
+		realCur, evalErr := filepath.EvalSymlinks(cur)
+		if evalErr != nil || !pathWithin(realRoot, realCur) {
+			return "", "", "", fmt.Errorf("path escapes memory repository")
+		}
 	}
-	if !pathWithin(realRoot, realParent) {
-		return "", "", "", fmt.Errorf("path escapes memory repository")
-	}
+
 	if info, statErr := os.Lstat(abs); statErr == nil {
 		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 			return "", "", "", fmt.Errorf("memory path must be a regular file")
@@ -662,21 +821,53 @@ func pathWithin(root, path string) bool {
 	if err != nil {
 		return false
 	}
-	return pathAbs == rootAbs || strings.HasPrefix(pathAbs, rootAbs+string(filepath.Separator))
+	rel, err := filepath.Rel(rootAbs, pathAbs)
+	if err != nil {
+		return false
+	}
+	if rel == "." {
+		return true
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
 
 func mkdirWithinRoot(root, dir string) error {
-	if !pathWithin(root, dir) {
-		return fmt.Errorf("directory escapes repository")
-	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	realRoot, err := filepath.EvalSymlinks(root)
+	rootAbs, err := filepath.Abs(root)
 	if err != nil {
 		return err
 	}
-	realDir, err := filepath.EvalSymlinks(dir)
+	dirAbs, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(rootAbs, dirAbs)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return fmt.Errorf("directory escapes repository")
+	}
+	// Check existing components before MkdirAll so pre-planted symlinks are
+	// caught immediately without creating subdirectories through them.
+	if rel != "." {
+		cur := rootAbs
+		for _, part := range strings.Split(filepath.ToSlash(rel), "/") {
+			cur = filepath.Join(cur, part)
+			if info, lerr := os.Lstat(cur); lerr == nil {
+				if info.Mode()&os.ModeSymlink != 0 {
+					return fmt.Errorf("directory escapes repository through a symlink")
+				}
+				if !info.IsDir() {
+					return fmt.Errorf("expected directory at %s", cur)
+				}
+			}
+		}
+	}
+	if err := os.MkdirAll(dirAbs, 0o700); err != nil {
+		return fmt.Errorf("create directory: %w", err)
+	}
+	realRoot, err := filepath.EvalSymlinks(rootAbs)
+	if err != nil {
+		return err
+	}
+	realDir, err := filepath.EvalSymlinks(dirAbs)
 	if err != nil {
 		return err
 	}

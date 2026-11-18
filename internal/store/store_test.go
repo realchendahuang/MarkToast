@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestProjectKeyStable(t *testing.T) {
@@ -41,6 +42,7 @@ func TestMemoryDirGlobal(t *testing.T) {
 		}
 	}
 }
+
 func TestWriteGlobalFact(t *testing.T) {
 	root := t.TempDir()
 	if err := Init(root); err != nil {
@@ -93,15 +95,119 @@ func TestWriteAndParseFact(t *testing.T) {
 	}
 }
 
-func TestWriteFactRedactsSecrets(t *testing.T) {
+func TestFrontmatterSpecialCharsAndMultilineRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	if err := Init(root); err != nil {
 		t.Fatal(err)
 	}
+	orig := Fact{
+		Name:            `feat: "quoted" 'single' [brackets] #hash & *star*`,
+		Description:     "第一行: 含冒号与 \"引号\"\n---\n---not-a-fence\n最后一行说明",
+		Type:            "decision",
+		OriginSessionID: "sess-xyz-01",
+		Body:            "正文第一段\n\n---\n代码块与分割线保留\n最后一行无膨胀",
+	}
+	path, err := WriteFact(root, GlobalProject, orig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstRaw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := ParseFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Name != orig.Name {
+		t.Fatalf("name mismatch: got %q, want %q", parsed.Name, orig.Name)
+	}
+	if parsed.Description != orig.Description {
+		t.Fatalf("description mismatch: got %q, want %q", parsed.Description, orig.Description)
+	}
+	if parsed.Type != orig.Type || parsed.OriginSessionID != orig.OriginSessionID {
+		t.Fatalf("metadata mismatch: %+v", parsed)
+	}
+	if parsed.Body != orig.Body {
+		t.Fatalf("body mismatch: got %q, want %q", parsed.Body, orig.Body)
+	}
+
+	// Re-saving the parsed fact must be byte-for-byte idempotent (no trailing newline bloat).
+	if _, err := WriteFact(root, GlobalProject, parsed); err != nil {
+		t.Fatal(err)
+	}
+	secondRaw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(firstRaw) != string(secondRaw) {
+		t.Fatalf("round-trip rewrite changed file bytes:\nfirst:\n%s\nsecond:\n%s", firstRaw, secondRaw)
+	}
+
+	// Also verify CRLF + UTF-8 BOM parsing.
+	crlfDoc := "\ufeff---\r\nname: crlf-fact\r\ndescription: win\r\n---\r\n\r\nhello\r\nworld\r\n"
+	meta, body := Parse(crlfDoc)
+	if meta.Name != "crlf-fact" || body != "hello\r\nworld" {
+		t.Fatalf("CRLF parse failed: meta=%+v body=%q", meta, body)
+	}
+}
+
+func TestReservedMemoryNameDoesNotCollideWithIndexFile(t *testing.T) {
+	root := t.TempDir()
+	if err := Init(root); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"memory", "MEMORY", "aux"} {
+		path, err := WriteFact(root, GlobalProject, Fact{Name: name, Body: "content for " + name})
+		if err != nil {
+			t.Fatalf("WriteFact(%q): %v", name, err)
+		}
+		if strings.EqualFold(filepath.Base(path), IndexFile) {
+			t.Fatalf("fact %q collided with %s: %s", name, IndexFile, path)
+		}
+	}
+	if err := WriteIndexes(root); err != nil {
+		t.Fatal(err)
+	}
+	facts, err := ListFacts(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts) != 3 {
+		t.Fatalf("expected 3 facts intact after WriteIndexes, got %d: %+v", len(facts), facts)
+	}
+}
+
+func TestGlobMetacharacterRootPathWorks(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "vault-[2026]")
+	if err := Init(root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := WriteFact(root, GlobalProject, Fact{Name: "bracket-fact", Body: "body"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteIndexes(root); err != nil {
+		t.Fatal(err)
+	}
+	facts, err := ListFacts(root)
+	if err != nil || len(facts) != 1 || facts[0].Name != "bracket-fact" {
+		t.Fatalf("glob chars in root broke ListFacts: facts=%+v err=%v", facts, err)
+	}
+}
+
+func TestWriteFactRedactsSecretsInNameDescriptionAndBody(t *testing.T) {
+	root := t.TempDir()
+	if err := Init(root); err != nil {
+		t.Fatal(err)
+	}
+	secretOpenAI := "sk-proj-abcdefghijklmnopqrstuvwxyz123456"
+	secretGH := "ghp_0123456789abcdefghijABCDEFGHIJ"
+	secretAnt := "sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789"
 	path, err := WriteFact(root, "demo-0123456789abcdef", Fact{
-		Name:        "leaked-token",
-		Description: "token sk-proj-abcdefghijklmnopqrstuvwxyz123456",
-		Body:        "never commit ghp_0123456789abcdefghijABCDEFGHIJ",
+		Name:        "key " + secretAnt,
+		Description: "token " + secretOpenAI,
+		Body:        "never commit " + secretGH,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -110,15 +216,18 @@ func TestWriteFactRedactsSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(data), "sk-proj-abcdefghijklmnopqrstuvwxyz123456") || strings.Contains(string(data), "ghp_0123456789abcdefghijABCDEFGHIJ") {
-		t.Fatalf("secret was not redacted: %s", data)
+	raw := string(data)
+	for _, leaked := range []string{secretOpenAI, secretGH, secretAnt} {
+		if strings.Contains(raw, leaked) {
+			t.Fatalf("secret %q was not redacted: %s", leaked, raw)
+		}
 	}
-	if !strings.Contains(string(data), "[REDACTED:") {
-		t.Fatalf("redaction marker missing: %s", data)
+	if !strings.Contains(raw, "[REDACTED:") {
+		t.Fatalf("redaction marker missing: %s", raw)
 	}
 }
 
-func TestWriteIndexes(t *testing.T) {
+func TestWriteIndexesIsDeterministicAndIdempotent(t *testing.T) {
 	root := t.TempDir()
 	if err := Init(root); err != nil {
 		t.Fatal(err)
@@ -138,6 +247,10 @@ func TestWriteIndexes(t *testing.T) {
 		t.Fatal(err)
 	}
 	index := filepath.Join(dir, IndexFile)
+	info1, err := os.Stat(index)
+	if err != nil {
+		t.Fatal(err)
+	}
 	data, err := os.ReadFile(index)
 	if err != nil {
 		t.Fatal(err)
@@ -148,6 +261,23 @@ func TestWriteIndexes(t *testing.T) {
 	}
 	if strings.Index(text, "a-fact") > strings.Index(text, "b-fact") {
 		t.Fatalf("index should be sorted: %q", text)
+	}
+
+	// Second WriteIndexes with no changes should not rewrite the file.
+	past := time.Now().Add(-10 * time.Second)
+	if err := os.Chtimes(index, past, past); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteIndexes(root); err != nil {
+		t.Fatal(err)
+	}
+	info2, err := os.Stat(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = info1
+	if !info2.ModTime().Equal(past) {
+		t.Fatalf("idempotent WriteIndexes rewrote unchanged MEMORY.md: mtime=%v want=%v", info2.ModTime(), past)
 	}
 }
 
@@ -276,6 +406,14 @@ func TestResolveMemoryPathRejectsDerivedAndSymlinks(t *testing.T) {
 	}
 	if _, _, _, err := ResolveMemoryPath(root, link); err == nil {
 		t.Fatal("symlinked memory outside root was accepted")
+	}
+
+	// Pre-planted symlink directory under Init must also be rejected.
+	badRoot := t.TempDir()
+	if err := os.Symlink(t.TempDir(), filepath.Join(badRoot, GlobalProject)); err == nil {
+		if err := Init(badRoot); err == nil {
+			t.Fatal("Init accepted pre-planted symlinked global directory")
+		}
 	}
 }
 

@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,18 +17,24 @@ func AliasesPath(root string) string {
 // map, not an error.
 func LoadAliases(root string) (map[string]string, error) {
 	aliases := map[string]string{}
-	data, err := os.ReadFile(AliasesPath(root))
+	path := AliasesPath(root)
+	if info, err := os.Lstat(path); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("unsafe aliases file: %s", path)
+		}
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return aliases, nil
 		}
-		return nil, err
+		return nil, fmt.Errorf("read aliases: %w", err)
 	}
-	if len(data) == 0 {
+	if len(strings.TrimSpace(string(data))) == 0 {
 		return aliases, nil
 	}
 	if err := json.Unmarshal(data, &aliases); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse aliases: %w", err)
 	}
 	if aliases == nil {
 		aliases = map[string]string{}
@@ -58,12 +65,16 @@ func SaveAliases(root string, aliases map[string]string) error {
 	}
 	data, err := json.MarshalIndent(clean, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("encode aliases: %w", err)
 	}
 	if _, err := EnsureMetaDir(root); err != nil {
 		return err
 	}
-	return AtomicWriteFile(AliasesPath(root), append(data, '\n'), 0o600)
+	path := AliasesPath(root)
+	if info, err := os.Lstat(path); err == nil && (info.Mode()&os.ModeSymlink != 0 || info.IsDir()) {
+		return fmt.Errorf("unsafe aliases target: %s", path)
+	}
+	return AtomicWriteFile(path, append(data, '\n'), 0o600)
 }
 
 func truncateRunes(value string, limit int) string {

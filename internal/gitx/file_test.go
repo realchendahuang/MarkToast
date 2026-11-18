@@ -17,18 +17,18 @@ func TestFileHistoryDiffAndRestore(t *testing.T) {
 	if _, err := EnsureRepo(root); err != nil {
 		t.Fatal(err)
 	}
-	rel := "projects/demo/memory/fact.md"
+	rel := "projects/demo/memory/中文 记忆.md"
 	abs := filepath.Join(root, filepath.FromSlash(rel))
 	if err := os.MkdirAll(filepath.Dir(abs), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(abs, []byte("one\n"), 0o600); err != nil {
+	if err := os.WriteFile(abs, []byte("---\nname: 中文记忆\n---\n\none\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := CommitAll(root, "add fact"); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(abs, []byte("two\n"), 0o600); err != nil {
+	if err := os.WriteFile(abs, []byte("---\nname: 中文记忆\n---\n\ntwo\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := CommitAll(root, "edit fact"); err != nil {
@@ -48,8 +48,11 @@ func TestFileHistoryDiffAndRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if content != "one\n" {
+	if !strings.Contains(content, "one\n") {
 		t.Fatalf("unexpected old content: %q", content)
+	}
+	if headContent, err := ShowFile(root, "HEAD", rel); err != nil || !strings.Contains(headContent, "two\n") {
+		t.Fatalf("HEAD ShowFile failed: content=%q err=%v", headContent, err)
 	}
 
 	patch, err := DiffFile(root, commits[0].Hash, rel)
@@ -63,8 +66,16 @@ func TestFileHistoryDiffAndRestore(t *testing.T) {
 	if _, err := ShowFile(root, "zzzzzz", rel); err == nil {
 		t.Fatal("expected invalid hash to fail")
 	}
+	if _, err := ShowFile(root, "--output=/tmp/evil", rel); err == nil {
+		t.Fatal("expected flag-like hash to fail")
+	}
 	if _, err := FileLog(root, "../etc/passwd", 10); err == nil {
 		t.Fatal("expected path escape to fail")
+	}
+
+	// Remove the entire project directory and confirm RestoreFile recreates it cleanly.
+	if err := os.RemoveAll(filepath.Join(root, "projects", "demo")); err != nil {
+		t.Fatal(err)
 	}
 
 	committed, err := RestoreFile(root, oldHash, rel)
@@ -78,7 +89,7 @@ func TestFileHistoryDiffAndRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(restored) != "one\n" {
+	if !strings.Contains(string(restored), "one\n") {
 		t.Fatalf("restore wrote %q", restored)
 	}
 }
