@@ -4,9 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="color-scheme" content="light dark" />
-  <meta name="theme-color" content="#f4f4f6" />
+  <meta name="theme-color" content="#f5f5f7" />
   <title>MarkToast</title>
-  <link rel="icon" href="logo.svg" type="image/svg+xml">
+  <link rel="icon" href="logo.svg" type="image/svg+xml" />
   <script src="theme-init.js"></script>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -14,14 +14,14 @@
   <svg class="icon-sprite" aria-hidden="true">
     <defs>
       <linearGradient id="toastGrad" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#FFD978"/>
-        <stop offset="1" stop-color="#F1B747"/>
+        <stop offset="0" stop-color="#FFD978" />
+        <stop offset="1" stop-color="#F1B747" />
       </linearGradient>
     </defs>
     <symbol id="icon-logo" viewBox="0 0 20 20">
-      <path d="M10 17.4H15.2C16.5 17.4 17.4 16.5 17.4 15.2V7.2C17.4 4.6 15.7 2.9 13.1 2.9H6.9C4.3 2.9 2.6 4.6 2.6 7.2V15.2C2.6 16.5 3.5 17.4 4.8 17.4H10" fill="url(#toastGrad)" stroke="#C98B2E" stroke-width="1.15" stroke-linejoin="round"/>
-      <path d="M5 13.1V8.9l2.5 2.8 2.5-2.8v4.2" fill="none" stroke="#5A3A12" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"/>
-      <path d="M13.8 9.2v3.1m0 0 1.2-1.2m-1.2 1.2-1.2-1.2" fill="none" stroke="#5A3A12" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M10 17.4H15.2C16.5 17.4 17.4 16.5 17.4 15.2V7.2C17.4 4.6 15.7 2.9 13.1 2.9H6.9C4.3 2.9 2.6 4.6 2.6 7.2V15.2C2.6 16.5 3.5 17.4 4.8 17.4H10" fill="url(#toastGrad)" stroke="#C98B2E" stroke-width="1.15" stroke-linejoin="round" />
+      <path d="M5 13.1V8.9l2.5 2.8 2.5-2.8v4.2" fill="none" stroke="#5A3A12" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" />
+      <path d="M13.8 9.2v3.1m0 0 1.2-1.2m-1.2 1.2-1.2-1.2" fill="none" stroke="#5A3A12" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
     </symbol>
     <symbol id="icon-search" viewBox="0 0 20 20">
       <circle cx="8.7" cy="8.7" r="5.2"></circle>
@@ -76,6 +76,9 @@
       <path d="M5 2.5h6.3l3.7 3.7v11.3H5V2.5Z"></path>
       <path d="M11.3 2.5v3.7H15M7.5 10h5M7.5 13h5"></path>
     </symbol>
+    <symbol id="icon-chevron-left" viewBox="0 0 20 20">
+      <path d="m12.2 5.5-4.5 4.5 4.5 4.5"></path>
+    </symbol>
     <symbol id="icon-chevron-right" viewBox="0 0 20 20">
       <path d="m7.8 5.5 4.5 4.5-4.5 4.5"></path>
     </symbol>
@@ -103,8 +106,36 @@
       <rect x="2.5" y="3.5" width="15" height="13" rx="1.6"></rect>
       <path d="m6 7 2.5 2.5L6 12M10.5 12.5H14"></path>
     </symbol>
+    <symbol id="icon-edit" viewBox="0 0 20 20">
+      <path d="M13.6 3.6a1.6 1.6 0 0 1 2.3 2.3l-8.4 8.4-3.3.9.9-3.3 8.5-8.3Z"></path>
+      <path d="M12.2 5l2.3 2.3"></path>
+    </symbol>
+    <symbol id="icon-trash" viewBox="0 0 20 20">
+      <path d="M4 5.8h12M7.6 5.8V4.2a1 1 0 0 1 1-1h2.8a1 1 0 0 1 1 1v1.6M5.4 5.8l.7 9.8a1.4 1.4 0 0 0 1.4 1.3h5a1.4 1.4 0 0 0 1.4-1.3l.7-9.8"></path>
+      <path d="M8.5 9v4.5M11.5 9v4.5"></path>
+    </symbol>
+    <symbol id="icon-code" viewBox="0 0 20 20">
+      <path d="m6.8 6.5-3.5 3.5 3.5 3.5M13.2 6.5l3.5 3.5-3.5 3.5M11.2 4.5l-2.4 11"></path>
+    </symbol>
+    <symbol id="icon-eye" viewBox="0 0 20 20">
+      <path d="M2.2 10s2.8-5 7.8-5 7.8 5 7.8 5-2.8 5-7.8 5-7.8-5-7.8-5Z"></path>
+      <circle cx="10" cy="10" r="2.2"></circle>
+    </symbol>
+    <symbol id="icon-command" viewBox="0 0 20 20">
+      <path d="M7 7V5.4a1.9 1.9 0 1 0-1.9 1.9H7Zm0 0h6m-6 0v6m6-6V5.4a1.9 1.9 0 1 1 1.9 1.9H13Zm0 0v6m0 0h1.6a1.9 1.9 0 1 1-1.9 1.9V13Zm0 0H7m0 0v1.6a1.9 1.9 0 1 1-1.9-1.9H7Z"></path>
+    </symbol>
+    <symbol id="icon-help" viewBox="0 0 20 20">
+      <circle cx="10" cy="10" r="7.2"></circle>
+      <path d="M8.1 7.8a2 2 0 1 1 2.7 1.9c-.6.3-.8.7-.8 1.4M10 13.8v.1"></path>
+    </symbol>
+    <symbol id="icon-sun" viewBox="0 0 20 20">
+      <circle cx="10" cy="10" r="3.4"></circle>
+      <path d="M10 2.5v1.8M10 15.7v1.8M2.5 10h1.8M15.7 10h1.8M4.7 4.7l1.3 1.3M14 14l1.3 1.3M15.3 4.7 14 6M6 14l-1.3 1.3"></path>
+    </symbol>
+    <symbol id="icon-moon" viewBox="0 0 20 20">
+      <path d="M15.6 12.2A6.3 6.3 0 0 1 7.8 4.4a6.3 6.3 0 1 0 7.8 7.8Z"></path>
+    </symbol>
   </svg>
-
 
   <header class="top">
     <button class="icon side-toggle" id="side-toggle-top" type="button" aria-label="展开侧栏" title="展开侧栏" aria-controls="sidebar" aria-expanded="false" hidden>
@@ -145,14 +176,20 @@
         <button class="icon search-toggle" id="search-toggle" type="button" aria-label="搜索" title="搜索">
           <svg class="ic"><use href="#icon-search"></use></svg>
         </button>
-        <input id="global-search" type="search" placeholder="搜索" autocomplete="off" spellcheck="false" aria-label="搜索记忆" tabindex="-1" />
-        <kbd class="search-kbd" id="search-kbd" aria-hidden="true">⌘K</kbd>
+        <input id="global-search" type="search" placeholder="搜索记忆…" autocomplete="off" spellcheck="false" aria-label="搜索记忆" />
+        <button class="search-kbd" id="search-kbd" type="button" aria-label="打开命令面板" title="命令面板"><span data-no-i18n>⌘K</span></button>
         <button class="search-clear" id="search-clear" type="button" aria-label="清空搜索" hidden>
           <svg class="ic"><use href="#icon-close"></use></svg>
         </button>
       </div>
+      <button class="icon" id="open-cmdk" type="button" aria-label="命令面板" title="命令面板">
+        <svg class="ic"><use href="#icon-command"></use></svg>
+      </button>
       <button class="icon" id="refresh-view" type="button" aria-label="刷新当前视图" title="刷新">
         <svg class="ic"><use href="#icon-refresh"></use></svg>
+      </button>
+      <button class="icon" id="open-shortcuts" type="button" aria-label="快捷键速查" title="快捷键速查">
+        <svg class="ic"><use href="#icon-help"></use></svg>
       </button>
       <button class="icon top-settings" id="open-settings" data-view="settings" type="button" aria-label="设置" title="设置">
         <svg class="ic"><use href="#icon-settings"></use></svg>
@@ -187,6 +224,7 @@
         <button class="side-row" type="button" data-view="adapters">
           <svg class="ic"><use href="#icon-plug"></use></svg>
           <span class="side-name">适配器</span>
+          <span class="side-count" id="side-adapter-count"></span>
         </button>
         <button class="side-row" type="button" data-view="history">
           <svg class="ic"><use href="#icon-branch"></use></svg>
@@ -207,10 +245,15 @@
     </div>
     <div class="side-edge" id="side-edge" role="separator" tabindex="-1" aria-orientation="vertical" aria-label="侧栏宽度" aria-valuemin="168" aria-valuemax="320"></div>
     <div class="side-foot">
-      <button class="side-foot-row side-foot-link" type="button" data-view="settings">
-        <svg class="ic"><use href="#icon-settings"></use></svg>
-        <span>设置</span>
-      </button>
+      <div class="side-foot-actions">
+        <button class="side-foot-row side-foot-link" type="button" data-view="settings">
+          <svg class="ic"><use href="#icon-settings"></use></svg>
+          <span>设置</span>
+        </button>
+        <button class="icon side-foot-help" id="side-open-shortcuts" type="button" aria-label="快捷键速查" title="快捷键速查">
+          <kbd data-no-i18n>?</kbd>
+        </button>
+      </div>
       <div class="side-foot-row" id="repo-status" title="">
         <span class="status-dot" id="side-status-dot"></span>
         <span id="hub-state-text">连接中</span>
@@ -244,6 +287,10 @@
             <b id="type-filter-label">全部类型</b>
             <svg class="ic"><use href="#icon-chevron-down"></use></svg>
           </button>
+          <button class="filter-reset" id="active-filter-reset" type="button" hidden>
+            <svg class="ic"><use href="#icon-close"></use></svg>
+            <span>清除筛选</span>
+          </button>
           <select id="project-filter" class="sr-only" aria-hidden="true" tabindex="-1">
             <option value="">全部项目</option>
           </select>
@@ -256,8 +303,9 @@
             <option value="decision">决策</option>
           </select>
           <div class="filter-push"></div>
+          <span class="filter-summary" id="filter-summary" aria-live="polite"></span>
           <button class="filter-control sort-control filter-button" id="sort-button" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="切换排序">
-            <b id="sort-label">相关度</b>
+            <b id="sort-label">最近更新</b>
             <svg class="ic"><use href="#icon-chevron-down"></use></svg>
           </button>
         </div>
@@ -276,6 +324,18 @@
           <h1>收件箱</h1>
           <span class="view-count" id="inbox-total" aria-live="polite">—</span>
         </div>
+        <div class="subview-bar" id="inbox-toolbar" hidden>
+          <span class="subview-summary" id="inbox-summary-text"></span>
+          <label class="subview-target">
+            <span>归入项目</span>
+            <span class="select-wrap">
+              <select id="inbox-project-select" aria-label="归入项目">
+                <option value="global" data-no-i18n>global</option>
+              </select>
+              <svg class="ic"><use href="#icon-chevron-down"></use></svg>
+            </span>
+          </label>
+        </div>
         <div id="inbox-results" aria-live="polite"></div>
       </section>
 
@@ -283,6 +343,24 @@
         <div class="view-head">
           <h1>适配器</h1>
           <span class="view-count" id="adapter-count">—</span>
+        </div>
+        <div class="adapter-toolbar" aria-label="适配器筛选">
+          <div class="adapter-search-box" id="adapter-search-box">
+            <svg class="ic"><use href="#icon-search"></use></svg>
+            <input id="adapter-search" type="search" placeholder="筛选适配器（名称、ID、配置路径）…" autocomplete="off" spellcheck="false" aria-label="筛选适配器" />
+            <button class="search-clear" id="adapter-search-clear" type="button" aria-label="清空适配器筛选" hidden>
+              <svg class="ic"><use href="#icon-close"></use></svg>
+            </button>
+          </div>
+          <div class="adapter-pills" id="adapter-filter-pills" role="group" aria-label="适配器状态与模式筛选">
+            <button type="button" class="chip on" data-adapter-filter="all" aria-pressed="true">全部</button>
+            <button type="button" class="chip" data-adapter-filter="detected" aria-pressed="false">已检测</button>
+            <button type="button" class="chip" data-adapter-filter="connected" aria-pressed="false">已接入</button>
+            <button type="button" class="chip" data-adapter-filter="auto" aria-pressed="false">自动接入</button>
+            <button type="button" class="chip" data-adapter-filter="staged" aria-pressed="false">片段安装</button>
+            <button type="button" class="chip" data-adapter-filter="mcp_only" aria-pressed="false">仅 MCP</button>
+          </div>
+          <span class="adapter-stats" id="adapter-stats" aria-live="polite"></span>
         </div>
         <div id="adapter-results" aria-live="polite"></div>
       </section>
@@ -311,7 +389,7 @@
             <div class="row pref">
               <div class="who">
                 <div class="name">外观</div>
-                <div class="sub">跟随系统时，随 macOS 的浅色或深色自动切换</div>
+                <div class="sub">跟随系统时，随系统的浅色或深色外观自动切换</div>
               </div>
               <div class="segs" id="theme-switch" role="group" aria-label="主题">
                 <span class="thumb" aria-hidden="true"></span>
@@ -327,24 +405,8 @@
               </div>
               <div class="segs" id="lang-switch" role="group" aria-label="语言">
                 <span class="thumb" aria-hidden="true"></span>
-                <button type="button" class="opt" data-lang="zh" aria-pressed="true">中文</button>
-                <button type="button" class="opt" data-lang="en" aria-pressed="false">English</button>
-              </div>
-            </div>
-            <div class="row pref">
-              <div class="who">
-                <div class="name">快捷键</div>
-                <div class="sub">窗口里随时可用；输入框里不抢键</div>
-              </div>
-              <div class="keys">
-                <div><kbd>⌘K</kbd><span>搜索</span></div>
-                <div><kbd>/</kbd><span>搜索</span></div>
-                <div><kbd>⌘,</kbd><span>设置</kbd></div>
-                <div><kbd>⌃⌘S</kbd><span>侧栏</kbd></div>
-                <div><kbd>↑↓←→</kbd><span>选卡片</span></div>
-                <div><kbd>Esc</kbd><span>关详情</span></div>
-                <div><kbd>⌘+ / ⌘−</kbd><span>字号</span></div>
-                <div><kbd>⌘0</kbd><span>还原字号</span></div>
+                <button type="button" class="opt" data-lang="zh" aria-pressed="true" data-no-i18n>中文</button>
+                <button type="button" class="opt" data-lang="en" aria-pressed="false" data-no-i18n>English</button>
               </div>
             </div>
             <div class="row pref">
@@ -357,6 +419,24 @@
                 <button type="button" class="opt" data-read-choice="s" aria-pressed="false">小</button>
                 <button type="button" class="opt is-default" data-read-choice="m" aria-pressed="true">标准</button>
                 <button type="button" class="opt" data-read-choice="l" aria-pressed="false">大</button>
+              </div>
+            </div>
+            <div class="row pref">
+              <div class="who">
+                <div class="name">快捷键</div>
+                <div class="sub">窗口里随时可用；输入框里不抢键</div>
+              </div>
+              <div class="keys">
+                <div><kbd data-no-i18n>⌘K</kbd><span>命令面板</span></div>
+                <div><kbd data-no-i18n>/</kbd><span>搜索记忆</span></div>
+                <div><kbd data-no-i18n>N</kbd><span>新建记忆</span></div>
+                <div><kbd data-no-i18n>J / K</kbd><span>上下选卡片</span></div>
+                <div><kbd data-no-i18n>↑↓←→</kbd><span>网格选卡片</span></div>
+                <div><kbd data-no-i18n>E</kbd><span>编辑当前记忆</span></div>
+                <div><kbd data-no-i18n>⌘,</kbd><span>打开设置</span></div>
+                <div><kbd data-no-i18n>⌃⌘S</kbd><span>切换侧栏</span></div>
+                <div><kbd data-no-i18n>?</kbd><span>快捷键速查</span></div>
+                <div><kbd data-no-i18n>Esc</kbd><span>关闭弹层</span></div>
               </div>
             </div>
           </div>
@@ -377,10 +457,10 @@
             </div>
             <div class="row pref">
               <div class="who">
-                <div class="name">记忆</div>
+                <div class="name">记忆总数</div>
                 <div class="sub">仓库里的记忆总数</div>
               </div>
-              <div class="val"><code id="settings-facts">—</code></div>
+              <div class="val"><code id="settings-facts" data-i18n="true">—</code></div>
             </div>
             <div class="row pref">
               <div class="who">
@@ -388,14 +468,14 @@
                 <div class="sub">用于全文搜索，重建不会改动记忆</div>
               </div>
               <div class="val">
-                <code id="settings-index">—</code>
+                <code id="settings-index" data-i18n="true">—</code>
                 <button class="button quiet" id="reindex" type="button">重建索引</button>
               </div>
             </div>
             <div class="row pref">
               <div class="who">
                 <div class="name">备份</div>
-                <div class="sub">把仓库打包成一份 zip，留在本机</div>
+                <div class="sub">把仓库打包成一份 .tar.gz 归档，留在本机</div>
               </div>
               <div class="val">
                 <code id="settings-backup" data-no-i18n>—</code>
@@ -406,6 +486,18 @@
         </section>
         <section class="set-page" id="setPage-mcp" role="tabpanel" aria-labelledby="setTab-mcp" data-part="MCP" hidden>
           <div class="list prefs">
+            <div class="row pref">
+              <div class="who">
+                <div class="name">HTTP 端点</div>
+                <div class="sub">本地 Streamable HTTP MCP 服务地址</div>
+              </div>
+              <div class="val">
+                <code id="settings-mcp-url" data-no-i18n>http://127.0.0.1:3777/mcp</code>
+                <button class="icon" id="copy-mcp-url" type="button" aria-label="复制 MCP 地址" title="复制">
+                  <svg class="ic"><use href="#icon-copy"></use></svg>
+                </button>
+              </div>
+            </div>
             <div class="row pref">
               <div class="who">
                 <div class="name">Token</div>
@@ -424,14 +516,14 @@
           <div class="list prefs">
             <div class="row pref">
               <div class="who">
-                <div class="name">ZCode</div>
+                <div class="name" data-no-i18n>ZCode</div>
                 <div class="sub">从 ~/.zcode/cli/memories 导入</div>
               </div>
               <div class="val"><button class="button quiet" type="button" data-import="zcode">导入</button></div>
             </div>
             <div class="row pref">
               <div class="who">
-                <div class="name">Hermes</div>
+                <div class="name" data-no-i18n>Hermes</div>
                 <div class="sub">从 ~/.hermes 导入</div>
               </div>
               <div class="val"><button class="button quiet" type="button" data-import="hermes">导入</button></div>
@@ -451,7 +543,6 @@
           <div class="list prefs alias-list" id="alias-list"></div>
         </section>
       </section>
-
     </div>
   </main>
 
@@ -462,20 +553,21 @@
           <div class="dialog-title-wrap">
             <svg class="logo"><use href="#icon-logo"></use></svg>
             <h2 id="dialog-title">新建记忆</h2>
+            <span class="dirty-pill" id="dialog-dirty-pill" hidden>未保存</span>
           </div>
-          <button class="icon" id="close-dialog" type="button" aria-label="关闭新建记忆弹层">
+          <button class="icon" id="close-dialog" type="button" aria-label="关闭记忆编辑弹层">
             <svg class="ic"><use href="#icon-close"></use></svg>
           </button>
         </header>
         <div class="dialog-body">
           <div class="form-grid">
             <label class="field">
-              <span>项目</span>
+              <span><span class="field-label">所属项目</span></span>
               <input id="memory-project" name="project" required list="memory-project-options" placeholder="global / project key" autocomplete="off" />
               <datalist id="memory-project-options"></datalist>
             </label>
             <label class="field">
-              <span>类型</span>
+              <span><span class="field-label">类型</span></span>
               <select id="memory-type" name="type" required>
                 <option value="project">项目</option>
                 <option value="user">用户</option>
@@ -486,20 +578,31 @@
             </label>
           </div>
           <label class="field">
-            <span>名称</span>
-            <input id="memory-name" name="name" required placeholder="fact-name" autocomplete="off" />
+            <span><span class="field-label">名称</span></span>
+            <input id="memory-name" name="name" required placeholder="例如：api-error-conventions 或 发布检查清单" autocomplete="off" />
           </label>
           <label class="field">
-            <span>描述</span>
-            <input id="memory-description" name="description" placeholder="为搜索补充一点上下文" autocomplete="off" />
+            <span><span class="field-label">描述</span><em>可选</em></span>
+            <input id="memory-description" name="description" placeholder="一句话概括上下文，便于检索命中" autocomplete="off" />
           </label>
-          <label class="field">
-            <span>正文</span>
-            <textarea id="memory-body" name="body" required rows="10" maxlength="1000000" placeholder="写下这条记忆…"></textarea>
-          </label>
+          <div class="field">
+            <div class="field-head">
+              <label for="memory-body" class="field-label">正文</label>
+              <div class="field-tools">
+                <span class="char-counter" id="body-char-count" data-no-i18n>0</span>
+                <div class="mini-segs" role="group" aria-label="编辑器视图">
+                  <button type="button" class="mini-opt on" id="body-mode-write" aria-pressed="true">编写</button>
+                  <button type="button" class="mini-opt" id="body-mode-preview" aria-pressed="false">预览</button>
+                </div>
+              </div>
+            </div>
+            <textarea id="memory-body" name="body" required rows="10" placeholder="支持 Markdown 格式编写记忆正文…"></textarea>
+            <div class="markdown-body editor-preview" id="memory-preview" hidden></div>
+          </div>
           <p class="form-error" id="form-error" role="alert" hidden></p>
         </div>
         <footer class="dialog-foot">
+          <span class="dialog-hint"><kbd data-no-i18n>⌘↵</kbd> <span>快速保存</span></span>
           <div class="dialog-actions">
             <button class="button quiet" id="cancel-dialog" type="button">取消</button>
             <button class="button primary" id="submit-memory" type="submit">
@@ -513,7 +616,7 @@
   </div>
 
   <div class="modal" id="memory-detail-modal" hidden>
-    <div class="dialog detail-dialog" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+    <div class="dialog detail-dialog" id="detail-dialog-box" role="dialog" aria-modal="true" aria-labelledby="detail-title" tabindex="-1">
       <button class="icon detail-close" id="close-detail" type="button" aria-label="关闭记忆详情">
         <svg class="ic"><use href="#icon-close"></use></svg>
       </button>
@@ -536,10 +639,69 @@
       <footer class="dialog-foot">
         <span>接入说明</span>
         <div class="dialog-actions">
-          <button class="button quiet" id="adapter-dialog-action" type="button" hidden>接入</button>
-          <button class="button" id="adapter-dialog-close" type="button">关闭</button>
+          <button class="button quiet danger-text" id="adapter-dialog-uninstall" type="button" hidden>移除配置</button>
+          <button class="button primary" id="adapter-dialog-action" type="button" hidden>接入</button>
+          <button class="button quiet" id="adapter-dialog-close" type="button">关闭</button>
         </div>
       </footer>
+    </div>
+  </div>
+
+  <div class="modal cmdk-backdrop" id="cmdk-modal" hidden>
+    <div class="dialog cmdk-dialog" role="dialog" aria-modal="true" aria-label="命令面板与全局搜索">
+      <div class="cmdk-head">
+        <svg class="ic cmdk-search-ic"><use href="#icon-search"></use></svg>
+        <input id="cmdk-input" type="search" placeholder="搜索记忆、项目、适配器或执行命令…" autocomplete="off" spellcheck="false" aria-label="搜索记忆或输入命令" />
+        <button class="search-clear" id="cmdk-clear" type="button" aria-label="清空输入" hidden>
+          <svg class="ic"><use href="#icon-close"></use></svg>
+        </button>
+        <kbd class="cmdk-esc" data-no-i18n>Esc</kbd>
+      </div>
+      <div class="cmdk-body" id="cmdk-list" role="listbox" aria-label="搜索与命令结果"></div>
+      <footer class="cmdk-foot">
+        <span><kbd data-no-i18n>↑↓</kbd> <span>导航</span></span>
+        <span><kbd data-no-i18n>↵</kbd> <span>打开 / 执行</span></span>
+        <span><kbd data-no-i18n>⌘↵</kbd> <span>在列表中筛选</span></span>
+        <span><kbd data-no-i18n>Esc</kbd> <span>关闭</span></span>
+      </footer>
+    </div>
+  </div>
+
+  <div class="modal" id="shortcuts-modal" hidden>
+    <div class="dialog shortcuts-dialog" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
+      <header class="dialog-head">
+        <div class="dialog-title-wrap">
+          <svg class="ic"><use href="#icon-command"></use></svg>
+          <h2 id="shortcuts-title">键盘快捷键</h2>
+        </div>
+        <button class="icon" id="close-shortcuts" type="button" aria-label="关闭快捷键速查">
+          <svg class="ic"><use href="#icon-close"></use></svg>
+        </button>
+      </header>
+      <div class="dialog-body shortcuts-body">
+        <section class="shortcut-group">
+          <h3>全局与导航</h3>
+          <div class="shortcut-rows">
+            <div class="shortcut-row"><span>打开命令面板 / 全局搜索</span><kbd data-no-i18n>⌘K</kbd></div>
+            <div class="shortcut-row"><span>聚焦顶部搜索框</span><kbd data-no-i18n>/</kbd></div>
+            <div class="shortcut-row"><span>新建记忆</span><kbd data-no-i18n>N</kbd></div>
+            <div class="shortcut-row"><span>打开偏好设置</span><kbd data-no-i18n>⌘,</kbd></div>
+            <div class="shortcut-row"><span>收起 / 展开侧栏</span><kbd data-no-i18n>⌃⌘S</kbd></div>
+            <div class="shortcut-row"><span>显示快捷键速查</span><kbd data-no-i18n>?</kbd></div>
+          </div>
+        </section>
+        <section class="shortcut-group">
+          <h3>记忆浏览与编辑</h3>
+          <div class="shortcut-rows">
+            <div class="shortcut-row"><span>前一条 / 后一条记忆</span><kbd data-no-i18n>K / J</kbd></div>
+            <div class="shortcut-row"><span>网格方向键选卡片</span><kbd data-no-i18n>↑ ↓ ← →</kbd></div>
+            <div class="shortcut-row"><span>编辑当前打开的记忆</span><kbd data-no-i18n>E</kbd></div>
+            <div class="shortcut-row"><span>在编辑器中保存记忆</span><kbd data-no-i18n>⌘↵</kbd></div>
+            <div class="shortcut-row"><span>放大 / 缩小 / 还原阅读字号</span><kbd data-no-i18n>⌘+ / ⌘− / ⌘0</kbd></div>
+            <div class="shortcut-row"><span>关闭当前弹层或清空搜索</span><kbd data-no-i18n>Esc</kbd></div>
+          </div>
+        </section>
+      </div>
     </div>
   </div>
 
