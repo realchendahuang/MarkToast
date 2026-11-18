@@ -18,37 +18,47 @@ import (
 // stagedFile is one generated snippet file.
 type stagedFile struct {
 	name    string
+	target  string
 	content []byte
 }
 
 // installStaged generates paste-ready snippets and a README for adapters whose
-// config cannot be merged automatically (staged), or that only need MCP
-// (mcp_only). In dry-run mode it reports the plan and writes nothing.
+// config cannot be merged automatically (staged), that only need MCP
+// (mcp_only), or when --staged is requested explicitly.
 func installStaged(desc adapter.Descriptor, opts Options, report Report, mode string) (Report, error) {
+	dir, err := safeStagedDir(opts, desc.ID)
+	if err != nil {
+		return report, err
+	}
 	if mode == "" {
 		mode = desc.EffectiveInstallMode()
 	}
-	dir := opts.stagedDir(desc.ID)
 	files, instructions, err := buildStagedFiles(desc, opts, mode)
 	if err != nil {
 		return report, err
 	}
 	report.Mode = desc.EffectiveInstallMode()
-	report.Staged = mode != adapter.ModeAuto
+	report.Staged = true
 	report.StagedDir = dir
 	report.Events = normalizeEvents(desc.Hooks.Events)
 	for _, file := range files {
 		report.Files = append(report.Files, filepath.Join(dir, file.name))
 	}
 	report.Steps = append(report.Steps, "write paste-ready snippets to "+dir)
-	switch mode {
-	case adapter.ModeMCPOnly:
-		report.Steps = append(report.Steps, "paste mcp snippet into "+displayTarget(desc.MCP.Target))
-	default:
-		report.Steps = append(report.Steps, "paste hooks snippet into "+displayTarget(desc.Hooks.Target))
-		if strings.TrimSpace(desc.MCP.Kind) != "" && !strings.EqualFold(desc.MCP.Kind, "none") {
-			report.Steps = append(report.Steps, "paste mcp snippet into "+displayTarget(desc.MCP.Target))
+	contentFiles := 0
+	for _, file := range files {
+		if file.name == "README.txt" {
+			continue
 		}
+		contentFiles++
+		if file.target != "" {
+			report.Steps = append(report.Steps, fmt.Sprintf("merge %s into %s", file.name, file.target))
+		} else {
+			report.Steps = append(report.Steps, fmt.Sprintf("paste %s into %s's settings UI", file.name, titleOrID(desc)))
+		}
+	}
+	if contentFiles == 0 {
+		report.Steps = append(report.Steps, fmt.Sprintf("follow %s/README.txt (plugin/native bridge; no raw config file to edit)", dir))
 	}
 	if opts.Apply {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -56,7 +66,7 @@ func installStaged(desc adapter.Descriptor, opts Options, report Report, mode st
 		}
 		for _, file := range files {
 			path := filepath.Join(dir, file.name)
-			if err := os.WriteFile(path, file.content, 0o600); err != nil {
+			if err := atomicWritePrivate(path, file.content); err != nil {
 				return report, err
 			}
 		}
@@ -68,35 +78,74 @@ func installStaged(desc adapter.Descriptor, opts Options, report Report, mode st
 	return report, nil
 }
 
-// buildStagedFiles renders the snippet set for one adapter. The snippet shapes
-// follow the harness's real config schema, so a user can copy the relevant
-// block instead of translating generic JSON.
+// buildStagedFiles renders the snippet set for one adapter. JSON snippets are
+// strictly valid JSON (no leading `#` comments) so users can copy-paste or `jq`
+// merge them directly without syntax errors.
 func buildStagedFiles(desc adapter.Descriptor, opts Options, mode string) ([]stagedFile, string, error) {
 	var files []stagedFile
-	if mode != adapter.ModeMCPOnly && len(desc.Hooks.Events) > 0 && strings.TrimSpace(desc.Hooks.Target) != "" {
-		file, err := hooksSnippet(desc, opts)
+	if mode != adapter.ModeMCPOnly && shouldStageHooksFile(desc) {
+		hookFiles, err := hooksSnippets(desc, opts)
 		if err != nil {
 			return nil, "", err
 		}
-		files = append(files, file)
+		files = append(files, hookFiles...)
 	}
-	if strings.TrimSpace(desc.MCP.Kind) != "" && !strings.EqualFold(desc.MCP.Kind, "none") {
+	if shouldStageMCPFile(desc) {
 		file, err := mcpSnippet(desc, opts)
 		if err != nil {
 			return nil, "", err
 		}
 		files = append(files, file)
 	}
-	instructions := buildReadme(desc, opts, mode)
+	instructions := buildReadme(desc, opts, mode, files)
 	files = append(files, stagedFile{name: "README.txt", content: []byte(instructions)})
 	return files, instructions, nil
 }
 
-// hooksSnippet renders hooks in the target file's native format.
-func hooksSnippet(desc adapter.Descriptor, opts Options) (stagedFile, error) {
+func shouldStageHooksFile(desc adapter.Descriptor) bool {
+	if len(normalizeEvents(desc.Hooks.Events)) == 0 || strings.TrimSpace(desc.Hooks.Target) == "" {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(desc.Hooks.InstallKind), "plugin_bundle") {
+		return false
+	}
+	ext := hookTargetExt(desc.Hooks.Target)
+	return ext != ".ts" && ext != ".js"
+}
+
+func shouldStageMCPFile(desc adapter.Descriptor) bool {
+	kind := strings.ToLower(strings.TrimSpace(desc.MCP.Kind))
+	if kind == "" || kind == "none" {
+		return false
+	}
+	ext := hookTargetExt(desc.MCP.Target)
+	return ext != ".ts" && ext != ".js"
+}
+
+// hooksSnippets renders hooks in the target file's native format.
+func hooksSnippets(desc adapter.Descriptor, opts Options) ([]stagedFile, error) {
 	events := normalizeEvents(desc.Hooks.Events)
+	if strings.EqualFold(desc.ID, "dsh") || strings.EqualFold(desc.Hooks.InstallKind, "patch_fragment") {
+		// DSH bridges a Claude Code hooks.json file via @deepseek-ai/dsh-hooks-claude-code.
+		hooks := map[string]any{}
+		for _, event := range events {
+			hooks[event] = []any{buildHookEntry(shapeNested, desc, opts, event)}
+		}
+		claudeJSON, err := json.MarshalIndent(map[string]any{"hooks": hooks}, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		patch := fmt.Sprintf("# MarkToast hooks patch fragment for %s\n# merge into: %s\n- insert: \"@deepseek-ai/dsh-hooks-claude-code\"\n  config:\n    hooksFile: ~/.marktoast/adapters/%s/hooks.claude.json\n",
+			titleOrID(desc), desc.Hooks.Target, desc.ID)
+		return []stagedFile{
+			{name: "hooks.claude.json", target: "~/.marktoast/adapters/" + desc.ID + "/hooks.claude.json", content: append(claudeJSON, '\n')},
+			{name: "hooks.patch.yaml", target: strings.TrimSpace(desc.Hooks.Target), content: []byte(patch)},
+		}, nil
+	}
+
 	spec := resolveShape(desc)
 	ext := hookTargetExt(desc.Hooks.Target)
+	target := strings.TrimSpace(desc.Hooks.Target)
 	switch ext {
 	case ".toml":
 		rows := make([]any, 0, len(events))
@@ -105,9 +154,9 @@ func hooksSnippet(desc adapter.Descriptor, opts Options) (stagedFile, error) {
 		}
 		content, err := toml.Marshal(map[string]any{"hooks": rows})
 		if err != nil {
-			return stagedFile{}, err
+			return nil, err
 		}
-		return stagedFile{name: "hooks.toml", content: append([]byte(header(desc, desc.Hooks.Target)), content...)}, nil
+		return []stagedFile{{name: "hooks.toml", target: target, content: append([]byte(commentHeader(desc, target)), content...)}}, nil
 	case ".yaml", ".yml":
 		hooks := map[string]any{}
 		for _, event := range events {
@@ -115,18 +164,16 @@ func hooksSnippet(desc adapter.Descriptor, opts Options) (stagedFile, error) {
 		}
 		content, err := yaml.Marshal(map[string]any{"hooks": hooks})
 		if err != nil {
-			return stagedFile{}, err
+			return nil, err
 		}
-		return stagedFile{name: "hooks.yaml", content: append([]byte(header(desc, desc.Hooks.Target)), content...)}, nil
+		return []stagedFile{{name: "hooks.yaml", target: target, content: append([]byte(commentHeader(desc, target)), content...)}}, nil
 	default:
 		root := map[string]any{}
 		shape := spec.shape
 		if !shape.isJSON() {
-			// Unknown shape: emit the simplest documented form (a flat command
-			// list per event) and let the README explain the adaptation.
 			hooks := map[string]any{}
 			for _, event := range events {
-				hooks[event] = []any{map[string]any{"command": hookCommand(opts.Binary, desc.ID, event)}}
+				hooks[event] = []any{buildHookEntry(shapeNested, desc, opts, event)}
 			}
 			root["hooks"] = hooks
 		} else {
@@ -168,40 +215,46 @@ func hooksSnippet(desc adapter.Descriptor, opts Options) (stagedFile, error) {
 		}
 		content, err := json.MarshalIndent(root, "", "  ")
 		if err != nil {
-			return stagedFile{}, err
+			return nil, err
 		}
-		return stagedFile{name: "hooks.json", content: []byte(header(desc, desc.Hooks.Target) + string(content) + "\n")}, nil
+		return []stagedFile{{name: "hooks.json", target: target, content: append(content, '\n')}}, nil
 	}
 }
 
 // mcpSnippet renders the MCP registration in the target file's native format.
+// JSON snippets contain pure, comment-free JSON.
 func mcpSnippet(desc adapter.Descriptor, opts Options) (stagedFile, error) {
 	kind := strings.ToLower(strings.TrimSpace(desc.MCP.Kind))
+	target := strings.TrimSpace(desc.MCP.Target)
 	if kind == "patch_fragment" {
 		return patchFragmentSnippet(desc, opts), nil
 	}
-	entry := buildMCPEntryForSnippet(desc, opts)
-	root := nestedServersRoot(desc, entry)
-	ext := hookTargetExt(desc.MCP.Target)
+	ext := hookTargetExt(target)
 	switch ext {
 	case ".toml":
+		entry := buildTOMLMCPEntry(desc, opts)
+		root := nestedServersRootForPath(tomlMCPPath(desc), entry)
 		content, err := toml.Marshal(root)
 		if err != nil {
 			return stagedFile{}, err
 		}
-		return stagedFile{name: "mcp.toml", content: append([]byte(header(desc, desc.MCP.Target)), content...)}, nil
+		return stagedFile{name: "mcp.toml", target: target, content: append([]byte(commentHeader(desc, target)), content...)}, nil
 	case ".yaml", ".yml":
+		entry := buildMCPEntryForSnippet(desc, opts)
+		root := nestedServersRoot(desc, entry)
 		content, err := yaml.Marshal(root)
 		if err != nil {
 			return stagedFile{}, err
 		}
-		return stagedFile{name: "mcp.yaml", content: append([]byte(header(desc, desc.MCP.Target)), content...)}, nil
+		return stagedFile{name: "mcp.yaml", target: target, content: append([]byte(commentHeader(desc, target)), content...)}, nil
 	default:
+		entry := buildMCPEntryForSnippet(desc, opts)
+		root := nestedServersRoot(desc, entry)
 		content, err := json.MarshalIndent(root, "", "  ")
 		if err != nil {
 			return stagedFile{}, err
 		}
-		return stagedFile{name: "mcp.json", content: []byte(header(desc, desc.MCP.Target) + string(content) + "\n")}, nil
+		return stagedFile{name: "mcp.json", target: target, content: append(content, '\n')}, nil
 	}
 }
 
@@ -219,15 +272,19 @@ func patchFragmentSnippet(desc adapter.Descriptor, opts Options) stagedFile {
 		},
 	}
 	content, _ := yaml.Marshal([]any{entry})
-	headerText := fmt.Sprintf("# MarkToast MCP patch fragment for %s\n# merge into: %s\n", desc.Title, displayTarget(desc.MCP.Target))
-	return stagedFile{name: "mcp.patch.yaml", content: []byte(headerText + string(content))}
+	target := strings.TrimSpace(desc.MCP.Target)
+	headerText := fmt.Sprintf("# MarkToast MCP patch fragment for %s\n# merge into: %s\n", titleOrID(desc), displayTarget(target))
+	return stagedFile{name: "mcp.patch.yaml", target: target, content: []byte(headerText + string(content))}
 }
 
 // nestedServersRoot wraps an MCP entry in the adapter's servers container, so
 // snippets match the real config key path (mcpServers, mcp.servers,
 // extensions, mcp_servers, ...).
 func nestedServersRoot(desc adapter.Descriptor, entry map[string]any) map[string]any {
-	path := mcpServersPath(desc)
+	return nestedServersRootForPath(mcpServersPath(desc), entry)
+}
+
+func nestedServersRootForPath(path []string, entry map[string]any) map[string]any {
 	root := map[string]any{}
 	current := root
 	for index, key := range path {
@@ -254,9 +311,9 @@ func buildMCPEntryForSnippet(desc adapter.Descriptor, opts Options) map[string]a
 
 // buildReadme writes the paste instructions, including the hub URL, token
 // location and the pitfalls recorded in the descriptor.
-func buildReadme(desc adapter.Descriptor, opts Options, mode string) string {
+func buildReadme(desc adapter.Descriptor, opts Options, mode string, files []stagedFile) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# MarkToast integration for %s (%s)\n", desc.Title, desc.ID)
+	fmt.Fprintf(&b, "# MarkToast integration for %s (%s)\n", titleOrID(desc), desc.ID)
 	fmt.Fprintf(&b, "# generated: %s\n", time.Now().UTC().Format(time.RFC3339))
 	fmt.Fprintf(&b, "# mode: %s\n\n", mode)
 	if desc.Notes != "" {
@@ -273,25 +330,34 @@ func buildReadme(desc adapter.Descriptor, opts Options, mode string) string {
 	b.WriteString("Start the hub with `marktoast serve` before the first harness session.\n\n")
 
 	b.WriteString("## What is staged here\n\n")
+	for _, f := range files {
+		if f.target != "" {
+			fmt.Fprintf(&b, "- %s: merge into %s\n", f.name, f.target)
+		} else {
+			fmt.Fprintf(&b, "- %s: paste into %s's MCP settings UI\n", f.name, titleOrID(desc))
+		}
+	}
 	if mode != adapter.ModeMCPOnly && len(desc.Hooks.Events) > 0 {
-		fmt.Fprintf(&b, "- hooks.%s: paste/merge into %s\n", snippetExt(desc.Hooks.Target), desc.Hooks.Target)
-		fmt.Fprintf(&b, "  events: %s\n", strings.Join(normalizeEvents(desc.Hooks.Events), ", "))
+		fmt.Fprintf(&b, "  hook events: %s\n", strings.Join(normalizeEvents(desc.Hooks.Events), ", "))
 		fmt.Fprintf(&b, "  injection: %s\n", valueOrPlaceholder(desc.Hooks.Injection, "none"))
 		if desc.Hooks.NeedsTrust {
 			b.WriteString("  needs_trust: true (approve the hooks in the harness UI on first start)\n")
 		}
 		if desc.Hooks.Notes != "" {
-			fmt.Fprintf(&b, "  notes: %s\n", desc.Hooks.Notes)
+			fmt.Fprintf(&b, "  hook notes: %s\n", desc.Hooks.Notes)
 		}
-		b.WriteString("\n")
 	}
-	if strings.TrimSpace(desc.MCP.Kind) != "" && !strings.EqualFold(desc.MCP.Kind, "none") {
-		fmt.Fprintf(&b, "- mcp snippet: merge into %s (kind=%s)\n", desc.MCP.Target, desc.MCP.Kind)
-		if desc.MCP.Notes != "" {
-			fmt.Fprintf(&b, "  notes: %s\n", desc.MCP.Notes)
-		}
-		b.WriteString("\n")
+	if strings.TrimSpace(desc.MCP.Kind) != "" && !strings.EqualFold(desc.MCP.Kind, "none") && desc.MCP.Notes != "" {
+		fmt.Fprintf(&b, "  mcp notes: %s\n", desc.MCP.Notes)
 	}
+	b.WriteString("\n")
+
+	if strings.EqualFold(desc.ID, "hermes") {
+		b.WriteString("## Native Hermes plugin (recommended)\n\n")
+		b.WriteString("  cp -R adapters/hermes/marktoast ~/.hermes/plugins/marktoast\n")
+		b.WriteString("  # then set `memory.provider: marktoast` in ~/.hermes/config.yaml\n\n")
+	}
+
 	if mode == adapter.ModeMCPOnly {
 		b.WriteString("This harness exposes no lifecycle hooks MarkToast can install; only MCP is wired.\n\n")
 	}
@@ -300,21 +366,21 @@ func buildReadme(desc adapter.Descriptor, opts Options, mode string) string {
 	step := 1
 	fmt.Fprintf(&b, "%d. Start the hub: `marktoast serve` (MCP at %s).\n", step, hubMCPURL)
 	step++
-	if mode != adapter.ModeMCPOnly && len(desc.Hooks.Events) > 0 {
-		fmt.Fprintf(&b, "%d. Back up %s, then merge the hooks block from hooks.%s.\n", step, desc.Hooks.Target, snippetExt(desc.Hooks.Target))
+	for _, f := range files {
+		if f.target != "" {
+			fmt.Fprintf(&b, "%d. Back up %s, then merge %s.\n", step, f.target, f.name)
+		} else {
+			fmt.Fprintf(&b, "%d. Paste %s into %s's in-app MCP configuration.\n", step, f.name, titleOrID(desc))
+		}
 		step++
 	}
-	if strings.TrimSpace(desc.MCP.Kind) != "" && !strings.EqualFold(desc.MCP.Kind, "none") {
-		fmt.Fprintf(&b, "%d. Merge the MCP server row from the mcp snippet into %s.\n", step, desc.MCP.Target)
-		step++
-	}
-	fmt.Fprintf(&b, "%d. Restart %s and confirm the MarkToast tools are listed.\n", step, desc.Title)
+	fmt.Fprintf(&b, "%d. Restart %s and confirm the MarkToast tools are listed.\n", step, titleOrID(desc))
 	step++
-	fmt.Fprintf(&b, "%d. Verify with `marktoast adapters status %s` (detected/staged/installed).\n\n", step, desc.ID)
+	fmt.Fprintf(&b, "%d. Verify with `marktoast adapters status %s`.\n\n", step, desc.ID)
 
 	b.WriteString("## Pitfalls\n\n")
 	if desc.Hooks.NeedsTrust {
-		fmt.Fprintf(&b, "- %s gates hook execution behind an explicit trust/approval step.\n", desc.Title)
+		fmt.Fprintf(&b, "- %s gates hook execution behind an explicit trust/approval step.\n", titleOrID(desc))
 	}
 	if desc.Hooks.Injection == "mcp_handoff" {
 		b.WriteString("- SessionStart is not a reliable stdout injection point here; rely on the MCP handoff tools.\n")
@@ -324,6 +390,9 @@ func buildReadme(desc adapter.Descriptor, opts Options, mode string) string {
 	}
 	if desc.Hooks.InstallKind == "yaml_snippet" {
 		b.WriteString("- This config file is YAML and is owned by the harness: merge by hand, never rewrite it wholesale.\n")
+	}
+	if strings.EqualFold(desc.ID, "prime-agent") {
+		b.WriteString("- Prime Agent reads the bearer token from `MARKTOAST_TOKEN` in its environment (`bearerTokenEnvVar`).\n")
 	}
 	b.WriteString("- Keep the bearer token out of shell history; it is also stored in the token file listed above.\n\n")
 
@@ -337,25 +406,21 @@ func buildReadme(desc adapter.Descriptor, opts Options, mode string) string {
 	return b.String()
 }
 
-// header prefixes generated snippet files with the target path.
-func header(desc adapter.Descriptor, target string) string {
-	return fmt.Sprintf("# MarkToast snippet (%s). Merge into: %s\n", desc.ID, target)
+// commentHeader prefixes TOML/YAML snippet files (never JSON) with target info.
+func commentHeader(desc adapter.Descriptor, target string) string {
+	return fmt.Sprintf("# MarkToast snippet (%s). Merge into: %s\n", desc.ID, displayTarget(target))
 }
 
-func snippetExt(target string) string {
-	switch hookTargetExt(target) {
-	case ".toml":
-		return "toml"
-	case ".yaml", ".yml":
-		return "yaml"
-	default:
-		return "json"
+func titleOrID(desc adapter.Descriptor) string {
+	if strings.TrimSpace(desc.Title) != "" {
+		return desc.Title
 	}
+	return desc.ID
 }
 
 func displayTarget(target string) string {
 	if strings.TrimSpace(target) == "" {
-		return "<none>"
+		return "in-app settings"
 	}
 	return target
 }

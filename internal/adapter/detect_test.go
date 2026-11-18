@@ -25,3 +25,38 @@ func TestExpandPathAndDetect(t *testing.T) {
 		t.Fatalf("unexpected detection: %v", found)
 	}
 }
+
+func TestExpandEnvDefaultAndSuggest(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("MT_CUSTOM_CFG", "")
+
+	got := ExpandPath("${MT_CUSTOM_CFG:-~/.cline/settings.json}")
+	want := filepath.Join(home, ".cline", "settings.json")
+	if got != want {
+		t.Fatalf("ExpandPath fallback = %q, want %q", got, want)
+	}
+
+	t.Setenv("MT_CUSTOM_CFG", filepath.Join(home, "override.json"))
+	if got := ExpandPath("${MT_CUSTOM_CFG:-~/.cline/settings.json}"); got != filepath.Join(home, "override.json") {
+		t.Fatalf("ExpandPath override = %q", got)
+	}
+
+	defaults, err := Defaults()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]string{
+		"agy":        "antigravity-cli",
+		"omp":        "oh-my-pi",
+		"claude":     "claude-code",
+		"claud-code": "claude-code",
+		"droid":      "factory-droid",
+		"muse":       "meta-muse",
+	}
+	for input, expected := range cases {
+		if actual := Suggest(input, defaults); actual != expected {
+			t.Errorf("Suggest(%q) = %q, want %q", input, actual, expected)
+		}
+	}
+}

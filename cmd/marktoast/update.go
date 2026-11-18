@@ -11,12 +11,17 @@ import (
 )
 
 func newUpdateCmd() *cobra.Command {
-	var repository string
-	var token string
+	var (
+		repository string
+		token      string
+		asJSON     bool
+	)
 	cmd := &cobra.Command{
 		Use:   "update",
 		Short: "Check GitHub Releases for a newer version",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
 			if token == "" {
 				token = os.Getenv("MARKTOAST_GITHUB_TOKEN")
 			}
@@ -27,19 +32,23 @@ func newUpdateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Printf("current  %s\nlatest   %s\n", result.Current, result.Latest)
+			if asJSON {
+				return writePrettyJSON(out, result)
+			}
+			fmt.Fprintf(out, "current  %s\nlatest   %s\n", result.Current, result.Latest)
 			if result.Newer {
-				fmt.Println("status   update available")
+				fmt.Fprintln(out, "status   update available")
 				if result.URL != "" {
-					fmt.Println("release  " + result.URL)
+					fmt.Fprintln(out, "release  "+result.URL)
 				}
 			} else {
-				fmt.Println("status   up to date")
+				fmt.Fprintln(out, "status   up to date")
 			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&repository, "repo", "realchendahuang/MarkToast", "GitHub repository (owner/repo)")
 	cmd.Flags().StringVar(&token, "token", "", "GitHub token (or MARKTOAST_GITHUB_TOKEN / GITHUB_TOKEN)")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print machine-readable JSON")
 	return cmd
 }

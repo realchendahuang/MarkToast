@@ -83,8 +83,8 @@ func (h *Host) installAPI() {
 		if err := yaml.Unmarshal(raw, &descriptor); err != nil {
 			return h.vm.ToValue(err.Error())
 		}
-		if descriptor.ID == "" {
-			return h.vm.ToValue("adapter id is required")
+		if err := adapter.Validate(descriptor); err != nil {
+			return h.vm.ToValue(err.Error())
 		}
 		adapter.RegisterDynamic(descriptor)
 		return goja.Undefined()

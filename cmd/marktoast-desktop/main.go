@@ -15,15 +15,19 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	webui "github.com/realchendahuang/MarkToast/frontend"
+	"github.com/realchendahuang/MarkToast/internal/adapter"
 	"github.com/realchendahuang/MarkToast/internal/config"
 	"github.com/realchendahuang/MarkToast/internal/hub"
+	"github.com/realchendahuang/MarkToast/internal/version"
 )
 
 //go:embed icon.png
@@ -49,10 +53,47 @@ func newApplication() (app *application.App) {
 	})
 }
 
+func resolveDesktopOptions(flagRoot, flagAddr string) (config.Config, string, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return cfg, "", err
+	}
+	rawRoot := strings.TrimSpace(flagRoot)
+	if rawRoot == "" {
+		rawRoot = strings.TrimSpace(os.Getenv("MARKTOAST_ROOT"))
+	}
+	if rawRoot != "" {
+		abs, absErr := filepath.Abs(adapter.ExpandPath(rawRoot))
+		if absErr != nil {
+			return cfg, "", absErr
+		}
+		cfg.Root = abs
+	} else if cfg.Root != "" {
+		if abs, absErr := filepath.Abs(adapter.ExpandPath(cfg.Root)); absErr == nil {
+			cfg.Root = abs
+		}
+	}
+
+	resolvedAddr := strings.TrimSpace(flagAddr)
+	if resolvedAddr == "" {
+		resolvedAddr = strings.TrimSpace(os.Getenv("MARKTOAST_ADDR"))
+	}
+	if resolvedAddr == "" {
+		resolvedAddr = "127.0.0.1:3777"
+	}
+	return cfg, resolvedAddr, nil
+}
+
 func main() {
-	root := flag.String("root", "", "memory repository root (defaults to config)")
-	addr := flag.String("addr", "127.0.0.1:3777", "hub listen address")
+	root := flag.String("root", "", "memory repository root (overrides MARKTOAST_ROOT and config)")
+	addr := flag.String("addr", "", "hub listen address (default 127.0.0.1:3777)")
+	showVersion := flag.Bool("version", false, "print the MarkToast version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version.Version)
+		return
+	}
 
 	// A Linux window needs GTK 4 and WebKitGTK 6.0; say so before starting a
 	// hub or a window that cannot open.
@@ -68,30 +109,27 @@ func main() {
 		os.Exit(1)
 	}
 
-	cfg, err := config.Load()
+	cfg, listenAddr, err := resolveDesktopOptions(*root, *addr)
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
-	if *root != "" {
-		abs, err := filepath.Abs(*root)
-		if err != nil {
-			log.Fatal(err)
-		}
-		cfg.Root = abs
-	}
 
 	hubServer, err := hub.Start(hub.Options{
-		Addr:       *addr,
+		Addr:       listenAddr,
 		Root:       cfg.Root,
 		FrontendFS: desktopUIFS(),
 		AutoCommit: cfg.Git.AutoCommit,
 		Debounce:   time.Duration(cfg.Git.DebounceMS) * time.Millisecond,
 	})
+	effectiveAddr := listenAddr
 	if err != nil {
 		// A hub may already be running (e.g. `marktoast serve`); the window
 		// can still load it, but only after a strict health check.
 		log.Printf("hub: %v", err)
 	} else {
+		if bound := hubServer.Addr(); bound != "" {
+			effectiveAddr = bound
+		}
 		defer func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -101,7 +139,7 @@ func main() {
 		}()
 	}
 
-	url := fmt.Sprintf("http://%s/", *addr)
+	url := fmt.Sprintf("http://%s/", effectiveAddr)
 	if !waitForHub(url, 4*time.Second) {
 		log.Fatalf("local hub is not available at %s", url)
 	}
@@ -138,6 +176,20 @@ func main() {
 	})
 	tray.SetMenu(trayMenu)
 
+	// Quit cleanly on SIGINT/SIGTERM so app.Run returns and the deferred
+	// hubServer.Shutdown flushes any pending debounced Git commits.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		if _, ok := <-sigCh; ok {
+			app.Quit()
+		}
+	}()
+	defer func() {
+		signal.Stop(sigCh)
+		close(sigCh)
+	}()
+
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
 	}
@@ -155,6 +207,9 @@ func desktopUIFS() fs.FS {
 // waitForHub verifies the /health payload instead of accepting any HTTP
 // response on the configured port.
 func waitForHub(baseURL string, timeout time.Duration) bool {
+	if !strings.HasSuffix(baseURL, "/") {
+		baseURL += "/"
+	}
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: 500 * time.Millisecond}
 	for time.Now().Before(deadline) {
@@ -171,7 +226,7 @@ func waitForHub(baseURL string, timeout time.Duration) bool {
 		} else if response != nil {
 			_ = response.Body.Close()
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
 	return false
 }

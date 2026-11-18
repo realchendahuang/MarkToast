@@ -260,6 +260,7 @@ func buildHookEntry(shape hookShape, desc adapter.Descriptor, opts Options, even
 				"type":      "process",
 				"command":   opts.Binary,
 				"args":      args,
+				"enabled":   true,
 				"timeoutMs": 20000,
 			}},
 		}
@@ -445,7 +446,7 @@ func (d *jsonDoc) mergeMCPJSON(desc adapter.Descriptor, opts Options) error {
 	if entry == nil {
 		return nil
 	}
-	path := mcpServersPath(desc)
+	path := effectiveJSONMCPPath(d.data, desc)
 	return d.mutate(func() error {
 		servers, err := objectPath(d.data, path)
 		if err != nil {
@@ -456,17 +457,37 @@ func (d *jsonDoc) mergeMCPJSON(desc adapter.Descriptor, opts Options) error {
 	})
 }
 
-// removeMCPJSON removes the MarkToast MCP server entry.
+// removeMCPJSON removes the MarkToast MCP server entry without creating empty
+// intermediate objects when the file never had an MCP block.
 func (d *jsonDoc) removeMCPJSON(desc adapter.Descriptor) error {
-	path := mcpServersPath(desc)
+	path := effectiveJSONMCPPath(d.data, desc)
 	return d.mutate(func() error {
-		servers, err := objectPath(d.data, path)
-		if err != nil {
-			return nil // wrong shape: nothing of ours to remove
+		servers, ok := lookupObjectPath(d.data, path)
+		if !ok {
+			return nil
+		}
+		if _, exists := servers[mcpServerName]; !exists {
+			return nil
 		}
 		delete(servers, mcpServerName)
+		pruneEmptyObjectPath(d.data, path)
 		return nil
 	})
+}
+
+// effectiveJSONMCPPath handles Meta Muse's dual-key pitfall: when legacy
+// "mcp_servers" already exists and "mcpServers" does not, write into the legacy
+// map because Muse ignores all MCP servers if both maps are present at once.
+func effectiveJSONMCPPath(root map[string]any, desc adapter.Descriptor) []string {
+	id := strings.ToLower(strings.TrimSpace(desc.ID))
+	if id == "meta-muse" || id == "muse" {
+		_, hasCamel := root["mcpServers"]
+		legacy, hasSnake := root["mcp_servers"].(map[string]any)
+		if !hasCamel && hasSnake && len(legacy) > 0 {
+			return []string{"mcp_servers"}
+		}
+	}
+	return mcpServersPath(desc)
 }
 
 // mcpServersPath resolves mcp.shape to the nested key path that holds the
@@ -574,7 +595,7 @@ func httpMCPEntry(desc adapter.Descriptor, opts Options) map[string]any {
 		return addHeaders(map[string]any{"url": hubMCPURL, "transport": "streamable-http"})
 	case strings.Contains(id, "copilot") && strings.Contains(strings.ToLower(desc.MCP.Target), "mcp-config"):
 		return addHeaders(map[string]any{"type": "http", "url": hubMCPURL, "tools": []any{"*"}})
-	case strings.Contains(id, "cursor") || strings.Contains(id, "zed"):
+	case strings.Contains(id, "cursor") || strings.Contains(id, "zed") || strings.Contains(id, "warp"):
 		return addHeaders(map[string]any{"url": hubMCPURL})
 	case strings.Contains(id, "command-code") || strings.Contains(id, "commandcode"):
 		return addHeaders(map[string]any{"transport": "http", "enabled": true, "url": hubMCPURL})
@@ -591,7 +612,10 @@ func httpMCPEntry(desc adapter.Descriptor, opts Options) map[string]any {
 	case strings.Contains(id, "omp") || strings.Contains(id, "oh-my-pi"):
 		return addHeaders(map[string]any{"type": "http", "url": hubMCPURL, "enabled": true})
 	case strings.Contains(id, "prime"):
-		return addHeaders(map[string]any{"type": "http", "url": hubMCPURL})
+		// Prime Agent 0.10 forbids `headers` and requires bearerTokenEnvVar.
+		return map[string]any{"type": "http", "url": hubMCPURL, "bearerTokenEnvVar": "MARKTOAST_TOKEN"}
+	case id == "zcode" || strings.HasPrefix(id, "zcode-"):
+		return addHeaders(map[string]any{"type": "http", "url": hubMCPURL, "enabled": true, "timeoutMs": 15000})
 	default:
 		return addHeaders(map[string]any{"type": "http", "url": hubMCPURL})
 	}

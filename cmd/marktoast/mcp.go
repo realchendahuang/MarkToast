@@ -13,18 +13,19 @@ import (
 
 // newMCPCmd runs the MCP server over stdio (for harnesses that spawn a
 // subprocess) instead of the streamable HTTP endpoint.
-func newMCPCmd() *cobra.Command {
+func (e *cliEnv) newMCPCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "mcp",
 		Short: "Run the MCP server on stdio",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := resolve()
+			root, err := e.resolveRoot()
 			if err != nil {
 				return err
 			}
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			return hub.RunMCPStdio(ctx, cfg.Root)
+			return hub.RunMCPStdio(ctx, root)
 		},
 	}
 }

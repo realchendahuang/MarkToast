@@ -5,8 +5,9 @@
 // the install mode (auto / staged / mcp_only), the on-disk hook schema and the
 // MCP transport; this package performs the merge. Every write is idempotent,
 // keeps third-party entries, backs the original file up and swaps the new
-// content in with a temporary file + rename. Shapes we cannot merge safely are
-// downgraded to a staged install instead of being overwritten.
+// content in with a randomized temporary file + fsync + rename. Shapes we
+// cannot merge safely are downgraded to a staged install instead of being
+// overwritten.
 package harness
 
 import (
@@ -43,6 +44,9 @@ type Options struct {
 	Token string
 	// Apply writes changes. When false every operation is a dry run.
 	Apply bool
+	// ForceStaged stages paste-ready snippets even when the adapter supports
+	// automatic config merging (CLI --staged).
+	ForceStaged bool
 	// Workspace resolves {workspace} in project-scoped targets.
 	Workspace string
 	// Home overrides the user home directory (tests, relocated profiles).
@@ -92,6 +96,29 @@ func (o Options) stagedRoot() string {
 // stagedDir is ~/.marktoast/adapters/<id>.
 func (o Options) stagedDir(id string) string { return filepath.Join(o.stagedRoot(), id) }
 
+// safeStagedDir validates id and guarantees the resulting staged directory is a
+// direct, non-symlinked child of ~/.marktoast/adapters so a crafted descriptor
+// id (e.g. ".." or "../foo") can never escape or trigger a destructive RemoveAll.
+func safeStagedDir(opts Options, id string) (string, error) {
+	if err := validateAdapterID(id); err != nil {
+		return "", err
+	}
+	root := filepath.Clean(opts.stagedRoot())
+	dir := filepath.Clean(filepath.Join(root, id))
+	rel, err := filepath.Rel(root, dir)
+	if err != nil || rel == "." || rel == ".." || strings.ContainsRune(rel, filepath.Separator) || strings.HasPrefix(rel, "..") {
+		return "", fmt.Errorf("unsafe adapter staged directory for %q", id)
+	}
+	if info, err := os.Lstat(dir); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return "", fmt.Errorf("refusing symlinked staged directory %s", dir)
+	}
+	return dir, nil
+}
+
+func validateAdapterID(id string) error {
+	return adapter.Validate(adapter.Descriptor{ID: id, InstallMode: adapter.ModeStaged})
+}
+
 // Report describes what an install / uninstall did (or planned, in dry-run).
 type Report struct {
 	ID          string `json:"id"`
@@ -125,10 +152,12 @@ type Status struct {
 	ID            string   `json:"id"`
 	Mode          string   `json:"mode"`
 	Target        string   `json:"target,omitempty"`
+	MCPTarget     string   `json:"mcp_target,omitempty"`
 	Detected      bool     `json:"detected"`
 	DetectedPaths []string `json:"detected_paths,omitempty"`
 	StagedReady   bool     `json:"staged_ready"`
 	Installed     bool     `json:"installed"`
+	MCPInstalled  bool     `json:"mcp_installed,omitempty"`
 	StagedDir     string   `json:"staged_dir,omitempty"`
 	// Reason reports why an auto adapter is not automatically installable.
 	Reason string `json:"reason,omitempty"`
@@ -147,6 +176,9 @@ type autoPlan struct {
 // Supported reports whether `adapters install <id> --apply` can really wire
 // this adapter automatically. Hub/clients use it for the "installable" flag.
 func Supported(desc adapter.Descriptor) bool {
+	if err := validateAdapterID(desc.ID); err != nil {
+		return false
+	}
 	if desc.EffectiveInstallMode() != adapter.ModeAuto {
 		return false
 	}
@@ -157,6 +189,10 @@ func Supported(desc adapter.Descriptor) bool {
 // Install wires a harness to MarkToast. It is a dry run unless opts.Apply.
 func Install(desc adapter.Descriptor, opts Options) (Report, error) {
 	opts = opts.normalized()
+	stagedDir, idErr := safeStagedDir(opts, desc.ID)
+	if idErr != nil {
+		return Report{ID: desc.ID, Title: desc.Title}, idErr
+	}
 	report := Report{
 		ID:          desc.ID,
 		Title:       desc.Title,
@@ -164,9 +200,19 @@ func Install(desc adapter.Descriptor, opts Options) (Report, error) {
 		Schema:      desc.Hooks.Schema,
 		InstallKind: desc.Hooks.InstallKind,
 		Binary:      opts.Binary,
-		StagedDir:   opts.stagedDir(desc.ID),
+		StagedDir:   stagedDir,
 	}
-	if err := adapter.Validate(desc); err != nil && report.Mode == adapter.ModeAuto {
+	if opts.ForceStaged {
+		stageMode := report.Mode
+		if stageMode == adapter.ModeAuto {
+			stageMode = adapter.ModeStaged
+		}
+		return installStaged(desc, opts, report, stageMode)
+	}
+	if err := adapter.Validate(desc); err != nil {
+		if report.Mode != adapter.ModeAuto {
+			return report, err
+		}
 		report.Warnings = append(report.Warnings, err.Error())
 		report.Downgraded = true
 		report.Reason = err.Error()
@@ -206,22 +252,26 @@ func Install(desc adapter.Descriptor, opts Options) (Report, error) {
 // directory. It is a dry run unless opts.Apply.
 func Uninstall(desc adapter.Descriptor, opts Options) (Report, error) {
 	opts = opts.normalized()
+	stagedDir, idErr := safeStagedDir(opts, desc.ID)
+	if idErr != nil {
+		return Report{ID: desc.ID, Title: desc.Title}, idErr
+	}
 	report := Report{
 		ID:        desc.ID,
 		Title:     desc.Title,
 		Mode:      desc.EffectiveInstallMode(),
 		Schema:    desc.Hooks.Schema,
 		Binary:    opts.Binary,
-		StagedDir: opts.stagedDir(desc.ID),
+		StagedDir: stagedDir,
 	}
 	installed := StatusOf(desc, opts).Installed
 	report.Installed = installed
-	report.Staged = dirHasFiles(opts.stagedDir(desc.ID))
+	report.Staged = dirHasFiles(stagedDir)
 	if report.Mode != adapter.ModeAuto {
 		report.Changed = report.Staged
-		report.Steps = append(report.Steps, "remove staged snippets under "+opts.stagedDir(desc.ID))
+		report.Steps = append(report.Steps, "remove staged snippets under "+stagedDir)
 		if opts.Apply && report.Staged {
-			if err := os.RemoveAll(opts.stagedDir(desc.ID)); err != nil {
+			if err := os.RemoveAll(stagedDir); err != nil {
 				return report, err
 			}
 			report.Applied = true
@@ -234,9 +284,9 @@ func Uninstall(desc adapter.Descriptor, opts Options) (Report, error) {
 		report.Warnings = append(report.Warnings, "no automatic entries to remove: "+reason)
 		if report.Staged {
 			report.Changed = true
-			report.Steps = append(report.Steps, "remove staged snippets under "+opts.stagedDir(desc.ID))
+			report.Steps = append(report.Steps, "remove staged snippets under "+stagedDir)
 			if opts.Apply {
-				if err := os.RemoveAll(opts.stagedDir(desc.ID)); err != nil {
+				if err := os.RemoveAll(stagedDir); err != nil {
 					return report, err
 				}
 				report.Applied = true
@@ -257,21 +307,32 @@ func Uninstall(desc adapter.Descriptor, opts Options) (Report, error) {
 	if err := removeDocHooks(hookDoc, plan, desc); err != nil {
 		return report, err
 	}
+	sharedMCPHolder := ""
 	if plan.mcpMergeable {
-		mcpDoc, err := docs.load(plan.mcpTarget)
-		if err != nil {
-			return report, err
+		sharedMCPHolder = siblingUsingMCPTarget(desc, plan.mcpTarget, opts)
+		if sharedMCPHolder == "" {
+			mcpDoc := hookDoc
+			if plan.mcpTarget != plan.hookTarget {
+				mcpDoc, err = docs.load(plan.mcpTarget)
+				if err != nil {
+					return report, err
+				}
+			}
+			_ = removeDocMCP(mcpDoc, desc)
 		}
-		_ = removeDocMCP(mcpDoc, desc)
 	}
 	report.Changed = docs.dirty()
 	report.Steps = append(report.Steps, "remove MarkToast hook entries from "+plan.hookTarget)
 	if plan.mcpMergeable {
-		report.Steps = append(report.Steps, "remove the marktoast MCP server from "+plan.mcpTarget)
+		if sharedMCPHolder != "" {
+			report.Steps = append(report.Steps, fmt.Sprintf("keep shared marktoast MCP server in %s (still used by %s)", plan.mcpTarget, sharedMCPHolder))
+		} else {
+			report.Steps = append(report.Steps, "remove the marktoast MCP server from "+plan.mcpTarget)
+		}
 	}
 	if report.Staged {
 		report.Changed = true
-		report.Steps = append(report.Steps, "remove staged snippets under "+opts.stagedDir(desc.ID))
+		report.Steps = append(report.Steps, "remove staged snippets under "+stagedDir)
 	}
 	if !opts.Apply || !report.Changed {
 		return report, nil
@@ -284,11 +345,38 @@ func Uninstall(desc adapter.Descriptor, opts Options) (Report, error) {
 	report.Backup = docs.firstBackup()
 	cleanupCreatedFiles(opts, desc)
 	if report.Staged {
-		if err := os.RemoveAll(opts.stagedDir(desc.ID)); err != nil {
+		if err := os.RemoveAll(stagedDir); err != nil {
 			return report, err
 		}
 	}
 	return report, nil
+}
+
+// siblingUsingMCPTarget returns the ID of another installed auto adapter that
+// shares mcpTarget (for example claude-code and claude-desktop-code both write
+// MCP to ~/.claude.json). Keeping the MCP entry while a sibling still has hooks
+// installed avoids breaking the sibling on partial uninstall.
+func siblingUsingMCPTarget(desc adapter.Descriptor, mcpTarget string, opts Options) string {
+	if strings.TrimSpace(mcpTarget) == "" {
+		return ""
+	}
+	all, err := adapter.All("")
+	if err != nil {
+		return ""
+	}
+	for _, other := range all {
+		if other.ID == desc.ID || other.EffectiveInstallMode() != adapter.ModeAuto {
+			continue
+		}
+		otherPlan, reason := planAuto(other, opts)
+		if reason != "" || !otherPlan.mcpMergeable || otherPlan.mcpTarget != mcpTarget {
+			continue
+		}
+		if fileHasHookMarker(otherPlan.hookTarget, other.ID) {
+			return other.ID
+		}
+	}
+	return ""
 }
 
 // Stage writes paste-ready snippets for an adapter without touching its
@@ -296,6 +384,10 @@ func Uninstall(desc adapter.Descriptor, opts Options) (Report, error) {
 func Stage(desc adapter.Descriptor, opts Options) (Report, error) {
 	opts = opts.normalized()
 	opts.Apply = true
+	stagedDir, err := safeStagedDir(opts, desc.ID)
+	if err != nil {
+		return Report{ID: desc.ID, Title: desc.Title}, err
+	}
 	report := Report{
 		ID:          desc.ID,
 		Title:       desc.Title,
@@ -303,18 +395,27 @@ func Stage(desc adapter.Descriptor, opts Options) (Report, error) {
 		Schema:      desc.Hooks.Schema,
 		InstallKind: desc.Hooks.InstallKind,
 		Binary:      opts.Binary,
-		StagedDir:   opts.stagedDir(desc.ID),
+		StagedDir:   stagedDir,
 	}
-	return installStaged(desc, opts, report, report.Mode)
+	stageMode := report.Mode
+	if stageMode == adapter.ModeAuto {
+		stageMode = adapter.ModeStaged
+	}
+	return installStaged(desc, opts, report, stageMode)
 }
 
 // StatusOf probes detection, staged snippets and installed configuration.
 func StatusOf(desc adapter.Descriptor, opts Options) Status {
 	opts = opts.normalized()
+	stagedDir, idErr := safeStagedDir(opts, desc.ID)
 	status := Status{
 		ID:        desc.ID,
 		Mode:      desc.EffectiveInstallMode(),
-		StagedDir: opts.stagedDir(desc.ID),
+		StagedDir: stagedDir,
+	}
+	if idErr != nil {
+		status.Reason = idErr.Error()
+		return status
 	}
 	status.DetectedPaths = detectPaths(desc, opts)
 	status.Detected = len(status.DetectedPaths) > 0
@@ -328,13 +429,52 @@ func StatusOf(desc adapter.Descriptor, opts Options) Status {
 		return status
 	}
 	status.Target = plan.hookTarget
-	if fileHasAdapterMarker(plan.hookTarget, desc.ID) {
-		status.Installed = true
+	if plan.mcpMergeable {
+		status.MCPTarget = plan.mcpTarget
+		status.MCPInstalled = fileHasMCPServer(plan.mcpTarget, desc)
 	}
-	if plan.mcpMergeable && plan.mcpTarget != "" && plan.mcpTarget != plan.hookTarget && fileHasAdapterMarker(plan.mcpTarget, desc.ID) {
+	// An auto adapter is installed iff its own "--agent <id>" hook marker is
+	// present in hookTarget. Checking mcpTarget alone would falsely mark
+	// siblings that share an MCP config (claude-code / claude-desktop-code).
+	if fileHasHookMarker(plan.hookTarget, desc.ID) {
 		status.Installed = true
 	}
 	return status
+}
+
+// InspectDrift checks an adapter's live configuration for partial/stale state
+// (missing MCP entry when hooks are wired, missing hooks after a recorded
+// install, or broken config syntax). Empty string means healthy or uninstalled.
+func InspectDrift(desc adapter.Descriptor, opts Options) string {
+	opts = opts.normalized()
+	if desc.EffectiveInstallMode() != adapter.ModeAuto {
+		return ""
+	}
+	plan, reason := planAuto(desc, opts)
+	if reason != "" {
+		return ""
+	}
+	hasHooks := fileHasHookMarker(plan.hookTarget, desc.ID)
+	hasMCP := !plan.mcpMergeable || fileHasMCPServer(plan.mcpTarget, desc)
+	_, hadMeta := readInstalledMeta(opts, desc.ID)
+	if hasHooks && !hasMCP {
+		return fmt.Sprintf("%s: hooks present in %s but MCP entry missing in %s", desc.ID, plan.hookTarget, plan.mcpTarget)
+	}
+	if hadMeta && !hasHooks {
+		return fmt.Sprintf("%s: recorded as installed, but hooks are missing in %s", desc.ID, plan.hookTarget)
+	}
+	if hasHooks {
+		if raw, err := os.ReadFile(plan.hookTarget); err == nil && opts.Token != "" && plan.mcpMergeable {
+			_ = raw
+			if mcpRaw, mErr := os.ReadFile(plan.mcpTarget); mErr == nil {
+				text := string(mcpRaw)
+				if strings.Contains(text, "Bearer ") && !strings.Contains(text, "Bearer "+opts.Token) {
+					return fmt.Sprintf("%s: bearer token in %s differs from repository token", desc.ID, plan.mcpTarget)
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // Installed reports whether the adapter's live config carries MarkToast.
@@ -351,7 +491,7 @@ func installAuto(desc adapter.Descriptor, opts Options, report Report, plan auto
 	report.Events = normalizeEvents(desc.Hooks.Events)
 	detected := detectPaths(desc, opts)
 	if opts.Apply && len(detected) == 0 {
-		return report, fmt.Errorf("%s not detected (%s); start %s once so it creates its config, or use `marktoast adapters install %s` (staged snippets)",
+		return report, fmt.Errorf("%s not detected (%s); start %s once so it creates its config, or use `marktoast adapters install %s --staged`",
 			desc.Title, strings.Join(desc.Detect, ", "), desc.Title, desc.ID)
 	}
 	docs := newDocSet()
@@ -394,6 +534,9 @@ func installAuto(desc adapter.Descriptor, opts Options, report Report, plan auto
 	report.Applied = true
 	report.Installed = true
 	report.Backup = docs.firstBackup()
+	for _, note := range docs.commentBackupNotes() {
+		report.Warnings = append(report.Warnings, note)
+	}
 	if err := writeInstalledMeta(opts, desc, docs); err != nil {
 		report.Warnings = append(report.Warnings, "could not record install metadata: "+err.Error())
 	}
@@ -471,7 +614,7 @@ func resolveTarget(target string, desc adapter.Descriptor, opts Options) (string
 	if target == "" {
 		return "", fmt.Errorf("adapter %s: empty target", desc.ID)
 	}
-	target = os.ExpandEnv(target)
+	target = adapter.ExpandEnvDefault(target)
 	target = strings.ReplaceAll(target, "{workspace}", opts.workspace())
 	target = strings.ReplaceAll(target, "{home}", opts.home())
 	if strings.HasPrefix(target, "~/") {
@@ -511,20 +654,38 @@ func dirHasFiles(dir string) bool {
 
 func isTOMLPath(path string) bool { return strings.EqualFold(filepath.Ext(path), ".toml") }
 
+// sortedPaths returns deterministic document keys for save/backup reporting.
+func (s *docSet) sortedPaths() []string {
+	paths := make([]string, 0, len(s.docs))
+	for p := range s.docs {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	return paths
+}
+
 // firstBackup returns the first backup file written by the doc set.
 func (s *docSet) firstBackup() string {
-	for _, doc := range s.docs {
-		if backup := doc.backupPath(); backup != "" {
+	for _, p := range s.sortedPaths() {
+		if backup := s.docs[p].backupPath(); backup != "" {
 			return backup
 		}
 	}
 	return ""
 }
 
+func (s *docSet) commentBackupNotes() []string {
+	var notes []string
+	for _, p := range s.sortedPaths() {
+		jd, ok := s.docs[p].(*jsonDoc)
+		if ok && jd.hadComments && jd.backup != "" {
+			notes = append(notes, fmt.Sprintf("JSONC comments in %s were backed up to %s before formatting", p, jd.backup))
+		}
+	}
+	return notes
+}
+
 // fileDoc is the shared read-modify-write surface of JSON and TOML configs.
-// Shape-specific merges live on the concrete types (see installHooks /
-// installHooksMCP below) so a JSON target can never accidentally receive a
-// TOML-shaped edit.
 type fileDoc interface {
 	save(apply bool) error
 	rollback()
@@ -637,11 +798,12 @@ func (s *docSet) dirty() bool {
 	return false
 }
 
-// saveAll writes every dirty document. If one write fails, the documents that
-// were already written are restored from their backups.
+// saveAll writes every dirty document in deterministic path order. If one write
+// fails, the documents that were already written are restored from backups.
 func (s *docSet) saveAll() error {
 	written := make([]fileDoc, 0, len(s.docs))
-	for _, doc := range s.docs {
+	for _, p := range s.sortedPaths() {
+		doc := s.docs[p]
 		if err := doc.save(true); err != nil {
 			for _, done := range written {
 				done.rollback()
@@ -657,8 +819,8 @@ func (s *docSet) saveAll() error {
 
 // rollbackAll restores every written document (used by tests).
 func (s *docSet) rollbackAll() {
-	for _, doc := range s.docs {
-		doc.rollback()
+	for _, p := range s.sortedPaths() {
+		s.docs[p].rollback()
 	}
 }
 
@@ -678,29 +840,51 @@ type installedFile struct {
 
 // installedMetaPath is ~/.marktoast/installed/<id>.json (kept outside the
 // staged snippets dir so staged_ready is not affected).
-func installedMetaPath(opts Options, id string) string {
-	return filepath.Join(opts.home(), ".marktoast", "installed", id+".json")
+func installedMetaPath(opts Options, id string) (string, error) {
+	if err := validateAdapterID(id); err != nil {
+		return "", err
+	}
+	root := filepath.Clean(filepath.Join(opts.home(), ".marktoast", "installed"))
+	path := filepath.Clean(filepath.Join(root, id+".json"))
+	rel, err := filepath.Rel(root, path)
+	if err != nil || strings.ContainsRune(rel, filepath.Separator) || strings.HasPrefix(rel, "..") {
+		return "", fmt.Errorf("unsafe installed metadata path for %q", id)
+	}
+	return path, nil
 }
 
 func writeInstalledMeta(opts Options, desc adapter.Descriptor, docs *docSet) error {
-	meta := installedMeta{Adapter: desc.ID, InstalledAt: time.Now().UTC().Format(time.RFC3339)}
-	for path, doc := range docs.docs {
-		meta.Files = append(meta.Files, installedFile{Path: path, Created: !doc.existedBefore()})
+	previouslyCreated := map[string]bool{}
+	if prev, ok := readInstalledMeta(opts, desc.ID); ok {
+		for _, f := range prev.Files {
+			if f.Created {
+				previouslyCreated[f.Path] = true
+			}
+		}
 	}
-	sort.Slice(meta.Files, func(i, j int) bool { return meta.Files[i].Path < meta.Files[j].Path })
+	meta := installedMeta{Adapter: desc.ID, InstalledAt: time.Now().UTC().Format(time.RFC3339)}
+	for _, p := range docs.sortedPaths() {
+		doc := docs.docs[p]
+		created := !doc.existedBefore() || previouslyCreated[p]
+		meta.Files = append(meta.Files, installedFile{Path: p, Created: created})
+	}
 	data, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
 		return err
 	}
-	path := installedMetaPath(opts, desc.ID)
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	path, err := installedMetaPath(opts, desc.ID)
+	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(data, '\n'), 0o600)
+	return atomicWritePrivate(path, append(data, '\n'))
 }
 
 func readInstalledMeta(opts Options, id string) (installedMeta, bool) {
-	data, err := os.ReadFile(installedMetaPath(opts, id))
+	path, err := installedMetaPath(opts, id)
+	if err != nil {
+		return installedMeta{}, false
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return installedMeta{}, false
 	}
@@ -712,7 +896,9 @@ func readInstalledMeta(opts Options, id string) (installedMeta, bool) {
 }
 
 func removeInstalledMeta(opts Options, id string) {
-	_ = os.Remove(installedMetaPath(opts, id))
+	if path, err := installedMetaPath(opts, id); err == nil {
+		_ = os.Remove(path)
+	}
 }
 
 // cleanupCreatedFiles deletes config files this installer created itself, once

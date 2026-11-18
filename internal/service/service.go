@@ -177,3 +177,34 @@ func (s *MemoryService) ReadMemoryFile(path string) (string, store.Fact, error) 
 	}
 	return string(raw), fact, nil
 }
+
+// Delete removes one memory file inside the repository under the write lock,
+// then refreshes MEMORY.md and the SQLite FTS index.
+func (s *MemoryService) Delete(path string) (abs, project, name string, err error) {
+	unlock, err := store.LockWrite(s.Root)
+	if err != nil {
+		return "", "", "", err
+	}
+	defer unlock()
+
+	abs, _, project, err = store.ResolveMemoryPath(s.Root, path)
+	if err != nil {
+		return "", "", "", err
+	}
+	if fact, parseErr := store.ParseFile(abs); parseErr == nil && fact.Name != "" {
+		name = fact.Name
+	}
+	if name == "" {
+		name = strings.TrimSuffix(filepath.Base(abs), filepath.Ext(abs))
+	}
+	if err := os.Remove(abs); err != nil {
+		return "", "", "", err
+	}
+	if err := store.WriteIndexes(s.Root); err != nil {
+		return "", "", "", err
+	}
+	if _, err := index.Rebuild(s.Root); err != nil {
+		return "", "", "", err
+	}
+	return abs, project, name, nil
+}

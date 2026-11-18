@@ -9,6 +9,7 @@ import (
 	"embed"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -117,12 +118,21 @@ func (d Descriptor) EffectiveInstallMode() string {
 // Validate reports descriptor problems that would make an installer unsafe.
 // It is used by tests and by the CLI before acting on an adapter.
 func Validate(d Descriptor) error {
-	if strings.TrimSpace(d.ID) == "" {
-		return fmt.Errorf("adapter id is required")
+	id := strings.TrimSpace(d.ID)
+	if id == "" || id != d.ID {
+		return fmt.Errorf("adapter id is required and must not have leading/trailing whitespace")
 	}
-	for _, r := range d.ID {
-		if !(r == '-' || r == '_' || r == '.' || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')) {
-			return fmt.Errorf("adapter id %q must be lower-kebab-case", d.ID)
+	if len(id) > 64 || id == "." || id == ".." || strings.Contains(id, "..") {
+		return fmt.Errorf("adapter id %q is invalid", d.ID)
+	}
+	for i, r := range id {
+		isAlnum := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		isSep := r == '-' || r == '_'
+		if !isAlnum && !isSep {
+			return fmt.Errorf("adapter id %q must be lower-kebab-case (a-z, 0-9, -, _)", d.ID)
+		}
+		if (i == 0 || i == len(id)-1) && isSep {
+			return fmt.Errorf("adapter id %q must start and end with a letter or digit", d.ID)
 		}
 	}
 	mode := d.EffectiveInstallMode()
@@ -161,7 +171,7 @@ func Defaults() ([]Descriptor, error) {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
 			continue
 		}
-		data, err := defaultFS.ReadFile(filepath.Join("defaults", e.Name()))
+		data, err := defaultFS.ReadFile(path.Join("defaults", e.Name()))
 		if err != nil {
 			return nil, err
 		}
@@ -211,8 +221,9 @@ var (
 )
 
 // RegisterDynamic adds or replaces an adapter created by a JS plugin.
+// Descriptors that fail Validate (including unsafe IDs) are ignored.
 func RegisterDynamic(d Descriptor) {
-	if strings.TrimSpace(d.ID) == "" {
+	if err := Validate(d); err != nil {
 		return
 	}
 	dynamicMu.Lock()
@@ -263,21 +274,184 @@ func All(userDir string) ([]Descriptor, error) {
 	return out, nil
 }
 
-// ExpandPath expands "~" and environment variables in a descriptor path.
-func ExpandPath(path string) string {
-	if path == "" {
+// ExpandEnvDefault expands $VAR, ${VAR} and POSIX-style ${VAR:-fallback}
+// expressions. Unlike os.ExpandEnv, ${VAR:-fallback} resolves to fallback when
+// VAR is unset or empty instead of evaluating to the empty string.
+func ExpandEnvDefault(value string) string {
+	if !strings.Contains(value, "$") {
+		return value
+	}
+	var b strings.Builder
+	b.Grow(len(value))
+	for i := 0; i < len(value); {
+		if value[i] != '$' || i+1 >= len(value) {
+			b.WriteByte(value[i])
+			i++
+			continue
+		}
+		if value[i+1] == '{' {
+			end := strings.IndexByte(value[i+2:], '}')
+			if end >= 0 {
+				expr := value[i+2 : i+2+end]
+				name, fallback, hasFallback := strings.Cut(expr, ":-")
+				if hasFallback {
+					if val := os.Getenv(name); val != "" {
+						b.WriteString(val)
+					} else {
+						b.WriteString(fallback)
+					}
+				} else {
+					b.WriteString(os.Getenv(expr))
+				}
+				i += 2 + end + 1
+				continue
+			}
+		}
+		// Plain $VAR identifier.
+		j := i + 1
+		for j < len(value) && (value[j] == '_' || (value[j] >= 'a' && value[j] <= 'z') || (value[j] >= 'A' && value[j] <= 'Z') || (j > i+1 && value[j] >= '0' && value[j] <= '9')) {
+			j++
+		}
+		if j > i+1 {
+			b.WriteString(os.Getenv(value[i+1 : j]))
+			i = j
+			continue
+		}
+		b.WriteByte(value[i])
+		i++
+	}
+	return b.String()
+}
+
+// ExpandPath expands "~", "{home}", "{workspace}" and environment variables
+// (including ${VAR:-default}) in a descriptor path.
+func ExpandPath(p string) string {
+	if p == "" {
 		return ""
 	}
-	path = os.ExpandEnv(path)
-	if path == "~" {
-		home, _ := os.UserHomeDir()
+	p = ExpandEnvDefault(p)
+	home, _ := os.UserHomeDir()
+	if strings.Contains(p, "{home}") && home != "" {
+		p = strings.ReplaceAll(p, "{home}", home)
+	}
+	if strings.Contains(p, "{workspace}") {
+		if cwd, err := os.Getwd(); err == nil && cwd != "" {
+			p = strings.ReplaceAll(p, "{workspace}", cwd)
+		}
+	}
+	if p == "~" {
 		return home
 	}
-	if strings.HasPrefix(path, "~/") {
-		home, _ := os.UserHomeDir()
-		return filepath.Join(home, path[2:])
+	if strings.HasPrefix(p, "~/") {
+		return filepath.Join(home, p[2:])
 	}
-	return path
+	return filepath.Clean(p)
+}
+
+// knownAliases maps common shorthand CLI names (documented in descriptor notes)
+// to their canonical built-in adapter IDs.
+var knownAliases = map[string]string{
+	"agy":            "antigravity-cli",
+	"antigravity":    "antigravity-cli",
+	"claude":         "claude-code",
+	"claude-desktop": "claude-desktop-chat",
+	"code-buddy":     "codebuddy",
+	"commandcode":    "command-code",
+	"cmdc":           "command-code",
+	"copilot":        "copilot-cli",
+	"vscode":         "vs-code-copilot",
+	"vscode-copilot": "vs-code-copilot",
+	"droid":          "factory-droid",
+	"factory":        "factory-droid",
+	"gemini":         "gemini-cli",
+	"bob":            "ibm-bob",
+	"kilo":           "kilo-code",
+	"kimi":           "kimi-code",
+	"kiro":           "kiro-cli",
+	"muse":           "meta-muse",
+	"muse-code":      "meta-muse",
+	"omp":            "oh-my-pi",
+	"poolside":       "pool",
+	"prime":          "prime-agent",
+	"qwen":           "qwen-code",
+	"qwencode":       "qwen-code",
+	"swival":         "swival-cli",
+}
+
+// Suggest returns the closest known adapter ID for a mistyped or aliased query,
+// or "" when nothing is close enough.
+func Suggest(query string, adapters []Descriptor) string {
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		return ""
+	}
+	qNorm := strings.ReplaceAll(q, "_", "-")
+	ids := make([]string, 0, len(adapters))
+	idSet := make(map[string]bool, len(adapters))
+	for _, d := range adapters {
+		ids = append(ids, d.ID)
+		idSet[d.ID] = true
+	}
+	for _, candidate := range ids {
+		if strings.ToLower(candidate) == q || strings.ToLower(candidate) == qNorm {
+			return candidate
+		}
+	}
+	if alias, ok := knownAliases[qNorm]; ok && idSet[alias] {
+		return alias
+	}
+	for _, candidate := range ids {
+		cl := strings.ToLower(candidate)
+		if strings.HasPrefix(cl, qNorm) || strings.Contains(cl, qNorm) || strings.Contains(qNorm, cl) {
+			return candidate
+		}
+	}
+	best := ""
+	bestDist := 4
+	for _, candidate := range ids {
+		if dist := editDistance(qNorm, strings.ToLower(candidate)); dist < bestDist {
+			bestDist = dist
+			best = candidate
+		}
+	}
+	return best
+}
+
+func editDistance(a, b string) int {
+	ar, br := []rune(a), []rune(b)
+	if len(ar) == 0 {
+		return len(br)
+	}
+	if len(br) == 0 {
+		return len(ar)
+	}
+	prev := make([]int, len(br)+1)
+	curr := make([]int, len(br)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(ar); i++ {
+		curr[0] = i
+		for j := 1; j <= len(br); j++ {
+			cost := 1
+			if ar[i-1] == br[j-1] {
+				cost = 0
+			}
+			del := prev[j] + 1
+			ins := curr[j-1] + 1
+			sub := prev[j-1] + cost
+			m := del
+			if ins < m {
+				m = ins
+			}
+			if sub < m {
+				m = sub
+			}
+			curr[j] = m
+		}
+		prev, curr = curr, prev
+	}
+	return prev[len(br)]
 }
 
 // Detect returns the descriptor's existing detection paths.

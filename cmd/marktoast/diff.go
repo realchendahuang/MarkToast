@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -10,77 +9,88 @@ import (
 
 	"github.com/realchendahuang/MarkToast/internal/gitx"
 	"github.com/realchendahuang/MarkToast/internal/service"
-	"github.com/realchendahuang/MarkToast/internal/store"
 )
 
-func newDiffCmd() *cobra.Command {
-	var commit string
+func (e *cliEnv) newDiffCmd() *cobra.Command {
+	var (
+		commit  string
+		project string
+	)
 	cmd := &cobra.Command{
-		Use:   "diff <name>",
+		Use:   "diff <path|name>",
 		Short: "Show a memory's working-tree diff, or one commit's patch",
-		Args:  cobra.ExactArgs(1),
+		Example: `  marktoast diff "api-style"
+  marktoast diff global/api-style.md --commit HEAD~1`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := resolve()
+			out := cmd.OutOrStdout()
+			root, err := e.resolveRoot()
 			if err != nil {
 				return err
 			}
-			fact, err := findFact(cfg.Root, args[0])
+			_, fact, err := resolveMemoryFact(root, args[0], project)
 			if err != nil {
 				return err
 			}
-			rel, err := filepath.Rel(cfg.Root, fact.Path)
+			rel, err := filepath.Rel(root, fact.Path)
 			if err != nil {
 				return err
 			}
 			rel = filepath.ToSlash(rel)
 			if commit == "" {
-				out, err := gitx.Run(cfg.Root, "diff", "--", rel)
+				diffOut, err := gitx.Run(root, "diff", "--", rel)
 				if err != nil {
-					return err
+					return fmt.Errorf("git diff: %w", err)
 				}
-				if strings.TrimSpace(out) == "" {
-					commits, err := gitx.FileLog(cfg.Root, rel, 1)
+				if strings.TrimSpace(diffOut) == "" {
+					commits, err := gitx.FileLog(root, rel, 1)
 					if err != nil || len(commits) == 0 {
-						fmt.Println("no changes and no history for", fact.Name)
+						fmt.Fprintln(out, "no changes and no history for", fact.Name)
 						return nil
 					}
-					out, err = gitx.DiffFile(cfg.Root, commits[0].Hash, rel)
+					diffOut, err = gitx.DiffFile(root, commits[0].Hash, rel)
 					if err != nil {
 						return err
 					}
 				}
-				fmt.Print(out)
+				fmt.Fprint(out, diffOut)
 				return nil
 			}
-			out, err := gitx.DiffFile(cfg.Root, commit, rel)
+			diffOut, err := gitx.DiffFile(root, commit, rel)
 			if err != nil {
 				return err
 			}
-			fmt.Print(out)
+			fmt.Fprint(out, diffOut)
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&commit, "commit", "", "show the patch for this commit")
+	cmd.Flags().StringVar(&project, "project", "", "disambiguate project key when multiple projects share a name")
 	return cmd
 }
 
-func newRollbackCmd() *cobra.Command {
-	var commit string
-	var yes bool
+func (e *cliEnv) newRollbackCmd() *cobra.Command {
+	var (
+		commit  string
+		project string
+		yes     bool
+	)
 	cmd := &cobra.Command{
-		Use:   "rollback <name>",
+		Use:   "rollback <path|name>",
 		Short: "Restore a memory from HEAD (or from a specific commit)",
-		Args:  cobra.ExactArgs(1),
+		Example: `  marktoast rollback "api-style" --yes
+  marktoast rollback "api-style" --commit a1b2c3d --yes`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := resolve()
+			root, err := e.resolveRoot()
 			if err != nil {
 				return err
 			}
-			fact, err := findFact(cfg.Root, args[0])
+			_, fact, err := resolveMemoryFact(root, args[0], project)
 			if err != nil {
 				return err
 			}
-			rel, err := filepath.Rel(cfg.Root, fact.Path)
+			rel, err := filepath.Rel(root, fact.Path)
 			if err != nil {
 				return err
 			}
@@ -90,54 +100,27 @@ func newRollbackCmd() *cobra.Command {
 			}
 			targetHash := commit
 			if targetHash == "" {
-				commits, err := gitx.FileLog(cfg.Root, rel, 1)
+				commits, err := gitx.FileLog(root, rel, 1)
 				if err != nil || len(commits) == 0 {
 					return fmt.Errorf("no commit found for %s", rel)
 				}
 				targetHash = commits[0].Hash
 			}
-			_, project, name, err := service.New(cfg.Root).Restore(fact.Path, targetHash)
+			_, proj, name, err := service.New(root).Restore(fact.Path, targetHash)
 			if err != nil {
 				return err
 			}
 			if gitx.Available() {
-				if _, err := gitx.CommitAll(cfg.Root, fmt.Sprintf("restore(%s): %s", project, name)); err != nil {
+				if _, err := gitx.CommitAll(root, fmt.Sprintf("restore(%s): %s", proj, name)); err != nil {
 					return err
 				}
 			}
-			fmt.Printf("✔ restored %s\n", fact.Name)
+			fmt.Fprintf(cmd.OutOrStdout(), "✔ restored %s\n", fact.Name)
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&commit, "commit", "", "restore this version instead of HEAD")
-	cmd.Flags().BoolVar(&yes, "yes", false, "confirm the restore")
+	cmd.Flags().StringVar(&project, "project", "", "disambiguate project key when multiple projects share a name")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "confirm the restore")
 	return cmd
-}
-
-func findFact(root, arg string) (store.Fact, error) {
-	if strings.HasSuffix(arg, ".md") || strings.ContainsRune(arg, filepath.Separator) {
-		abs := arg
-		if !filepath.IsAbs(abs) {
-			abs = filepath.Join(root, arg)
-		}
-		info, err := os.Stat(abs)
-		if err != nil || info.IsDir() {
-			return store.Fact{}, fmt.Errorf("memory file not found: %s", arg)
-		}
-		fact, err := store.ParseFile(abs)
-		if err != nil {
-			return store.Fact{}, err
-		}
-		return fact, nil
-	}
-	facts, err := store.ListFacts(root)
-	if err != nil {
-		return store.Fact{}, err
-	}
-	for _, fact := range facts {
-		if fact.Name == arg || strings.TrimSuffix(filepath.Base(fact.Path), ".md") == arg {
-			return fact, nil
-		}
-	}
-	return store.Fact{}, fmt.Errorf("memory %q not found", arg)
 }

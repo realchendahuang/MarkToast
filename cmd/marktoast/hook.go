@@ -12,15 +12,19 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/realchendahuang/MarkToast/internal/config"
 	"github.com/realchendahuang/MarkToast/internal/ingest"
 	"github.com/realchendahuang/MarkToast/internal/store"
 )
 
 // newHookCmd is the entrypoint every harness hook calls. It reads the
-// harness's event JSON from stdin, records it, and — for session start —
-// prints the memory index as structured context when the harness supports
-// injection.
-func newHookCmd() *cobra.Command {
+// harness's event JSON from stdin, records it, and — for session start or
+// pre-LLM hooks — prints the memory index as structured context.
+//
+// Invariant: `hook` must NEVER panic, block forever on a TTY/hung pipe, or
+// crash a host agent due to malformed JSON, empty stdin, or multi-megabyte tool
+// outputs.
+func (e *cliEnv) newHookCmd() *cobra.Command {
 	var (
 		event   string
 		agent   string
@@ -30,43 +34,63 @@ func newHookCmd() *cobra.Command {
 		Use:    "hook",
 		Short:  "Harness hook entrypoint (reads event JSON on stdin)",
 		Hidden: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if event == "" {
-				return fmt.Errorf("--event is required")
-			}
-			cfg, err := resolve()
-			if err != nil {
-				return err
-			}
-			const maxHookPayload = 1 << 20
-			limited := &io.LimitedReader{R: os.Stdin, N: maxHookPayload + 1}
-			payload, _ := io.ReadAll(limited)
-			if len(payload) > maxHookPayload {
-				payload = payload[:maxHookPayload]
-			}
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
+			out := cmd.OutOrStdout()
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					_, _ = fmt.Fprintln(out, "{}")
+					retErr = nil
+				}
+			}()
+
+			payload := readHookPayloadSafely(cmd.InOrStdin())
 			fields := map[string]any{}
 			_ = json.Unmarshal(payload, &fields)
-			cwd := stringField(fields, "cwd", "workspace", "working_directory")
-			sessionID := stringField(fields, "sessionId", "session_id", "session")
 
-			_ = appendEvent(cfg.Root, event, agent, sessionID, cwd, payload)
-			if candidates := ingest.Extract(agent, event, payload); len(candidates) > 0 {
-				_, _ = ingest.Write(cfg.Root, candidates)
+			resolvedEvent := strings.TrimSpace(event)
+			if resolvedEvent == "" {
+				resolvedEvent = stringField(fields, "hook_event_name", "hookEventName", "event")
+			}
+			if resolvedEvent == "" {
+				return fmt.Errorf("--event is required")
 			}
 
-			if strings.EqualFold(event, "SessionStart") {
-				context := sessionContext(cfg.Root, project, cwd)
-				out := map[string]any{
+			root, err := e.resolveRoot()
+			if err != nil || strings.TrimSpace(root) == "" {
+				// Never break a host agent session because config.toml is malformed.
+				root = config.Default().Root
+			}
+
+			cwd := resolveHookCwd(fields)
+			sessionID := resolveHookSessionID(fields)
+
+			_ = appendEvent(root, resolvedEvent, agent, sessionID, cwd, payload)
+			if candidates := ingest.Extract(agent, resolvedEvent, payload); len(candidates) > 0 {
+				_, _ = ingest.Write(root, candidates)
+			}
+
+			if strings.EqualFold(resolvedEvent, "SessionStart") || strings.EqualFold(resolvedEvent, "agentSpawn") {
+				ctxText := sessionContext(root, project, cwd)
+				resp := map[string]any{
 					"hookSpecificOutput": map[string]any{
 						"hookEventName":     "SessionStart",
-						"additionalContext": context,
+						"additionalContext": ctxText,
 					},
 				}
-				return json.NewEncoder(os.Stdout).Encode(out)
+				if strings.EqualFold(agent, "copilot-cli") {
+					resp["additionalContext"] = ctxText
+				}
+				return json.NewEncoder(out).Encode(resp)
 			}
+			if strings.EqualFold(resolvedEvent, "pre_llm_call") {
+				if ctxText := sessionContext(root, project, cwd); ctxText != "" {
+					return json.NewEncoder(out).Encode(map[string]any{"context": ctxText})
+				}
+			}
+
 			// Clean acknowledgment for hooks that expect JSON; harmless for
 			// hooks that ignore stdout.
-			fmt.Println("{}")
+			_, _ = fmt.Fprintln(out, "{}")
 			return nil
 		},
 	}
@@ -74,6 +98,79 @@ func newHookCmd() *cobra.Command {
 	cmd.Flags().StringVar(&agent, "agent", "", "harness adapter id")
 	cmd.Flags().StringVar(&project, "project", "", "project key override")
 	return cmd
+}
+
+const maxHookPayload = 1 << 20 // 1 MiB cap protects memory on huge tool outputs
+
+// readHookPayloadSafely bounds stdin to 1 MiB, skips blocking when stdin is an
+// interactive TTY, and enforces a timeout when reading from an OS pipe.
+func readHookPayloadSafely(in io.Reader) []byte {
+	if in == nil {
+		return nil
+	}
+	if f, ok := in.(*os.File); ok {
+		info, err := f.Stat()
+		if err != nil || info.Mode()&os.ModeCharDevice != 0 {
+			return nil
+		}
+		type readRes struct{ data []byte }
+		ch := make(chan readRes, 1)
+		go func() {
+			limited := &io.LimitedReader{R: f, N: maxHookPayload + 1}
+			data, _ := io.ReadAll(limited)
+			if len(data) > maxHookPayload {
+				data = data[:maxHookPayload]
+			}
+			ch <- readRes{data: data}
+		}()
+		select {
+		case res := <-ch:
+			return res.data
+		case <-time.After(2 * time.Second):
+			return nil
+		}
+	}
+	limited := &io.LimitedReader{R: in, N: maxHookPayload + 1}
+	data, _ := io.ReadAll(limited)
+	if len(data) > maxHookPayload {
+		data = data[:maxHookPayload]
+	}
+	return data
+}
+
+func resolveHookCwd(fields map[string]any) string {
+	if cwd := stringField(fields, "cwd", "workspace", "working_directory", "project_dir"); cwd != "" {
+		return cwd
+	}
+	for _, envName := range []string{
+		"CLAUDE_PROJECT_DIR",
+		"CURSOR_PROJECT_DIR",
+		"CODEBUDDY_PROJECT_DIR",
+		"DEVIN_PROJECT_DIR",
+		"QODER_PROJECT_DIR",
+		"QWEN_PROJECT_DIR",
+		"GEMINI_PROJECT_DIR",
+	} {
+		if val := strings.TrimSpace(os.Getenv(envName)); val != "" {
+			return val
+		}
+	}
+	if wd, err := os.Getwd(); err == nil {
+		return wd
+	}
+	return ""
+}
+
+func resolveHookSessionID(fields map[string]any) string {
+	if sid := stringField(fields, "sessionId", "session_id", "session", "conversation_id"); sid != "" {
+		return sid
+	}
+	for _, envName := range []string{"CLAUDE_CODE_SESSION_ID", "MUSE_SESSION_ID"} {
+		if val := strings.TrimSpace(os.Getenv(envName)); val != "" {
+			return val
+		}
+	}
+	return ""
 }
 
 // sessionContext builds the index injected at session start.
@@ -84,9 +181,9 @@ func sessionContext(root, project, cwd string) string {
 	}
 	var lines []string
 	facts, _ := store.ListFacts(root)
-	add := func(project string, limit int) {
+	add := func(proj string, limit int) {
 		for _, f := range facts {
-			if project != "" && f.Project != project {
+			if proj != "" && f.Project != proj {
 				continue
 			}
 			desc := strings.TrimSpace(f.Description)
@@ -124,8 +221,8 @@ func appendEvent(root, event, agent, sessionID, cwd string, payload []byte) erro
 	if root == "" {
 		return nil
 	}
-	dir := filepath.Join(root, store.MetaDir)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	dir, err := store.EnsureMetaDir(root)
+	if err != nil {
 		return err
 	}
 	record := map[string]any{
@@ -135,11 +232,8 @@ func appendEvent(root, event, agent, sessionID, cwd string, payload []byte) erro
 		"session_id": sessionID,
 		"cwd":        cwd,
 	}
-	trimmed := payload
-	if len(trimmed) > 8000 {
-		trimmed = []byte(truncateUTF8(string(trimmed), 8000))
-	}
-	record["payload"] = string(trimmed)
+	trimmed := truncateUTF8(string(payload), 8000)
+	record["payload"] = trimmed
 	data, err := json.Marshal(record)
 	if err != nil {
 		return err

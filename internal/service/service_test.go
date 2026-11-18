@@ -103,3 +103,29 @@ func TestRestoreWritesAtomicallyAndReindexes(t *testing.T) {
 		t.Fatalf("restored content not indexed: %+v err=%v", results, err)
 	}
 }
+
+func TestDeleteRemovesFactAndRejectsOutsidePath(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "secret.md")
+	if err := os.WriteFile(outside, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Init(root); err != nil {
+		t.Fatal(err)
+	}
+	svc := New(root)
+	if _, _, _, err := svc.Delete(outside); err == nil {
+		t.Fatal("Delete accepted path outside repository")
+	}
+	path, err := svc.Save(store.GlobalProject, store.Fact{Name: "to-delete", Body: "ephemeral note"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, name, err := svc.Delete(path); err != nil || name != "to-delete" {
+		t.Fatalf("Delete failed: name=%q err=%v", name, err)
+	}
+	results, err := index.Search(root, "ephemeral", index.Options{Limit: 10})
+	if err != nil || len(results) != 0 {
+		t.Fatalf("deleted fact still returned in search: %+v err=%v", results, err)
+	}
+}
